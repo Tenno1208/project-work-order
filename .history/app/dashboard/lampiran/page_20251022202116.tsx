@@ -1,0 +1,1 @@
+https://gateway.pdamkotasmg.co.id/api-gw/file-handler/api/upload/foto

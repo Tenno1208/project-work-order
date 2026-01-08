@@ -1,89 +1,78 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(
-  req: Request, 
-  { params }: { params: { uuid: string } }
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ uuid: string }> }
 ) {
-  const { uuid } = params; 
-
   try {
-    const authHeader = req.headers.get("authorization");
-    const token = authHeader?.split(" ")[1];
-
+    const { uuid } = await params;
+    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    
     if (!token) {
       return NextResponse.json(
-        { success: false, message: "Token otorisasi tidak ditemukan." },
+        { success: false, message: 'Token tidak ditemukan' },
         { status: 401 }
       );
     }
 
-    // Mengambil API_BASE_URL dari environment variable
-    const apiBaseUrl = process.env.API_BASE_URL;
-
-    if (!apiBaseUrl) {
-      console.error("Variabel environment API_BASE_URL tidak diatur!");
-      return NextResponse.json(
-        { success: false, message: "Konfigurasi API server API_BASE_URL tidak ada." },
-        { status: 500 }
-      );
-    }
+    const body = await request.json();
+        const apiUrl = `${process.env.EDIT_API_PENGAJUAN_URL?.replace('{uuid}', uuid)}`;
     
-    const finalApiUrl = `${apiBaseUrl}/api/pengajuan/view/${uuid}`;
+    console.log('Sending request to:', apiUrl);
+    console.log('Request body:', JSON.stringify(body, null, 2));
     
-    console.log(`[PROXY INFO] Menghubungi API Detail (UUID: ${uuid}): ${finalApiUrl}`);
-
-    const res = await fetch(finalApiUrl, {
+    // Kirim request ke API eksternal
+    const response = await fetch(apiUrl, {
+      method: 'PUT',
       headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-        "ngrok-skip-browser-warning": "true",
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
       },
-      cache: "no-store",
+      body: JSON.stringify(body),
     });
 
-    const rawText = await res.text();
-    
-    if (!res.ok) {
-      console.error(`[PROXY ERROR] Gagal ambil data detail (Status ${res.status}). URL: ${finalApiUrl}. Respon: ${rawText.slice(0, 200)}`);
-      
-      let errorJson = null;
+    console.log('Response status:', response.status);
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
+    const responseText = await response.text();
+    console.log('Response body:', responseText);
+
+    // Dapatkan content-type dari response API eksternal
+    const contentType = response.headers.get('content-type') || '';
+
+    // Jika response adalah JSON, parse dan teruskan dengan format yang sama
+    if (contentType.includes('application/json')) {
       try {
-        errorJson = JSON.parse(rawText);
-      } catch {}
-      
-      return NextResponse.json(
-        { 
-            success: false, 
-            message: `Gagal ambil data pengajuan (Status ${res.status}). Cek URL Eksternal yang dicoba.`,
-            debug_url_eksternal: finalApiUrl,
-            raw: rawText 
-        },
-        { status: res.status }
-      );
+        const jsonData = JSON.parse(responseText);
+        
+        // Teruskan response JSON asli dengan status yang sama
+        return new NextResponse(JSON.stringify(jsonData), {
+          status: response.status,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+      } catch (parseError) {
+        console.error('Failed to parse JSON response:', parseError);
+        return NextResponse.json(
+          { success: false, message: 'Response dari API eksternal bukan format JSON yang valid' },
+          { status: 500 }
+        );
+      }
     }
-
-    let json;
-    try {
-      json = JSON.parse(rawText);
-    } catch (e) {
-      console.error("[PROXY ERROR] Gagal parse JSON dari API eksternal.");
-      return NextResponse.json(
-        { success: false, message: "API eksternal mengembalikan format tak dikenal (bukan JSON)." },
-        { status: 500 }
-      );
-    }
-
-    // Mengembalikan data detail yang diambil
-    return NextResponse.json({
-      success: true,
-      message: "Data pengajuan berhasil diambil dari Detail Endpoint.",
-      data: json.data, 
+    
+    // Jika response bukan JSON (HTML, text, dll), teruskan apa adanya
+    return new NextResponse(responseText, {
+      status: response.status,
+      headers: {
+        'Content-Type': contentType,
+      },
     });
 
   } catch (error) {
-    console.error("Error API /pengajuan/edit/[uuid]:", error);
+    console.error('Error updating pengajuan:', error);
     return NextResponse.json(
-      { success: false, message: "Kesalahan server internal Next.js.", error: String(error) },
+      { success: false, message: 'Terjadi kesalahan server' },
       { status: 500 }
     );
   }

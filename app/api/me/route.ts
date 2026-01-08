@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 export async function GET(req: Request) {
   try {
-    // ↪ Ambil token
     const authHeader = req.headers.get("authorization");
     const token = authHeader?.split(" ")[1];
 
@@ -13,7 +12,6 @@ export async function GET(req: Request) {
       );
     }
 
-    // ↪ Panggil API PDAM
     const res = await fetch(
       "https://gateway.pdamkotasmg.co.id/api-gw-balanced/portal-pegawai/api/auth/me",
       {
@@ -41,12 +39,15 @@ export async function GET(req: Request) {
 
     const user = json?.data?.user || {};
     const pegawai = user?.rl_pegawai || {};
+    const idsatker = user?.rl_satker || {};
 
     const nama = user?.name || "-";
     const npp = user?.npp || "-";
     const no_telp = pegawai?.tlp || "-";
-    const satker = pegawai?.satker || "-";       
+    const satker = pegawai?.satker || "-";  
+    const alamat = pegawai?.alamat || "-";     
     const subsatker = pegawai?.subsatker || "-";  
+    const kdparent = idsatker?.kd_parent || "-";
 
     if (res.ok) {
       return NextResponse.json({
@@ -55,6 +56,8 @@ export async function GET(req: Request) {
         no_telp,
         satker,
         subsatker,
+        alamat,
+        kdparent
       });
     }
 

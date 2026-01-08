@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
     FileText,
     Search,
@@ -13,58 +13,94 @@ import {
     Plus,
     X,
     AlertTriangle,
+    Users,
+    CheckCircle,
+    Copy,     
+    MapPin,   
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-// --- KONSTANTA API ---
 const GET_API_SPK_URL_LOCAL = "/api/spk/list";
 const DELETE_API_SPK_URL_LOCAL = "/api/spk/delete/";
+const PERMISSION_ASSIGN = 'Workorder.spk.menugaskan';
 
 const MAX_RETRIES = 3;
 
-// --- TYPES SESUAI API ---
 type SPKItem = {
     id: number;
-    nomor: string; 
+    nomor: string;
     pekerjaan: string;
     tanggal: string;
-    status: "Selesai" | "Proses" | "Menunggu" | string;
-    uuid: string; 
-    namaPetugas?: string; 
+    status: string;
+    uuid: string;
+    namaPetugas?: string;
+    // Tambahan field untuk pengecekan NPP
+    menyetujui_npp?: string | null;
+    mengetahui_npp?: string | null;
+    // PENTING: Tambahkan field TTD untuk pengecekan file signature
+    mengetahui_ttd?: string | null; 
 };
+
+type ToastMessage = {
+    show: boolean;
+    message: string;
+    type: "success" | "error";
+};
+
+type ModalState = {
+    isOpen: boolean;
+    message: string;
+    isDeletion: boolean;
+    spkToDelete: SPKItem | null;
+};
+
+type CurrentUser = {
+    npp: string;
+    name?: string;
+};
+
+
+const ToastBox = ({ toast, onClose }: { toast: ToastMessage, onClose: () => void }) =>
+    toast.show && (
+        <div
+            className={`fixed top-5 right-5 px-4 py-2 rounded-xl shadow-lg text-white text-sm z-50 animate-slide-in transition-opacity duration-300 flex items-center gap-2 ${toast.type === "success" ? "bg-green-600" : "bg-red-600"
+                }`}
+        >
+            {toast.type === 'success' ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+            <span>{toast.message}</span>
+            <button onClick={onClose} className="text-white ml-2">
+                <X size={14} />
+            </button>
+        </div>
+    );
 
 export default function DaftarSPKPage() {
     const router = useRouter();
+    const [permissionsLoaded, setPermissionsLoaded] = useState(false);
     const [loading, setLoading] = useState(true);
     const [spks, setSpks] = useState<SPKItem[]>([]);
     const [search, setSearch] = useState("");
     const [filterStatus, setFilterStatus] = useState("Semua");
     const [error, setError] = useState<string | null>(null);
 
-    // --- LOADING DELETE ---
+    const [userPermissions, setUserPermissions] = useState<string[]>([]);
+    const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+
     const [deleting, setDeleting] = useState(false);
 
-    // --- TOAST NOTIF ---
-    const [toast, setToast] = useState<{
-        show: boolean;
-        message: string;
-        type: "success" | "error";
-    }>({ show: false, message: "", type: "success" });
+    const [toast, setToast] = useState<ToastMessage>({ show: false, message: "", type: "success" });
 
-    const showToast = (message: string, type: "success" | "error") => {
+    const showToast = useCallback((message: string, type: "success" | "error") => {
         setToast({ show: true, message, type });
-        setTimeout(
-            () => setToast({ show: false, message: "", type: "success" }),
-            2500
-        );
-    };
+        setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
+    }, []);
 
-    // --- MODAL STATE ----
-    const [modal, setModal] = useState({
+
+    const [modal, setModal] = useState<ModalState>({
         isOpen: false,
         message: "",
         isDeletion: false,
-        spkToDelete: null as SPKItem | null,
+        spkToDelete: null,
     });
 
     const closeModal = () => {
@@ -76,33 +112,136 @@ export default function DaftarSPKPage() {
         });
     };
 
-    // --- NAVIGASI Aksi ---
-    const handleAdd = () => router.push("/dashboard/spk/format");
-    const handleView = (spk: SPKItem) =>
-        router.push(`/dashboard/spk/format?view=${spk.uuid}`);
-    const handleEdit = (spk: SPKItem) =>
-        router.push(`/dashboard/spk/format?edit=${spk.uuid}`);
+    const hasPermission = useCallback((permissionName: string): boolean => {
+        return userPermissions.includes(permissionName);
+    }, [userPermissions]);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const storedPermissions = localStorage.getItem('user_permissions');
+            if (storedPermissions) {
+                try {
+                    const permissions = JSON.parse(storedPermissions);
+                    if (Array.isArray(permissions)) {
+                        setUserPermissions(permissions);
+                    }
+                } catch (e) {
+                    console.error("Gagal parse user_permissions:", e);
+                    setUserPermissions([]);
+                }
+            }
+
+            const userDataString = localStorage.getItem('user_data');
+            try {
+                if (userDataString) {
+                    const localUserData = JSON.parse(userDataString);
+                    const userNpp = localUserData.npp || null;
+                    const userName = localUserData.nama || localUserData.name || null;
+
+                    if (userNpp) {
+                        setCurrentUser({ npp: userNpp, name: userName });
+                    }
+                }
+            } catch (e) {
+                console.error("Gagal parse user_data dari localStorage:", e);
+            }
+
+            setPermissionsLoaded(true);
+        }
+    }, []);
+
+
+    const handleView = (spk: SPKItem) => {
+        if (!hasPermission('Workorder.spk.view')) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin (Workorder.spk.view) untuk melihat detail SPK.", "error");
+            return;
+        }
+        router.push(`/dashboard/spk/view?uuid=${spk.uuid}`);
+    };
+
+    const isUserApprover = (spk: SPKItem): boolean => {
+        if (!currentUser || !currentUser.npp) return false;
+
+        if (spk.menyetujui_npp && String(spk.menyetujui_npp) === String(currentUser.npp)) {
+            return true;
+        }
+        if (spk.mengetahui_npp && String(spk.mengetahui_npp) === String(currentUser.npp)) {
+            return true;
+        }
+
+        return false;
+    };
+
+    const handleEdit = (spk: SPKItem) => {
+        const nonEditableStatuses = ["Menunggu", "Selesai", "Tidak Selesai"];
+        const isApprover = isUserApprover(spk);
+
+        // --- LOGIKA BARU: Cek TTD Mengetahui ---
+        // Jika mengetahui_ttd tidak null, berarti sudah ditandatangani -> TIDAK BISA EDIT
+        if (spk.mengetahui_ttd) {
+             showToast(`Tidak dapat mengedit SPK karena sudah ditandatangani (Mengetahui).`, "error");
+             return;
+        }
+
+        if (!isApprover && nonEditableStatuses.includes(spk.status)) {
+            showToast(`Tidak dapat mengedit SPK dengan status '${spk.status}'.`, "error");
+            return;
+        }
+
+        if (!hasPermission('Workorder.spk.update')) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin (Workorder.spk.update) untuk mengedit SPK.", "error");
+            return;
+        }
+        router.push(`/dashboard/spk/format?uuid=${spk.uuid}`);
+    };
+
+    const handleAssign = (spk: SPKItem) => {
+        if (!hasPermission(PERMISSION_ASSIGN)) {
+            showToast(`Akses Ditolak: Anda tidak memiliki izin (${PERMISSION_ASSIGN}) untuk menugaskan SPK.`, "error");
+            return;
+        }
+        const nonAssignableStatuses = ["Proses", "Selesai", "Tidak Selesai"];
+        if (nonAssignableStatuses.includes(spk.status)) {
+            showToast(`SPK berstatus '${spk.status}' dan tidak dapat ditugaskan kembali.`, "error");
+            return;
+        }
+        router.push(`/dashboard/spk/assign?uuid=${spk.uuid}`);
+    };
 
     const handleDelete = (spk: SPKItem) => {
+        if (!hasPermission('Workorder.spk.delete')) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin (Workorder.spk.delete) untuk menghapus SPK.", "error");
+            return;
+        }
         setModal({
             isOpen: true,
-            message: `Apakah Anda yakin ingin menghapus SPK ${spk.nomor}?`,
+            message: `Apakah Anda yakin ingin menghapus SPK ${spk.nomor}? Tindakan ini tidak dapat dibatalkan.`,
             isDeletion: true,
             spkToDelete: spk,
         });
     };
 
-    // --- DELETE WITH LOADING + TOAST ---
-    const confirmDeletion = async () => {
-        if (!modal.spkToDelete) return;
+    const handleCopy = (text: string) => {
+        if (!text) return;
+        navigator.clipboard.writeText(text);
+        showToast("Nomor SPK disalin!", "success");
+    };
 
-        setDeleting(true); 
+    const handleTracking = (spk: SPKItem) => {
+        window.open(`/tracking/${spk.uuid}`, '_blank');
+    };
+
+    const confirmDeletion = async () => {
+        if (!modal.spkToDelete || !hasPermission('Workorder.spk.delete')) return;
+
+        setDeleting(true);
         const uuid = modal.spkToDelete.uuid;
 
         const token = localStorage.getItem("token");
         if (!token) {
-            showToast("Token tidak ditemukan. Silakan login ulang.", "error");
+            showToast("Otorisasi hilang. Silakan login ulang.", "error");
             setDeleting(false);
+            closeModal();
             return;
         }
 
@@ -116,11 +255,10 @@ export default function DaftarSPKPage() {
             });
 
             if (!res.ok) {
-                const errData = await res.json();
+                const errData = await res.json().catch(() => ({ message: res.statusText }));
                 throw new Error(errData.message || "Gagal menghapus SPK");
             }
 
-            // ANIMASI MUNCUL BEBERAPA MILIDETIK
             await new Promise((r) => setTimeout(r, 600));
 
             closeModal();
@@ -132,19 +270,25 @@ export default function DaftarSPKPage() {
             showToast(`Gagal menghapus: ${err.message}`, "error");
         } finally {
             setDeleting(false);
-            fetchData();
         }
     };
 
+    const fetchData = useCallback(async () => {
+        if (!permissionsLoaded) return;
 
-    // ---- FETCH DATA LIST SPK (MAPPING DIPERBAIKI) ----
-    const fetchData = async () => {
+        if (!hasPermission('Workorder.spk.views')) {
+            setError("Akses Ditolak: Anda tidak memiliki izin (Workorder.spk.views) untuk melihat daftar SPK.");
+            showToast("Akses Ditolak: Anda tidak memiliki izin untuk melihat daftar SPK.", "error");
+            setLoading(false);
+            return;
+        }
+
         setLoading(true);
         setError(null);
 
         const token = localStorage.getItem("token");
         if (!token) {
-            setError("Token tidak ditemukan.");
+            setError("Token tidak ditemukan. Silakan login ulang.");
             setLoading(false);
             return;
         }
@@ -164,28 +308,26 @@ export default function DaftarSPKPage() {
                     throw new Error(result.message || `Gagal memuat data`);
                 }
 
-                // --- MAPPING BARU DENGAN FIELD API YANG BENAR ---
                 const mapped: SPKItem[] = result.data.map((item: any) => {
-                    const statusText = item.status === "pending"
-                        ? "Menunggu"
-                        : item.status === "completed"
-                        ? "Selesai"
-                        : item.status === "assigned" || item.status === "in_progress"
-                        ? "Proses"
-                        : item.status || "Tidak Diketahui";
+                    const statusText = item.status?.name || "Tidak Diketahui";
 
                     const uuidIdentifier = item.uuid_pengajuan || item.id;
-                    
+
                     return {
                         id: item.id,
-                        nomor: item.no_surat || item.uuid_pengajuan || item.id?.toString() || "N/A", // Nomor SPK
-                        pekerjaan: item.uraian_pekerjaan || item.jenis_pekerjaan || "Tidak ada data",
+                        nomor: item.no_surat || item.uuid_pengajuan || item.id?.toString() || "N/A",
+                        pekerjaan: item.uraian_pekerjaan || item.jenis_pekerjaan?.nama_pekerjaan || "Tidak ada data",
                         tanggal: item.tanggal || "-",
                         status: statusText,
-                        uuid: uuidIdentifier.toString(), // ID unik untuk aksi CRUD
-                        namaPetugas: item.penanggung_jawab_name || "-", // Nama Petugas
+                        uuid: uuidIdentifier.toString(),
+                        namaPetugas: item.penanggung_jawab_name || "-",
+                        // Mapping data NPP Approver
+                        menyetujui_npp: item.menyetujui_npp,
+                        mengetahui_npp: item.mengetahui_npp,
+                        // Mapping Data TTD (Sesuai JSON API)
+                        mengetahui_ttd: item.mengetahui_ttd, 
                     };
-                }).filter((i: SPKItem) => i.uuid && i.uuid !== 'N/A'); // Filter yang lebih aman
+                }).filter((i: SPKItem) => i.uuid && i.uuid !== 'N/A');
 
                 setSpks(mapped);
                 setLoading(false);
@@ -198,15 +340,15 @@ export default function DaftarSPKPage() {
                 await new Promise((r) => setTimeout(r, 500));
             }
         }
-    };
+    }, [permissionsLoaded, hasPermission, showToast]);
 
     useEffect(() => {
-        fetchData();
-    }, []);
+        if (permissionsLoaded) {
+            fetchData();
+        }
+    }, [fetchData, permissionsLoaded]);
 
-    // --- FILTER ---
     const filteredSpk = spks.filter((item) => {
-        // Safe check untuk item.nomor dan item.pekerjaan (mencegah error .toLowerCase() pada null/number)
         const itemNomor = String(item.nomor || "").toLowerCase();
         const itemPekerjaan = String(item.pekerjaan || "").toLowerCase();
         const searchLower = search.toLowerCase();
@@ -226,59 +368,52 @@ export default function DaftarSPKPage() {
         selesai: spks.filter((s) => s.status === "Selesai").length,
         proses: spks.filter((s) => s.status === "Proses").length,
         menunggu: spks.filter((s) => s.status === "Menunggu").length,
+        belumSelesai: spks.filter((s) => s.status === "Belum Selesai").length,
+        tidakSelesai: spks.filter((s) => s.status === "Tidak Selesai").length,
     };
 
-    // --- FUNGSI WARNA CARD STATUS ---
-const getStatusColor = (status: string) => {
-    switch (status) {
-        case "Selesai":
-            return "bg-gradient-to-r from-green-500 to-green-600";
-        case "Proses":
-            return "bg-gradient-to-r from-yellow-500 to-orange-500";
-        case "Menunggu":
-            return "bg-gradient-to-r from-blue-400 to-blue-500";
-        case "Semua":
-            return "bg-gradient-to-r from-slate-500 to-slate-600";
-        default:
-            return "bg-gradient-to-r from-gray-400 to-gray-500";
-    }
-};
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case "Selesai":
+                return "bg-gradient-to-r from-green-500 to-green-600";
+            case "Proses":
+                return "bg-gradient-to-r from-yellow-500 to-orange-500";
+            case "Menunggu":
+                return "bg-gradient-to-r from-blue-400 to-blue-500";
+            case "Belum Selesai":
+                return "bg-gradient-to-r from-gray-500 to-gray-600";
+            case "Tidak Selesai":
+                return "bg-gradient-to-r from-gray-500 to-gray-600";
+            case "Semua":
+                return "bg-gradient-to-r from-slate-500 to-slate-600";
+            default:
+                return "bg-gradient-to-r from-gray-400 to-gray-500";
+        }
+    };
 
 
-    // ---- TOAST UI ----
-    const ToastBox = () =>
-        toast.show && (
-            <div
-                className={`fixed top-5 right-5 px-4 py-2 rounded-xl shadow-lg text-white text-sm z-50 animate-slide-in ${
-                    toast.type === "success"
-                        ? "bg-green-600"
-                        : "bg-red-600"
-                }`}
-            >
-                {toast.message}
-            </div>
-        );
-
-    // ---- CUSTOM MODAL ----
     const CustomModal = () =>
         modal.isOpen ? (
-            <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-                <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
-                    <div className="flex justify-between mb-4">
-                        <h3 className="font-bold text-red-600">
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition-all duration-300">
+                <div className="bg-white rounded-2xl p-7 w-full max-w-sm shadow-2xl transform scale-100 transition-transform duration-300">
+                    <div className="flex flex-col items-center mb-6">
+                        <div className="bg-red-100 p-3 rounded-full mb-3">
+                            <AlertTriangle className="text-red-600" size={32} />
+                        </div>
+                        <h3 className="text-xl font-bold text-red-700">
                             Konfirmasi Penghapusan
                         </h3>
-                        <button onClick={closeModal}>
-                            <X />
-                        </button>
                     </div>
 
-                    <p className="text-sm mb-6 text-black">{modal.message}</p>
+                    <p className="text-sm mb-7 text-center text-gray-700 font-medium">
+                        {modal.message}
+                    </p>
 
-                    <div className="flex justify-end gap-2">
+                    <div className="flex justify-end gap-3">
                         <button
                             onClick={closeModal}
-                            className="px-3 py-2 text-sm bg-gray-200 rounded-lg"
+                            disabled={deleting}
+                            className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors disabled:opacity-50"
                         >
                             Batal
                         </button>
@@ -286,7 +421,7 @@ const getStatusColor = (status: string) => {
                         <button
                             onClick={confirmDeletion}
                             disabled={deleting}
-                            className="px-3 py-2 text-sm bg-red-600 text-white rounded-lg flex items-center gap-2 disabled:opacity-50"
+                            className="px-4 py-2 text-sm bg-red-600 text-white rounded-xl shadow-md hover:bg-red-700 flex items-center gap-2 transition-colors disabled:bg-red-400 disabled:cursor-not-allowed"
                         >
                             {deleting && (
                                 <Loader2
@@ -294,28 +429,62 @@ const getStatusColor = (status: string) => {
                                     size={16}
                                 />
                             )}
-                            {deleting ? "Menghapus..." : "Ya, Hapus"}
+                            {deleting ? "Menghapus..." : "Ya, Hapus Permanen"}
                         </button>
                     </div>
                 </div>
             </div>
         ) : null;
 
-        const DeletingOverlay = () =>
-    deleting && (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
-        <div className="bg-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-3">
-            <Loader2 className="animate-spin text-red-600" size={20} />
-            <span className="text-sm font-semibold text-red-700">Menghapus data...</span>
-        </div>
-    </div>
-);
+    const DeletingOverlay = () =>
+        deleting && (
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] transition-opacity duration-300">
+                <div className="bg-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 border-t-4 border-red-500">
+                    <Loader2 className="animate-spin text-red-600" size={24} />
+                    <span className="text-lg font-semibold text-gray-800">Menghapus data SPK...</span>
+                </div>
+            </div>);
+
+    const canViewList = hasPermission('Workorder.spk.views');
+    const canViewDetail = hasPermission('Workorder.spk.view');
+    const canEdit = hasPermission('Workorder.spk.update');
+    const canDelete = hasPermission('Workorder.spk.delete');
+    const canCreate = hasPermission('Workorder.spk.create');
+    const canAssign = hasPermission(PERMISSION_ASSIGN);
+
+    if (!permissionsLoaded) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <Loader2 className="animate-spin text-blue-600 mr-3" size={32} />
+                <span className="text-xl font-medium text-gray-700">Memuat izin pengguna...</span>
+            </div>
+        );
+    }
+
+    if (!canViewList) {
+        return (
+            <div className="p-8 space-y-6 text-center bg-gray-50 min-h-screen">
+                <AlertTriangle className="inline-block text-red-500" size={48} />
+                <h2 className="text-3xl font-extrabold text-red-600">Akses Ditolak</h2>
+                <p className="text-gray-700 text-lg">Anda tidak memiliki izin (**Workorder.spk.views**) untuk melihat daftar SPK.</p>
+            </div>
+        );
+    }
+
+    if (loading && canViewList) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <Loader2 className="animate-spin text-cyan-600 mr-3" size={32} />
+                <span className="text-xl font-medium text-gray-700">Memuat data SPK...</span>
+            </div>
+        );
+    }
 
 
     // ---- UI ----
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-cyan-50 p-4">
-            <ToastBox />
+            <ToastBox toast={toast} onClose={() => setToast(prev => ({ ...prev, show: false }))} />
             <CustomModal />
             <DeletingOverlay />
             <div className="max-w-7xl mx-auto space-y-4">
@@ -336,19 +505,29 @@ const getStatusColor = (status: string) => {
                                 </p>
                             </div>
                         </div>
+
+                        {/* Tombol Tambah SPK Baru */}
+                        {canCreate && (
+                            <button
+                                onClick={() => router.push('/dashboard/spk/create')}
+                                className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-md hover:scale-[1.02] transition-transform"
+                            >
+                                <Plus size={18} /> Tambah SPK
+                            </button>
+                        )}
                     </div>
 
                     {/* STATS */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
                         {Object.entries(statusCount).map(([key, value]) => (
                             <div
                                 key={key}
                                 className={`${getStatusColor(
-                                    key === "semua" ? "Semua" : key.charAt(0).toUpperCase() + key.slice(1)
+                                    key === "semua" ? "Semua" : key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1')
                                 )} rounded-xl p-3 text-white shadow-md hover:scale-[1.02] transition-transform`}
                             >
                                 <p className="text-xs opacity-90 capitalize">
-                                    {key === "semua" ? "Total SPK" : key}
+                                    {key === "semua" ? "Total SPK" : key.replace(/([A-Z])/g, ' $1').trim()}
                                 </p>
                                 <p className="text-2xl font-bold mt-0.5">{value}</p>
                             </div>
@@ -356,7 +535,7 @@ const getStatusColor = (status: string) => {
                     </div>
                 </div>
 
-                {/* SEARCH */}
+                {/* SEARCH & FILTER */}
                 <div className="bg-white rounded-2xl shadow-lg p-4 border border-blue-100">
                     <div className="flex flex-col md:flex-row gap-3">
                         <div className="relative flex-1">
@@ -375,12 +554,14 @@ const getStatusColor = (status: string) => {
                             <select
                                 value={filterStatus}
                                 onChange={(e) => setFilterStatus(e.target.value)}
-                                className="bg-gray-50 border border-gray-300 rounded-xl py-2 pl-10 pr-7 min-w-[160px] text-sm text-black"
+                                className="bg-gray-50 border border-gray-300 rounded-xl py-2 pl-10 pr-7 min-w-[160px] text-sm text-black appearance-none cursor-pointer"
                             >
                                 <option value="Semua">Semua Status</option>
                                 <option value="Selesai">Selesai</option>
                                 <option value="Proses">Proses</option>
                                 <option value="Menunggu">Menunggu</option>
+                                <option value="Belum Selesai">Belum Selesai</option>
+                                <option value="Tidak Selesai">Tidak Selesai</option>
                             </select>
                         </div>
                     </div>
@@ -388,16 +569,11 @@ const getStatusColor = (status: string) => {
 
                 {/* TABLE */}
                 <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-blue-100">
-                    {loading ? (
-                        <div className="py-12 text-center">
-                            <Loader2 className="mx-auto animate-spin text-cyan-600 mb-3" size={32} />
-                            <p className="text-black text-sm font-medium">Memuat data SPK...</p>
-                        </div>
-                    ) : error ? (
+                    {error && !loading ? (
                         <div className="py-12 text-center bg-red-50/50">
                             <AlertTriangle className="mx-auto text-red-500 mb-3" size={32} />
                             <p className="text-red-700 text-sm font-medium">Error: {error}</p>
-                            <p className="text-red-600/80 text-xs mt-1">Silakan periksa konfigurasi token dan API server.</p> 
+                            <p className="text-red-600/80 text-xs mt-1">Silakan periksa izin atau koneksi API.</p>
                         </div>
                     ) : filteredSpk.length > 0 ? (
                         <div className="overflow-x-auto">
@@ -414,68 +590,131 @@ const getStatusColor = (status: string) => {
                                 </thead>
 
                                 <tbody className="divide-y divide-gray-100">
-                                    {filteredSpk.map((spk, index) => (
-                                        <tr
-                                            key={spk.id + spk.uuid} // Menggunakan kombinasi ID untuk keunikan
-                                            className="hover:bg-gradient-to-r hover:from-cyan-50 hover:to-blue-50 transition-all text-sm"
-                                        >
-                                            <td className="px-4 py-3 text-black">{index + 1}</td>
-                                            <td className="px-4 py-3 font-semibold text-blue-700">{spk.nomor}</td>
-                                            <td className="px-4 py-3 text-black">{spk.pekerjaan}</td>
+                                    {filteredSpk.map((spk, index) => {
+                                        const isNonAssignable = ["Proses", "Selesai", "Tidak Selesai", "Belum Selesai"].includes(spk.status);
 
-                                            <td className="px-4 py-3 text-black flex items-center gap-1.5 whitespace-nowrap">
-                                                <Calendar size={14} className="text-black/60" />
-                                                <span className="text-xs">{spk.tanggal}</span>
-                                            </td>
+                                        const isApprover = isUserApprover(spk);
+                                        const isStatusLocked = ["Menunggu", "Selesai", "Tidak Selesai"].includes(spk.status);
 
-                                            <td className="px-4 py-3">
-                                                <span
-                                                    className={`inline-flex items-center px-3 py-1 text-xs font-bold rounded-full shadow-sm ${
-                                                        spk.status === "Selesai"
-                                                            ? "bg-gradient-to-r from-green-400 to-green-500 text-white"
-                                                            : spk.status === "Proses" || spk.status === "Menunggu"
-                                                            ? "bg-gradient-to-r from-yellow-400 to-orange-400 text-white"
-                                                            : "bg-gradient-to-r from-gray-400 to-gray-500 text-white"
-                                                    }`}
-                                                >
-                                                    {spk.status}
-                                                </span>
-                                            </td>
+                                        const isSignedMengetahui = spk.mengetahui_ttd != null;
 
-                                            {/* Aksi Buttons */}
-                                            <td className="px-4 py-3 text-center">
-                                                <div className="flex justify-center gap-2">
+                                        const isEditDisabled =
+                                            isSignedMengetahui || 
+                                            (!isApprover && isStatusLocked) ||
+                                            !canEdit;
 
-                                                    {/* VIEW */}
-                                                    <button
-                                                        onClick={() => handleView(spk)}
-                                                        className="p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg shadow-md hover:scale-105 transition"
-                                                        title="Lihat Detail"
+                                        return (
+                                            <tr
+                                                key={spk.id + spk.uuid}
+                                                className="hover:bg-gradient-to-r hover:from-cyan-50 hover:to-blue-50 transition-all text-sm"
+                                            >
+                                                <td className="px-4 py-3 text-black">{index + 1}</td>
+
+                                                <td className="px-4 py-3 font-semibold text-blue-700">
+                                                    <div className="flex items-center gap-2">
+                                                        <span>{spk.nomor}</span>
+                                                        <div className="flex items-center gap-1">
+                                                            <button
+                                                                onClick={() => handleCopy(spk.nomor)}
+                                                                className="text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 transition-colors"
+                                                                title="Salin Nomor SPK"
+                                                            >
+                                                                <Copy size={14} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleTracking(spk)}
+                                                                className="text-gray-400 hover:text-orange-500 p-1 rounded hover:bg-orange-50 transition-colors"
+                                                                title="Lacak Status"
+                                                            >
+                                                                <MapPin size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </td>
+
+                                                <td className="px-4 py-3 text-black">{spk.pekerjaan}</td>
+
+                                                <td className="px-4 py-3 text-black flex items-center gap-1.5 whitespace-nowrap">
+                                                    <Calendar size={14} className="text-black/60" />
+                                                    <span className="text-xs">{spk.tanggal}</span>
+                                                </td>
+
+                                                <td className="px-4 py-3">
+                                                    <span
+                                                        className={`inline-flex items-center px-2 py-1 text-xs font-bold rounded-full shadow-sm ${spk.status === "Selesai"
+                                                                ? "bg-gradient-to-r from-green-400 to-green-500 text-white"
+                                                                : spk.status === "Proses"
+                                                                    ? "bg-gradient-to-r from-yellow-400 to-orange-400 text-white"
+                                                                    : spk.status === "Menunggu"
+                                                                        ? "bg-gradient-to-r from-blue-400 to-blue-500 text-white"
+                                                                        : "bg-gradient-to-r from-gray-400 to-gray-500 text-white"
+                                                            }`}
                                                     >
-                                                        <Eye size={16} />
-                                                    </button>
+                                                        {spk.status}
+                                                    </span>
+                                                </td>
 
-                                                    {/* EDIT */}
-                                                    <button
-                                                        onClick={() => handleEdit(spk)}
-                                                        className="p-2 bg-yellow-100 text-yellow-700 hover:bg-yellow-200 rounded-lg shadow-md hover:scale-105 transition"
-                                                        title="Edit SPK"
-                                                    >
-                                                        <Pencil size={16} />
-                                                    </button>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex justify-center gap-2">
 
-                                                    {/* DELETE */}
-                                                    <button
-                                                        onClick={() => handleDelete(spk)}
-                                                        className="p-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg shadow-md hover:scale-105 transition"
-                                                        title="Hapus SPK"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                                        <button
+                                                            onClick={() => handleView(spk)}
+                                                            disabled={deleting || !canViewDetail}
+                                                            title={!canViewDetail ? "Akses Ditolak: Tidak ada izin Workorder.spk.view" : "Lihat Detail"}
+                                                            className={`p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg shadow-md hover:scale-105 transition ${!canViewDetail || deleting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                        >
+                                                            <Eye size={16} />
+                                                        </button>
+
+                                                        <button
+                                                            onClick={() => handleAssign(spk)}
+                                                            disabled={deleting || !canAssign || isNonAssignable}
+                                                            title={
+                                                                !canAssign
+                                                                    ? `Akses Ditolak: Tidak ada izin ${PERMISSION_ASSIGN}`
+                                                                    : isNonAssignable
+                                                                        ? `SPK sudah berstatus '${spk.status}' dan tidak dapat ditugaskan kembali`
+                                                                        : "Tugaskan SPK ke Petugas"
+                                                            }
+                                                            className={`p-2 bg-cyan-100 text-cyan-700 hover:bg-cyan-200 rounded-lg shadow-md hover:scale-105 transition ${!canAssign || deleting || isNonAssignable ? 'opacity-50 cursor-not-allowed' : ''
+                                                                }`}
+                                                        >
+                                                            <Users size={16} />
+                                                        </button>
+
+                                                        <button
+                                                            onClick={() => handleEdit(spk)}
+                                                            disabled={deleting || isEditDisabled}
+                                                            title={
+                                                                !canEdit
+                                                                    ? "Akses Ditolak: Tidak ada izin Workorder.spk.update"
+                                                                    : isSignedMengetahui
+                                                                        ? "Tidak dapat diedit: Sudah ditandatangani (Mengetahui)"
+                                                                        : isEditDisabled
+                                                                            ? `Tidak dapat diedit karena status '${spk.status}'`
+                                                                            : isApprover
+                                                                                ? "Edit SPK (Akses Penyetuju/Mengetahui)"
+                                                                                : "Edit SPK"
+                                                            }
+                                                            className={`p-2 bg-yellow-100 text-yellow-700 hover:bg-yellow-200 rounded-lg shadow-md hover:scale-105 transition ${deleting || isEditDisabled ? 'opacity-50 cursor-not-allowed' : ''
+                                                                }`}
+                                                        >
+                                                            <Pencil size={16} />
+                                                        </button>
+
+                                                        <button
+                                                            onClick={() => handleDelete(spk)}
+                                                            disabled={deleting || !canDelete}
+                                                            title={!canDelete ? "Akses Ditolak: Tidak ada izin Workorder.spk.delete" : "Hapus SPK"}
+                                                            className={`p-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg shadow-md hover:scale-105 transition ${!canDelete || deleting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
 
                             </table>

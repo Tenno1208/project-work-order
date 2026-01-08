@@ -47,8 +47,12 @@ async function uploadFile(file: File, token: string, customName: string, type: '
     }
 
     if (res.ok && result.data?.filepath) { 
-        console.log(`[SUCCESS]: File Handler (${type}) berhasil. FilePath: ${result.data.filepath.slice(0, 50)}...`);
-        return result.data.filepath; 
+        const filepath = result.data.filepath;
+        console.log(`✅ File Handler (${type}) berhasil. FilePath: ${filepath}`);
+        
+        const cleanPath = filepath.replace(/\/\//g, '/');
+        
+        return cleanPath; 
     } else { 
         console.error(`🔴 RESPONS API PDAM GAGAL LENGKAP (${type}): HTTP ${res.status}. BODY:`, result);
         
@@ -59,7 +63,7 @@ async function uploadFile(file: File, token: string, customName: string, type: '
 } 
 
 // -------------------------------------------------------------------------
-// FUNGSI 2: uploadMultipleFiles (Untuk Lampiran > 1) - PERBAIKAN STRUKTUR RESPON
+// FUNGSI 2: uploadMultipleFiles (Untuk Lampiran > 1)
 // -------------------------------------------------------------------------
 async function uploadMultipleFiles(files: File[], token: string, customNamePrefix: string): Promise<string[]> {
     if (files.length === 0) return [];
@@ -76,8 +80,6 @@ async function uploadMultipleFiles(files: File[], token: string, customNamePrefi
         const fileNameOnly = `${customNamePrefix}-${i}.${fileExt}`; 
         
         formData.append(`photo_${i + 1}`, file, fileNameOnly); 
-        
-        // Perbaikan: Kirim HANYA NAMA FILE di field filename_N, sesuai dengan observasi respons sukses (meski berstatus 200 OK)
         formData.append(`filename_${i + 1}`, fileNameOnly); 
     }
     
@@ -100,13 +102,13 @@ async function uploadMultipleFiles(files: File[], token: string, customNamePrefi
         throw new Error(`Gagal membaca respons JSON dari Multiple File Handler. Status HTTP: ${res.status}. Response: ${rawText.slice(0, 50)}...`);
     }
     
-    // Perbaikan: Mengonversi objek respons bernomor menjadi array filepath
     if (res.ok && result.data && typeof result.data === 'object' && !Array.isArray(result.data)) { 
-        console.log(`[SUCCESS]: Multiple File Handler berhasil. Total files: ${Object.keys(result.data).length}`);
+        console.log(`✅ Multiple File Handler berhasil. Total files: ${Object.keys(result.data).length}`);
         
         const uploadedPaths = Object.values(result.data)
             .map((item: any) => item.filepath)
-            .filter((path: string) => path);
+            .filter((path: string) => path)
+            .map((path: string) => path.replace(/\/\//g, '/')); 
             
         return uploadedPaths; 
     } else { 
@@ -114,8 +116,7 @@ async function uploadMultipleFiles(files: File[], token: string, customNamePrefi
         const apiMessage = result.message || result.status || 'Tidak ada pesan spesifik dari Multiple File Handler.';
         throw new Error(`Gagal upload Multiple File Handler. Status ${res.status}. Pesan API: ${apiMessage}`);
     }
-}  
-
+}
 
 export async function GET(req: Request) {
     if (GET_API_URL.startsWith("http://default-")) {
@@ -206,21 +207,25 @@ export async function POST(req: Request) {
         const formData = await req.formData();
         const timestamp = Date.now();
         
-        let ttdUrl: string | undefined = undefined; 
+        let ttdFilepath: string | undefined = undefined; 
         const dummyUuid = '87c54c75-c124-4242-8e7d-bac0f7003e40';
         const dummyNpp = '05010175-1002-202412';
         
-        // #################################################
-        // 1. AKTIFKAN UPLOAD TTD PELAPOR (Satu File API)
-        // #################################################
+        // ========================================================
+        // 1. UPLOAD TTD PELAPOR (Satu File API)
+        // ========================================================
         const ttdFile = formData.get('ttdPelapor');
         if (ttdFile instanceof File && ttdFile.size > 0) {
-            console.log("[POST /api/pengajuan] Sedang memproses upload TTD pelapor ke PDAM...");
+            console.log("[POST /api/pengajuan] 📤 Sedang upload TTD pelapor ke PDAM...");
             try {
-                const fileExt = ttdFile.name.split('.').pop() || 'png';
-                const ttdCustomName = `ttd-pelapor-${dummyUuid}-${timestamp}.${fileExt}`; 
+                const ttdCustomName = `ttd-pelapor-${dummyUuid}-${timestamp}.png`; 
                 
-                ttdUrl = await uploadFile(ttdFile, token!, ttdCustomName, 'ttd');
+                ttdFilepath = await uploadFile(ttdFile, token!, ttdCustomName, 'ttd');
+                
+                console.log("=".repeat(70));
+                console.log("✅ TTD berhasil di-upload ke File Handler PDAM");
+                console.log("📦 FilePath (Path Relatif):", ttdFilepath);
+                console.log("=".repeat(70));
                 
             } catch (e: any) {
                 console.error("❌ Gagal upload TTD pelapor:", e.message);
@@ -228,9 +233,9 @@ export async function POST(req: Request) {
             }
         } 
         
-        // #################################################
-        // 2. LOGIKA UPLOAD LAMPIRAN BARU (Multiple File API)
-        // #################################################
+        // ========================================================
+        // 2. UPLOAD LAMPIRAN BARU (Multiple File API)
+        // ========================================================
         const newFiles: File[] = [];
         for (let i = 0; i < 4; i++) {
             const file = formData.get(`new_file_${i}`); 
@@ -239,25 +244,27 @@ export async function POST(req: Request) {
             }
         }
         
-        let fileUrls: string[] = [];
+        let fileFilepaths: string[] = [];
         
         if (newFiles.length > 0) {
             const customNamePrefix = `work-order-${dummyUuid}-${dummyNpp}-${timestamp}`;
             
             try {
                 if (newFiles.length === 1) {
-                    console.log("[POST /api/pengajuan] Sedang memproses 1 lampiran baru menggunakan API single upload...");
+                    console.log("[POST /api/pengajuan] 📤 Upload 1 lampiran (single API)...");
                     const file = newFiles[0];
-                    const fileExt = file.name.split('.').pop() || 'jpg';
+                    const fileExt = file.name.split('.').exp;
                     const fileCustomName = `${customNamePrefix}-0.${fileExt}`; 
                     
-                    const uploadedPath = await uploadFile(file, token!, fileCustomName, 'pengajuans');
-                    fileUrls = [uploadedPath];
+                    const uploadedFilepath = await uploadFile(file, token!, fileCustomName, 'pengajuans');
+                    fileFilepaths = [uploadedFilepath];
                 } 
                 else {
-                    console.log(`[POST /api/pengajuan] Sedang memproses ${newFiles.length} lampiran baru menggunakan API multiple upload...`);
-                    fileUrls = await uploadMultipleFiles(newFiles, token!, customNamePrefix); 
+                    console.log(`[POST /api/pengajuan] 📤 Upload ${newFiles.length} lampiran (multiple API)...`);
+                    fileFilepaths = await uploadMultipleFiles(newFiles, token!, customNamePrefix); 
                 }
+                
+                console.log("✅ Lampiran berhasil di-upload. Total:", fileFilepaths.length);
                 
             } catch (e) {
                 let errorMsg = e instanceof Error ? e.message : "Error tidak diketahui saat upload lampiran ke PDAM.";
@@ -265,33 +272,106 @@ export async function POST(req: Request) {
             }
         }
         
-        // --- MEMBUAT DATA UNTUK API UTAMA ---
+        // ========================================================
+        // 3. SIAPKAN DATA UNTUK API EKSTERNAL
+        // ========================================================
         const externalFormData = new FormData();
+
+        // ========================================================
+        // 4. DEBUG LOG - LIHAT DATA YANG DITERIMA
+        // ========================================================
+        console.log("=".repeat(70));
+        console.log("📥 DEBUG: Data yang diterima dari frontend:");
+        for (let [key, value] of formData.entries()) {
+            // Jangan log file binary
+            if (value instanceof File) {
+                console.log(`${key}: File: ${value.name} (${value.size} bytes)`);
+            } else {
+                console.log(`${key}: ${value}`);
+            }
+        }
+        console.log("=".repeat(70));
+
+        // ========================================================
+        // 5. MAPPING FIELD DENGAN DEBUG LOG LENGKAP
+        // ========================================================
         const standardFields = [
             { clientKey: "hal", externalName: "hal_id" }, 
-            { clientKey: "kepada", externalName: "kepada" }, 
+            { clientKey: "kepada", externalName: "kd_satker" }, 
             { clientKey: "satker", externalName: "satker" }, 
             { clientKey: "kodeBarang", externalName: "kode_barang" }, 
             { clientKey: "keterangan", externalName: "keterangan" }, 
             { clientKey: "hal_nama", externalName: "catatan" }, 
-            { clientKey: "pelapor", externalName: "pelapor" }, 
-            { clientKey: "nppPelapor", externalName: "npp_pelapor" }, 
-            { clientKey: "mengetahui", externalName: "mengetahui" }, 
-            { clientKey: "nppMengetahui", externalName: "npp_mengetahui" }, 
-            { clientKey: "uuid", externalName: "uuid" },
+            { 
+                clientKey: "pelapor", 
+                externalName: "pelapor" 
+            }, 
+            { 
+                clientKey: "nppPelapor", 
+                externalName: "npp_pelapor" 
+            },  
+            { 
+                clientKey: "uuid", 
+                externalName: "uuid" 
+            },
+            { 
+                clientKey: "mengetahui", 
+                externalName: "mengetahui" 
+            }, 
+            { 
+                clientKey: "mengetahui_name", 
+                externalName: "mengetahui_name" 
+            }, 
+            { 
+                clientKey: "nppMengetahui", 
+                externalName: "mengetahui_npp" 
+            },
+            { 
+                clientKey: "referensiSurat", 
+                externalName: "no_referensi" 
+            },
+            { 
+                clientKey: "mengetahuiTlp", 
+                externalName: "mengetahui_tlp" 
+            }, 
         ];
+
+        console.log("=".repeat(70));
+        console.log("🔍 DEBUG: Proses mapping field:");
         
+        // Kirim data ke FormData eksternal dengan validasi dan debug log
         for (const field of standardFields) {
             const value = formData.get(field.clientKey);
-            if (value !== null) { 
+            
+            // Debug log sebelum mapping
+            console.log(`   ${field.clientKey} (${field.externalName}): ${value}`);
+            
+            if (value !== null && value !== undefined) { 
                 const finalValue = field.clientKey === "hal" ? Number(value) : String(value);
+                
+                // Debug log setelah mapping
                 externalFormData.append(field.externalName, finalValue);
+                console.log(`✅ ${field.clientKey} -> ${field.externalName}: ${finalValue}`);
+            } else {
+                console.log(`❌ ${field.clientKey} (${field.externalName}): NULL/TIDAK ADA`);
             }
         }
         
-        // #################################################
-        // 3. PENGIRIMAN file_paths (Wajib Ada + Format Array)
-        // #################################################
+        console.log("=".repeat(70));
+        console.log("📤 DEBUG: Final payload yang akan dikirim ke API eksternal:");
+        for (let [key, value] of externalFormData.entries()) {
+            // Jangan log file binary
+            if (value instanceof File) {
+                console.log(`${key}: File: ${value.name} (${value.size} bytes)`);
+            } else {
+                console.log(`${key}: ${value}`);
+            }
+        }
+        console.log("=".repeat(70));
+
+        // ========================================================
+        // 6. PROSES FILE PATHS
+        // ========================================================
         const existingFilesJson = formData.get('existingFiles') as string | null;
         let existingFileUrls: string[] = [];
         if (existingFilesJson) {
@@ -303,28 +383,32 @@ export async function POST(req: Request) {
             }
         }
         
-        const allFileUrls = existingFileUrls.concat(fileUrls);
+        const allFilePaths = existingFileUrls.concat(fileFilepaths);
         
-        if (allFileUrls.length > 0) {
-            externalFormData.append('file_paths', JSON.stringify(allFileUrls)); 
+        if (allFilePaths.length > 0) {
+            externalFormData.append('file_paths', JSON.stringify(allFilePaths)); 
         } else {
             externalFormData.append('file_paths', '[]'); 
         }
         
-        // #################################################
-        // 4. PENGIRIMAN TTD URL (setelah sukses upload ke PDAM)
-        // #################################################
-        if (ttdUrl) {
-            externalFormData.append('ttd_pelapor', ttdUrl);
+        // ========================================================
+        // 7. TAMBAHKAN TTD
+        // ========================================================
+        if (ttdFilepath) {
+            console.log("=".repeat(70));
+            console.log("📤 MENGIRIM TTD KE API PENGAJUAN UTAMA");
+            console.log("📦 FilePath yang dikirim:", ttdFilepath);
+            console.log("=".repeat(70));
+    
+            externalFormData.append('ttd_pelapor', ttdFilepath);
         } else {
-            const ttdPelaporPath = formData.get('ttdPelaporPath');
-            if (ttdPelaporPath) {
-                externalFormData.append('ttd_pelapor', String(ttdPelaporPath));
-            } else {
-                externalFormData.append('ttd_pelapor', ''); 
-            }
+            console.log("⚠️ Tidak ada TTD baru yang di-upload");
+            externalFormData.append('ttd_pelapor', ''); 
         }
 
+        // ========================================================
+        // 8. KIRIM KE API EKSTERNAL
+        // ========================================================
         const res = await fetch(EXTERNAL_API_URL, {
             method: "POST",
             headers: {
@@ -335,9 +419,6 @@ export async function POST(req: Request) {
             cache: "no-store",
         });
         
-        // ==========================================================
-        // >> KEMBALIKAN LOGIKA PARSING DAN PENGEMBALIAN RESPONS JSON <<
-        // ==========================================================
         const rawText = await res.text();
         let responseJson: any; 
 
@@ -358,17 +439,22 @@ export async function POST(req: Request) {
             });
         }
         
-        if (!res.ok) {
-            console.error(`❌ API Pengajuan Utama GAGAL (${res.status}). RESPONS ASLI:`, responseJson); // MENCATAT RESPONS ASLI
-        } else {
-            console.log(`✅ API Pengajuan Utama SUKSES (${res.status}). Respons Mentah: ${rawText.slice(0, 500)}`);
-        }
+        // ========================================================
+        // 9. DEBUG LOG RESPONS
+        // ========================================================
+        console.log("=".repeat(70));
+        console.log(`📦 RESPONSE API EKSTERNAL (Status: ${res.status})`);
+        console.log("=".repeat(70));
         
-        if (responseJson?.data) {
-            if (typeof responseJson.data.ttd_pelapor === 'string') {
-                responseJson.data.ttd_pelapor = responseJson.data.ttd_pelapor.replace(/\\\//g, '/');
-            }
+        if (!res.ok) {
+            console.error(`❌ API Pengajuan Utama GAGAL (${res.status})`);
+            console.error("RESPONSE ASLI:", responseJson);
+        } else {
+            console.log("✅ API PENGAJUAN UTAMA SUKSES");
+            console.log("📦 Response data:", responseJson?.data);
+            console.log("📦 npp_kepala_satker di response:", responseJson?.data?.npp_kepala_satker);
         }
+        console.log("=".repeat(70));
         
         return NextResponse.json(responseJson, {
             status: res.status,

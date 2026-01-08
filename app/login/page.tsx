@@ -1,22 +1,152 @@
 "use client";
 
 import { useState } from "react";
-import { Droplets, User, Lock, Eye, EyeOff, Loader2, Zap } from "lucide-react";
+import { Droplets, User, Lock, Eye, EyeOff, Loader2, Zap, AlertCircle, Wifi, WifiOff } from "lucide-react";
+
+const PERMISSIONS_API_LOCAL_PROXY = "/api/permissions";
+
+interface UserData { 
+    nama?: string; 
+    npp?: string; 
+    no_telp?: string; 
+    satker?: string; 
+    subsatker?: string; 
+    kdparent: string | number;
+}
+
+enum ErrorType {
+  NETWORK = "network",
+  SERVER = "server",
+  AUTH = "auth",
+  VALIDATION = "validation",
+  UNKNOWN = "unknown"
+}
 
 export default function LoginPage() {
   const [npp, setNpp] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [errorType, setErrorType] = useState<ErrorType>(ErrorType.UNKNOWN);
   const [showPassword, setShowPassword] = useState(false);
   const [focusedInput, setFocusedInput] = useState("");
+  const [isOnline, setIsOnline] = useState(true);
+
+  const getToken = () => localStorage.getItem("token");
+
+  const isNetworkError = (err: any) => {
+    return err instanceof TypeError && err.message.includes('fetch');
+  };
+
+  const handleApiError = (err: any, defaultMessage: string = "Terjadi kesalahan tak terduga.") => {
+    console.error("API Error:", err);
+    
+    if (isNetworkError(err)) {
+      setErrorType(ErrorType.NETWORK);
+      return "Tidak dapat terhubung ke server. Periksa koneksi internet Anda dan coba lagi.";
+    }
+    
+    if (err.status) {
+      switch (err.status) {
+        case 400:
+          setErrorType(ErrorType.VALIDATION);
+          return "Data yang dimasukkan tidak valid. Silakan periksa kembali.";
+        case 401:
+        case 403:
+          setErrorType(ErrorType.AUTH);
+          return "Autentikasi gagal. NPP atau password salah.";
+        case 500:
+        case 502:
+        case 503:
+        case 504:
+          setErrorType(ErrorType.SERVER);
+          return "Server sedang bermasalah. Silakan coba lagi beberapa saat.";
+        default:
+          setErrorType(ErrorType.UNKNOWN);
+          return err.message || defaultMessage;
+      }
+    }
+    
+    setErrorType(ErrorType.UNKNOWN);
+    return err.message || defaultMessage;
+  };
+
+  // --- API CALLS ---
+  const fetchAndStoreUserData = async (token: string): Promise<UserData> => {   
+      try {
+          const res = await fetch("/api/me", { 
+              method: "GET", 
+              headers: { 
+                  Authorization: `Bearer ${token}`, 
+                  "Content-Type": "application/json", 
+              } 
+          });
+          
+          if (!res.ok) { 
+              if (res.status === 401 || res.status === 403) { 
+                  localStorage.removeItem("token"); 
+                  localStorage.removeItem("user_data"); 
+                  localStorage.removeItem("user_permissions"); 
+                  window.location.href = "/login"; 
+              } 
+              throw new Error(handleApiError({ status: res.status }, "Gagal mengambil data pengguna"));
+          }
+          
+          const flatUserData = await res.json();
+          const userProfile: UserData = { 
+              nama: flatUserData.nama || "Tanpa Nama", 
+              npp: flatUserData.npp || "-", 
+              no_telp: flatUserData.no_telp || "-", 
+              satker: flatUserData.satker || "-", 
+              subsatker: flatUserData.subsatker || "-", 
+              kdparent: flatUserData.kdparent || "-",
+          };
+          localStorage.setItem("user_data", JSON.stringify(userProfile));
+          return userProfile;
+      } catch (err) { 
+          const errorMessage = handleApiError(err, "Gagal mengambil data pengguna");
+          setError(errorMessage);
+          throw new Error(errorMessage);
+      }
+  };
+
+  const fetchAndStorePermissions = async (token: string, npp: string): Promise<string[]> => { 
+      const finalPermissionsApiUrl = `${PERMISSIONS_API_LOCAL_PROXY}/${npp}`;
+      try {
+          const res = await fetch(finalPermissionsApiUrl, { 
+              method: "GET", 
+              headers: { 
+                  Authorization: `Bearer ${token}`, 
+                  "Content-Type": "application/json", 
+              } 
+          });
+          
+          if (!res.ok) { 
+              localStorage.setItem("user_permissions", JSON.stringify([])); 
+              throw new Error(handleApiError({ status: res.status }, "Gagal mengambil izin akses"));
+          }
+          
+          const json = await res.json();
+          const rawPermissions = (json.data && Array.isArray(json.data.permissions)) ? json.data.permissions : [];
+          const permissions: string[] = rawPermissions.map((p: any) => typeof p === 'string' ? p : '').filter(Boolean);
+          localStorage.setItem("user_permissions", JSON.stringify(permissions));
+          return permissions;
+      } catch (err) { 
+          const errorMessage = handleApiError(err, "Gagal mengambil izin akses");
+          setError(errorMessage);
+          localStorage.setItem("user_permissions", JSON.stringify([])); 
+          throw new Error(errorMessage);
+      }
+  };
 
   const handleLogin = async (e) => {
-    e.preventDefault();
+    e.preventDefault(); 
     setError("");
+    setErrorType(ErrorType.UNKNOWN);
 
     if (!npp || !password) {
       setError("NPP dan password wajib diisi.");
+      setErrorType(ErrorType.VALIDATION);
       return;
     }
 
@@ -32,18 +162,59 @@ export default function LoginPage() {
       const data = text ? JSON.parse(text) : {};
 
       if (!response.ok) {
-        throw new Error(data.message || "Login gagal. Silakan coba lagi.");
+        throw new Error(handleApiError({ status: response.status, message: data.message }, "Login gagal. Silakan coba lagi."));
       }
 
       const token = data?.token;
       if (!token) throw new Error("Token tidak ditemukan di server.");
 
       localStorage.setItem("token", token);
-      setTimeout(() => window.location.href = "/dashboard", 800);
+      
+      try {
+        const userData = await fetchAndStoreUserData(token);
+        if (userData.npp && userData.npp !== '-') {
+          await fetchAndStorePermissions(token, userData.npp);
+        }
+        
+        setTimeout(() => window.location.href = "/dashboard", 800);
+      } catch (apiError) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user_data");
+        localStorage.removeItem("user_permissions");
+        throw apiError;
+      }
     } catch (err) {
       setError(err.message || "Terjadi kesalahan tak terduga.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getErrorIcon = () => {
+    switch (errorType) {
+      case ErrorType.NETWORK:
+        return <WifiOff className="w-5 h-5 mt-0.5 flex-shrink-0" />;
+      case ErrorType.SERVER:
+        return <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />;
+      case ErrorType.AUTH:
+      case ErrorType.VALIDATION:
+        return <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />;
+      default:
+        return <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />;
+    }
+  };
+
+  const getErrorColor = () => {
+    switch (errorType) {
+      case ErrorType.NETWORK:
+        return "bg-orange-500/10 border-orange-500/30 text-orange-300";
+      case ErrorType.SERVER:
+        return "bg-red-500/10 border-red-500/30 text-red-300";
+      case ErrorType.AUTH:
+      case ErrorType.VALIDATION:
+        return "bg-yellow-500/10 border-yellow-500/30 text-yellow-300";
+      default:
+        return "bg-red-500/10 border-red-500/30 text-red-300";
     }
   };
 
@@ -76,7 +247,6 @@ export default function LoginPage() {
           <div className="relative p-6 text-center">
             <img src="/pdam.png" alt="PDAM Logo" className="w-16 h-16 mx-auto mb-3 rounded-2xl shadow-lg shadow-blue-500/50" />
             
-            
             <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-cyan-300 to-blue-400 bg-clip-text text-transparent mb-1 tracking-tight">
               PDAM Portal
             </h1>
@@ -87,13 +257,28 @@ export default function LoginPage() {
           </div>
 
           {/* Form */}
-          <div className="p-8 pt-4 relative z-10">
+          <form onSubmit={handleLogin} className="p-8 pt-4 relative z-10">
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 backdrop-blur-sm text-red-300 p-4 rounded-xl mb-6 flex items-start gap-3 animate-shake">
-                <svg className="w-5 h-5 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-                <span className="text-sm">{error}</span>
+              <div className={`${getErrorColor()} p-4 rounded-xl mb-6 flex items-start gap-3 animate-shake`}>
+                {getErrorIcon()}
+                <div className="flex-1">
+                  <span className="text-sm font-medium">{error}</span>
+                  {errorType === ErrorType.NETWORK && (
+                    <p className="text-xs mt-1 opacity-80">
+                      Pastikan Anda terhubung ke internet dan server dapat diakses.
+                    </p>
+                  )}
+                  {errorType === ErrorType.SERVER && (
+                    <p className="text-xs mt-1 opacity-80">
+                      Server sedang mengalami masalah. Silakan coba lagi dalam beberapa saat.
+                    </p>
+                  )}
+                  {errorType === ErrorType.AUTH && (
+                    <p className="text-xs mt-1 opacity-80">
+                      Periksa kembali NPP dan password Anda.
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 
@@ -135,7 +320,7 @@ export default function LoginPage() {
                   onBlur={() => setFocusedInput('')}
                 />
                 <button
-                  type="button"
+                  type="button" // Tetap type="button" agar tidak memicu submit form
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-400 transition-colors z-10"
                 >
@@ -146,8 +331,7 @@ export default function LoginPage() {
 
             {/* Login Button */}
             <button
-              type="button"
-              onClick={handleLogin}
+              type="submit"
               disabled={loading}
               className="w-full bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 text-white py-4 rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-500/50 transition-all duration-300 flex items-center justify-center gap-2 relative overflow-hidden group disabled:opacity-70 disabled:cursor-not-allowed"
             >
@@ -161,7 +345,8 @@ export default function LoginPage() {
                 <span className="relative z-10">Masuk ke Sistem</span>
               )}
             </button>
-          </div>
+          {/* PERUBAHAN 3: Menutup tag <form> */}
+          </form>
 
           {/* Footer */}
           <div className="text-center pb-6 px-6 relative z-10">

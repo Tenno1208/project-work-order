@@ -1,0 +1,891 @@
+"use client";
+
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { Calendar, X, CheckCircle, Loader2, AlertTriangle, Users, ArrowLeft, ChevronDown, ChevronUp, File, Image as ImageIcon, Download, Printer, QrCode } from "lucide-react";
+
+// ====================================================================
+// --- TYPES & CONSTANTS ----------------------------------------------
+// ====================================================================
+
+type PegawaiItem = {
+    name: string;
+    npp: string | null;
+    jabatan: string | null;
+    tlp?: string | null;
+};
+
+type AssignedPerson = PegawaiItem & {
+    isPic: boolean;
+};
+
+type ToastMessage = {
+    show: boolean;
+    message: string;
+    type: "success" | "error" | "warning";
+};
+
+type SPKDetail = {
+    id: number;
+    uuid: string;
+    uuid_pengajuan: string | null;
+    status_id: number;
+    status: {
+        id: number;
+        code: string;
+        name: string;
+    };
+    jenis_pekerjaan_id: number;
+    jenis_pekerjaan: {
+        id: number;
+        kode: string;
+        nama_pekerjaan: string;
+    };
+    no_referensi: string;
+    no_surat: string;
+    menyetujui: string;
+    menyetujui_name: string;
+    menyetujui_npp: string;
+    menyetujui_tlp: string;
+    menyetujui_ttd: string | null;
+    mengetahui: string;
+    mengetahui_name: string;
+    mengetahui_npp: string;
+    mengetahui_tlp: string;
+    mengetahui_ttd: string | null;
+    penanggung_jawab_name: string;
+    penanggung_jawab_npp: string;
+    penanggung_jawab_tlp: string;
+    penanggung_jawab_ttd: string | null;
+    npp_kepala_satker: string;
+    stafs: Array<{
+        npp: string;
+        nama: string;
+        tlp: string;
+        is_penanggung_jawab: boolean;
+    }>;
+    tanggal: string;
+    kode_barang: string;
+    file: string[];
+    uraian_pekerjaan: string;
+    is_deleted: number;
+    created_at: string;
+    updated_at: string;
+};
+
+type PengajuanDetail = {
+    uuid: string;
+    no_surat: string;
+    nama_jenis: string;
+    hal_id: string;
+    kepada: string;
+    satker: string;
+    name_pelapor: string;
+    npp_pelapor: string;
+    tlp_pelapor: string;
+    ttd_pelapor_path: string | null;
+    mengetahui: string | null;
+    mengetahui_name: string | null;
+    ttd_mengetahui_path: string | null;
+    keterangan: string;
+    file_paths: string[];
+    tanggal: string;
+    kode_barang: string | null;
+};
+
+const API_BASE_URL = "https://workorder123.loca.lt";
+const GET_API_SPK_VIEW_TEMPLATE_PROXY = "/api/spk-proxy/view/{uuid}";
+const GET_API_PENGAJUAN_VIEW_PROXY = "/api/pengajuan/view/{uuid}";
+
+// ====================================================================
+// --- UTILITY FUNCTIONS & COMPONENTS UNTUK FILE/MODAL ----------------
+// ====================================================================
+
+const getProxyFileUrl = (path: string | null | undefined): string | null => {
+    if (!path || path.trim() === '') return null;
+    
+    const sanitizedPath = path.startsWith('/') ? path.slice(1) : path;
+    
+    if (path.startsWith('http')) {
+        return `/api/image-proxy?url=${encodeURIComponent(path)}`;
+    }
+
+    return `/api/image-proxy?path=${encodeURIComponent(sanitizedPath)}`;
+};
+
+async function loadImageWithProxy(imgUrl: string, token: string): Promise<string> {
+    if (imgUrl.startsWith('data:')) return imgUrl;
+    return new Promise(async (resolve) => {
+        try {
+            let targetUrl = imgUrl;
+            if (!imgUrl.startsWith('http')) {
+                const cleanPath = imgUrl.startsWith('/') ? imgUrl.slice(1) : imgUrl;
+                targetUrl = `https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto/?path=${cleanPath}`;
+            }
+            const proxyUrl = `/api/file-proxy?url=${encodeURIComponent(targetUrl)}`;
+            const res = await fetch(proxyUrl, {
+                headers: {
+                    'Authorization': `Bearer ${token.replace('Bearer ', '')}`,
+                    'Accept': 'image/png, image/jpeg, image/gif',
+                },
+            });
+            if (!res.ok) {
+                console.error("Gagal load image via proxy:", res.status);
+                return resolve(imgUrl);
+            }
+            const blob = await res.blob();
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => resolve(imgUrl);
+            reader.readAsDataURL(blob);
+        } catch (error) {
+            console.error("Error loading image with proxy:", error);
+            resolve(imgUrl);
+        }
+    });
+}
+
+const ImageModal = ({ imageUrl, onClose }: { imageUrl: string | null, onClose: () => void }) => {
+    if (!imageUrl) return null;
+
+    return (
+        <div 
+            className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999]"
+            onClick={onClose}
+        >
+            <div 
+                className="relative bg-white rounded-lg shadow-2xl max-w-4xl max-h-[90vh] overflow-auto"
+                onClick={e => e.stopPropagation()} 
+            >
+                <button
+                    onClick={onClose}
+                    className="absolute top-3 right-3 p-2 bg-white rounded-full text-gray-800 hover:bg-gray-100 transition z-10"
+                    title="Tutup"
+                >
+                    <X size={20} />
+                </button>
+                
+                <img src={imageUrl} alt="Lampiran Detail" className="w-full h-auto max-w-[80vw] max-h-[85vh] object-contain p-2"/>
+            </div>
+        </div>
+    );
+};
+
+// ====================================================================
+// --- UTILITY COMPONENTS ---------------------------------------------
+// ====================================================================
+
+const Button = ({ 
+    onClick, 
+    children, 
+    className = "bg-blue-600 hover:bg-blue-700 text-white", 
+    disabled = false 
+}: { onClick: () => void, children: React.ReactNode, className?: string, disabled?: boolean }) => (
+    <button
+        onClick={onClick}
+        className={`px-4 py-2 font-semibold text-sm rounded-lg transition-colors ${className} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        disabled={disabled}
+    >
+        {children}
+    </button>
+);
+
+const ToastBox = ({ toast, onClose }: { toast: ToastMessage, onClose: () => void }) =>
+    toast.show && (
+        <div
+            className={`fixed top-5 right-5 px-4 py-2 rounded-xl shadow-lg text-white text-sm z-50 transition-opacity duration-300 flex items-center gap-2 ${
+                toast.type === "success" ? "bg-green-600" : (toast.type === "error" ? "bg-red-600" : "bg-yellow-600")
+            }`}
+        >
+            {toast.message}
+            <button onClick={onClose} className="text-white ml-2">
+                <X size={14} />
+            </button>
+        </div>
+    );
+
+const Chip = ({ person }: { person: AssignedPerson }) => {
+    const isReadOnly = true; 
+
+    return (
+        <div className="flex items-center bg-blue-100 text-blue-800 text-xs font-medium px-3 py-1 rounded-full my-1 shadow-sm border border-blue-200">
+            <div
+                className={`
+                    mr-2 flex items-center justify-center transition-colors duration-200
+                    ${isReadOnly ? 'cursor-default opacity-80' : 'cursor-pointer'}
+                `}
+                title={person.isPic ? "Penanggung Jawab (PIC)" : "Anggota Tim"}
+            >
+                {person.isPic ? (
+                    <CheckCircle className="w-4 h-4 text-green-600 fill-green-200" />
+                ) : (
+                    <div className="w-4 h-4 border-2 border-gray-400 rounded-full"></div>
+                )}
+            </div>
+            <Users className="w-4 h-4 mr-1 text-blue-600" />
+            <span className="font-medium">{person.name}{person.npp ? ` (${person.npp})` : ''}</span>
+        </div>
+    );
+};
+
+const ViewBox = ({ 
+    value, 
+}: {
+    value: string | undefined;
+}) => {
+    return (
+        <div
+            className={`min-h-[140px] p-2 text-black border border-gray-300 rounded-md shadow-inner text-sm bg-gray-100 cursor-not-allowed`}
+            style={{ whiteSpace: "pre-wrap" }}
+        >
+            {value || "Tidak ada uraian pekerjaan tercatat."}
+        </div>
+    );
+};
+
+// ====================================================================
+// --- COLLAPSIBLE COMPONENTS -----------------------------------------
+// ====================================================================
+
+const PengajuanDetailView = ({ 
+    detail, 
+    onImageClick 
+}: { 
+    detail: PengajuanDetail; 
+    onImageClick: (url: string) => void;
+}) => (
+    <div className="space-y-1 text-sm pb-4 mb-4 border-b border-gray-200 print:border-none">
+        <h4 className="font-bold underline mb-2 mt-2 text-md print:text-sm print:font-bold">DETAIL PENGAJUAN</h4>
+        
+        <div className="grid grid-cols-2 gap-4 text-xs print:text-[12px] mb-2">
+            <div className="flex"><div className="w-[120px] text-gray-700">No. Pengajuan</div><div className="flex-1">:{detail.no_surat || '-'}</div></div>
+            <div className="flex"><div className="w-[80px] text-gray-700">Tanggal</div><div className="flex-1">:{detail.tanggal || '-'}</div></div>
+        </div>
+        <div className="grid grid-cols-2 gap-4 text-xs print:text-[12px] mb-2">
+            <div className="flex"><div className="w-[120px] text-gray-700">Pelapor</div><div className="flex-1">:{detail.name_pelapor} (NPP :{detail.npp_pelapor})</div></div>
+            <div className="flex"><div className="w-[80px] text-gray-700">Satker Asal</div><div className="flex-1">:{detail.satker || '-'}</div></div>
+        </div>
+        <div className="flex text-xs mb-2 print:text-[12px]"><div className="w-[120px] text-gray-700">Perihal</div><div className="flex-1">:{detail.nama_jenis} ({detail.hal_id})</div></div>
+        <div className="text-xs mb-2 p-2 border border-gray-200 rounded print:border-none print:p-0"><div className="text-gray-700 mb-1">Uraian Detail:</div><p className="whitespace-pre-wrap print:text-[12px]">{detail.keterangan || 'Tidak ada uraian detail.'}</p></div>
+
+        {/* TTD Pengajuan View Only */}
+        <div className="grid grid-cols-2 gap-4 pt-4 print:grid-cols-2">
+            <div className="border border-gray-200 rounded-lg p-3 print:p-1 print:border-dashed">
+                <div className="text-black text-xs mb-2">Tanda Tangan Mengetahui:</div>
+                <div className="text-center h-40 flex flex-col justify-end items-center">
+                    {detail.ttd_mengetahui_path ? <img src={getProxyFileUrl(detail.ttd_mengetahui_path) || ""} alt="TTD Mengetahui" className="h-32 w-auto object-contain mb-1" /> : <span className="text-gray-500 italic text-xs h-32 flex items-center justify-center">TTD tidak tersedia.</span>}
+                    <p className="text-xs mt-1 text-gray-700">{detail.mengetahui_name || '-'}</p>
+                </div>
+            </div>
+            <div className="border border-gray-200 rounded-lg p-3 print:p-1 print:border-dashed">
+                <div className="text-black text-xs mb-2">Tanda Tangan Pelapor:</div>
+                <div className="text-center h-40 flex flex-col justify-end items-center">
+                    {detail.ttd_pelapor_path ? <img src={getProxyFileUrl(detail.ttd_pelapor_path) || ""} alt="TTD Pelapor" className="h-32 w-auto object-contain mb-1 cursor-pointer" onClick={() => onImageClick(getProxyFileUrl(detail.ttd_pelapor_path) || '')} /> : <span className="text-gray-500 italic text-xs h-32 flex items-center justify-center">TTD tidak tersedia.</span>}
+                    <p className="text-xs mt-1 text-gray-700">{detail.name_pelapor}</p>
+                </div>
+            </div>
+        </div>
+
+        {/* Lampiran */}
+        {detail.file_paths.length > 0 && (
+            <div className="pt-4 border-t mt-4 border-gray-100 print:border-none">
+                <div className="text-cyan-700 text-sm mb-2 flex items-center gap-1"><File size={16}/> Lampiran File ({detail.file_paths.length} file):</div>
+                <div className="grid grid-cols-3 gap-3 print:grid-cols-3">
+                    {detail.file_paths.map((path, index) => {
+                        const fileUrl = getProxyFileUrl(path);
+                        const isImage = /\.(jpe?g|png|gif|webp)$/i.test(path);
+                        return (
+                            <div key={index} className="block p-3 border border-gray-300 rounded-lg text-center hover:bg-gray-100 transition h-36 flex flex-col justify-between">
+                                {isImage ? (
+                                    <div onClick={(e) => { e.preventDefault(); onImageClick(fileUrl || ''); }} className="cursor-pointer">
+                                        <img src={fileUrl || ''} alt="Thumbnail" className="h-24 w-full object-contain mx-auto rounded" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = 'data:image/svg+xml;base64,...'; }} />
+                                        <span className="text-xs text-gray-700 block truncate mt-1">Lihat Gambar</span>
+                                    </div>
+                                ) : (
+                                    <a href={fileUrl || '#'} target="_blank" rel="noopener noreferrer" className="flex flex-col h-full justify-between">
+                                        <File size={36} className="mx-auto text-blue-500 flex-shrink-0"/>
+                                        <span className="text-xs text-gray-700 block truncate mt-1">Unduh File</span>
+                                        <Download size={12} className="inline ml-1 text-blue-500"/>
+                                    </a>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        )}
+    </div>
+);
+
+const SPKSettingsView = ({ 
+    spkData,
+    fotoPekerjaan,
+    onImageClick
+}: {
+    spkData: SPKDetail;
+    fotoPekerjaan: any[];
+    onImageClick: (url: string) => void;
+}) => {
+    return (
+        <div className="mt-6 text-black border-t-2 border-gray-300 pt-4 rounded-lg bg-white p-5 shadow-inner space-y-4">
+            <h3 className="font-bold text-base mb-4 text-cyan-700">⚙️ Pengaturan Detail Pekerjaan</h3>
+
+            <div className="flex items-center">
+                <div className="w-[140px] font-medium text-gray-600">Tanggal Pengerjaan</div>
+                <div className="text-gray-800 font-semibold">{spkData.tanggal || 'Belum Selesai'}</div>
+            </div>
+
+            <div className="flex items-center">
+                <div className="w-[140px] font-medium text-gray-600">Jenis Pekerjaan</div>
+                <div className="text-gray-800 font-semibold">{spkData.jenis_pekerjaan?.nama_pekerjaan || "N/A"}</div>
+            </div>
+
+            <div className="flex items-center">
+                <div className="w-[140px] font-medium text-gray-600">ID Barang</div>
+                <div className="text-gray-800 font-semibold">{spkData.kode_barang || 'N/A'}</div>
+            </div>
+
+            <div className="flex">
+                <div className="w-[140px] pt-2 font-medium text-gray-600">Uraian Pekerjaan</div>
+                <div className="flex-1">
+                    <ViewBox
+                        value={spkData.uraian_pekerjaan || ""}
+                    />
+                </div>
+            </div>
+
+            {/* Foto Pekerjaan */}
+            <div className="flex">
+                <div className="w-[140px] pt-2 font-medium text-gray-600">Foto Pekerjaan</div>
+                <div className="flex-1">
+                    <div className="grid grid-cols-4 gap-3">
+                        {fotoPekerjaan.map((foto: any, index: number) => (
+                            <div key={index} className="border border-gray-300 rounded-lg overflow-hidden h-32 relative group">
+                                {foto.preview ? (
+                                    <>
+                                        <img src={foto.preview} alt={`Foto ${index + 1}`} className="w-full h-full object-cover cursor-pointer" onClick={() => onImageClick(foto.preview)} />
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onImageClick(foto.preview);
+                                            }}
+                                            className="absolute top-1 left-1 bg-blue-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
+                                            title="Lihat gambar"
+                                        >
+                                            <ImageIcon size={14} />
+                                        </button>
+                                    </>
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                                        <ImageIcon size={20} className="text-gray-400" />
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex items-start">
+                <div className="w-[140px] font-medium text-gray-600">Status Pekerjaan</div>
+                <div className="text-gray-800 font-bold">
+                    <span 
+                        className={`inline-block px-3 py-1 rounded-full text-white text-xs ${
+                            spkData.status?.name === 'Selesai' ? 'bg-green-600' : 
+                            spkData.status?.name === 'Belum Selesai' || spkData.status?.name === 'in_progress' ? 'bg-orange-500' : 'bg-gray-500'
+                        }`}
+                    >
+                        {spkData.status?.name || 'N/A'}
+                    </span>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Cache untuk menyimpan data detail pengajuan
+const pengajuanDetailCache = new Map<string, PengajuanDetail>();
+
+const RequestDetailCollapse = ({
+    spkData,
+    modalImageUrl,
+    setModalImageUrl,
+    fotoPekerjaan,
+    onImageClick,
+    showToast
+}: {
+    spkData: SPKDetail;
+    modalImageUrl: string | null;
+    setModalImageUrl: (url: string | null) => void;
+    fotoPekerjaan: any[];
+    onImageClick: (url: string) => void;
+    showToast: (message: string, type: "success" | "error" | "warning") => void;
+}) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [detail, setDetail] = useState<PengajuanDetail | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
+
+    const toggle = () => setIsOpen(!isOpen);
+
+    const fetchRequestDetail = useCallback(async () => {
+        if (!spkData.uuid_pengajuan) return;
+        
+        // Cek apakah data sudah ada di cache
+        if (pengajuanDetailCache.has(spkData.uuid_pengajuan)) {
+            setDetail(pengajuanDetailCache.get(spkData.uuid_pengajuan) || null);
+            return;
+        }
+        
+        setLoading(true); 
+        setLoadError(null);
+        const url = GET_API_PENGAJUAN_VIEW_PROXY.replace('{uuid}', spkData.uuid_pengajuan);
+        const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
+        try {
+            if (!token) throw new Error("Otorisasi hilang. Mohon login ulang.");
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+            const result = await res.json();
+            if (!res.ok || !result.success || !result.data) throw new Error(result.message || `Gagal memuat detail pengajuan.`);
+            const data = result.data;
+            const masterhal = result.masterhal;
+            const detailData = {
+                uuid: data.uuid, 
+                no_surat: data.no_surat, 
+                nama_jenis: masterhal?.nama_jenis || data.hal || 'N/A', 
+                hal_id: masterhal?.kode || data.hal_id || 'N/A', 
+                kepada: data.kepada || 'N/A', 
+                satker: data.satker || 'N/A', 
+                name_pelapor: data.name_pelapor || data.name || 'N/A', 
+                npp_pelapor: data.npp_pelapor || 'N/A', 
+                tlp_pelapor: data.tlp_pelapor || 'N/A', 
+                ttd_pelapor_path: data.ttd_pelapor, 
+                mengetahui: data.mengetahui || 'N/A', 
+                mengetahui_name: data.mengetahui_name || 'N/A', 
+                ttd_mengetahui_path: data.ttd_mengetahui, 
+                keterangan: data.keterangan || 'Tidak ada keterangan.', 
+                file_paths: Array.isArray(data.file) ? data.file : (data.file ? [data.file] : []), 
+                tanggal: data.tanggal || '-', 
+                kode_barang: data.kode_barang || null,
+            };
+            
+            // Simpan ke cache
+            pengajuanDetailCache.set(spkData.uuid_pengajuan, detailData);
+            setDetail(detailData);
+        } catch (err: any) { 
+            setLoadError(err.message); 
+            showToast(`Gagal memuat detail: ${err.message}`, "error"); 
+        } finally { 
+            setLoading(false); 
+        }
+    }, [spkData.uuid_pengajuan, showToast]);
+
+    useEffect(() => { 
+        if (isOpen && !detail) {
+            fetchRequestDetail();
+        }
+    }, [isOpen, detail, fetchRequestDetail]);
+
+    return (
+        <div className="border border-gray-300 rounded-lg shadow-sm mt-4 print:border-none print:shadow-none print:mt-0 print:pt-0">
+            <button
+                onClick={toggle}
+                className="w-full text-left p-3 font-semibold text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors flex justify-between items-center print:hidden"
+            >
+                <span>
+                    {isOpen ? '🔽 Sembunyikan' : '➡️ Tampilkan'} Detail Pengajuan & Pengaturan Pekerjaan
+                </span>
+                {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+
+            {isOpen && (
+                <div className={`p-4 bg-white border-t border-gray-200 transition-all duration-300 print:block print:border-none print:p-0`}>
+                    {loading && <div className="flex items-center text-blue-600"><Loader2 className="animate-spin mr-2 w-4 h-4" /> Memuat data...</div>}
+                    {loadError && <div className="text-red-600 flex items-center"><AlertTriangle className="w-4 h-4 mr-2" /> Error: {loadError}</div>}
+
+                    {detail && (
+                        <PengajuanDetailView 
+                            detail={detail} 
+                            onImageClick={onImageClick} 
+                        />
+                    )}
+                    
+                    <SPKSettingsView 
+                        spkData={spkData}
+                        fotoPekerjaan={fotoPekerjaan}
+                        onImageClick={onImageClick}
+                    />
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ====================================================================
+// --- MAIN COMPONENT -------------------------------------------------
+// ====================================================================
+
+export default function SPKDetailPage() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
+
+    const spk_uuid = useMemo(() => {
+        return searchParams.get('uuid') || searchParams.get('view'); 
+    }, [searchParams]);
+
+    const [spkData, setSpkData] = useState<SPKDetail | null>(null);
+    const [assignedPeople, setAssignedPeople] = useState<AssignedPerson[]>([]);
+    const [fotoPekerjaan, setFotoPekerjaan] = useState<any[]>([]);
+    
+    // State untuk menyimpan preview tanda tangan
+    const [ttdMengetahuiPreview, setTtdMengetahuiPreview] = useState<string | null>(null);
+    const [ttdMenyetujuiPreview, setTtdMenyetujuiPreview] = useState<string | null>(null);
+
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [toast, setToast] = useState<ToastMessage>({ show: false, message: "", type: "success" });
+    const [modalImageUrl, setModalImageUrl] = useState<string | null>(null); 
+    
+    const docRef = useRef<HTMLDivElement>(null);
+
+    const showToast = useCallback((message: string, type: "success" | "error" | "warning") => {
+        setToast({ show: true, message, type });
+        setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
+    }, []);
+
+    const closeToast = useCallback(() => {
+        setToast(prev => ({ ...prev, show: false }));
+    }, []);
+
+    const handlePrint = () => {
+        if (!docRef.current) {
+            showToast("Gagal mencetak: Konten dokumen tidak ditemukan.", "error");
+            return;
+        }
+        window.print();
+    };
+
+    const handleImageClick = (fileUrl: string) => {
+        setModalImageUrl(fileUrl);
+    };
+
+    // --- Fetch Data Logics ---
+    const fetchDetailSPK = useCallback(async () => {
+        if (!spk_uuid) {
+            setError("UUID SPK tidak ditemukan dalam URL.");
+            setIsLoading(false);
+            return;
+        }
+
+        setIsLoading(true);
+        setError(null);
+
+        const url = GET_API_SPK_VIEW_TEMPLATE_PROXY.replace('{uuid}', spk_uuid);
+        const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
+
+        try {
+            if (!token) throw new Error("Otorisasi hilang. Silakan login ulang.");
+
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+
+            if (!res.ok) throw new Error(`Gagal memuat data SPK. Status: ${res.status}`);
+
+            const result = await res.json();
+            if (!result.success) throw new Error(result.message || "Gagal memuat data dari API.");
+
+            const item = result.data as SPKDetail;
+
+            setSpkData(item);
+            
+            // Map personnel data
+            const personnel = item.stafs || [];
+            setAssignedPeople(personnel.map((p: any) => ({
+                name: p.nama,
+                npp: p.npp,
+                isPic: !!p.is_penanggung_jawab || (p.is_penanggung_jawab === 1),
+                jabatan: null,
+            })));
+            
+            // --- LOAD PREVIEW FOTO ---
+            // Mengubah path string menjadi URL preview dengan token
+            if (item.file && item.file.length > 0) {
+                const photoPromises = item.file.map(async (path, index) => {
+                    if (index < 4) { // Limit 4 foto
+                        try {
+                            const imageUrl = getProxyFileUrl(path);
+                            if (imageUrl && token) {
+                                const previewUrl = await loadImageWithProxy(imageUrl, token);
+                                return {
+                                    file: null,
+                                    preview: previewUrl,
+                                    path: path
+                                };
+                            }
+                        } catch (error) {
+                            console.error(`Error loading photo ${index}:`, error);
+                        }
+                    }
+                    return { file: null, preview: null };
+                });
+                
+                const loadedPhotos = await Promise.all(photoPromises);
+                
+                while (loadedPhotos.length < 4) {
+                    loadedPhotos.push({ file: null, preview: null });
+                }
+                
+                setFotoPekerjaan(loadedPhotos);
+            } else {
+                setFotoPekerjaan([
+                    { file: null, preview: null },
+                    { file: null, preview: null },
+                    { file: null, preview: null },
+                    { file: null, preview: null }
+                ]);
+            }
+            
+            // --- LOAD PREVIEW TTD MENGETAHUI ---
+            if (item.mengetahui_ttd && token) {
+                try {
+                    const ttdUrl = getProxyFileUrl(item.mengetahui_ttd);
+                    if (ttdUrl) {
+                        const ttdPreviewUrl = await loadImageWithProxy(ttdUrl, token);
+                        setTtdMengetahuiPreview(ttdPreviewUrl);
+                    }
+                } catch (error) {
+                    console.error("Error loading mengetahui TTD:", error);
+                }
+            }
+            
+            // --- LOAD PREVIEW TTD MENYETUJUI ---
+            if (item.menyetujui_ttd && token) {
+                try {
+                    const ttdUrl = getProxyFileUrl(item.menyetujui_ttd);
+                    if (ttdUrl) {
+                        const ttdPreviewUrl = await loadImageWithProxy(ttdUrl, token);
+                        setTtdMenyetujuiPreview(ttdPreviewUrl);
+                    }
+                } catch (error) {
+                    console.error("Error loading menyetujui TTD:", error);
+                }
+            }
+
+        } catch (err: any) {
+            setError(err.message || "Terjadi kesalahan saat memuat SPK.");
+        } finally {
+            setIsLoading(false);
+        }
+    }, [spk_uuid]);
+
+    const pic = useMemo(() => {
+        return assignedPeople.find(p => p.isPic);
+    }, [assignedPeople]);
+
+    useEffect(() => {
+        fetchDetailSPK();
+    }, [fetchDetailSPK]);
+
+    if (isLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <Loader2 className="animate-spin text-cyan-600 mr-3" size={32} />
+                <span className="text-xl font-medium text-gray-700">Memuat detail SPK...</span>
+            </div>
+        );
+    }
+
+    if (error || !spkData) {
+        return (
+            <div className="p-8 space-y-6 text-center bg-white min-h-screen border-t-4 border-red-500">
+                <AlertTriangle className="inline-block text-red-500" size={48} />
+                <h2 className="text-3xl font-extrabold text-red-600">Akses Ditolak / Data Tidak Ditemukan</h2>
+                <p className="text-gray-700 text-lg">Error: {error || "Data SPK tidak dapat dimuat."}</p>
+                <button
+                    onClick={() => router.push("/dashboard/spk")}
+                    className="mt-4 px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors flex items-center mx-auto"
+                >
+                    <ArrowLeft size={16} className="mr-2" /> Kembali ke Daftar SPK
+                </button>
+            </div>
+        );
+    }
+
+    const { no_surat, tanggal } = spkData;
+    const awalanJabatan = "Kepala";
+
+    return (
+        <div className="p-6 min-h-screen bg-gray-100 font-sans">
+            <ToastBox toast={toast} onClose={closeToast} />
+            <ImageModal imageUrl={modalImageUrl} onClose={() => setModalImageUrl(null)} />
+
+            <div className="max-w-4xl mx-auto mb-4 p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded-lg text-center flex items-center justify-center">
+                <Users className="mr-2" size={20} />
+                Anda berada dalam Mode Lihat Detail murni. Data tidak dapat diubah di halaman ini.
+            </div>
+
+            <div className="max-w-4xl mx-auto bg-white border border-gray-300 shadow-xl rounded-xl">
+                <div className="flex items-center justify-between border-b px-6 py-3 bg-cyan-50 rounded-t-xl print:hidden">
+                    <h1 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <ArrowLeft size={20} className="cursor-pointer hover:text-blue-600 transition" onClick={() => router.push("/dashboard/spk")} />
+                        Detail SPK: {no_surat}
+                    </h1>
+                    <Button onClick={handlePrint} className="bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center gap-1">
+                        <Printer size={16}/> Cetak (A4)
+                    </Button>
+                </div>
+
+                <div ref={docRef} className="p-8 text-[14px] leading-relaxed font-serif">
+                    <div className="border-2 border-black p-8 rounded-md bg-white shadow-lg print:border print:p-4 print:shadow-none">
+                        
+                        <h2 className="text-center font-bold underline mb-1 text-lg text-black print:text-base">
+                            SURAT PERINTAH KERJA
+                        </h2>
+                        <p className="text-center text-sm mb-4 font-bold text-black print:text-xs">(NO: {no_surat})</p>
+                        <p className="text-right text-xs mb-6 text-black print:text-xs">Tanggal SPK: {tanggal}</p>
+                        
+                        
+                        <div className="mt-2 text-black space-y-4">
+                            <div className="flex items-start mt-2 border p-2 rounded-lg bg-gray-50 print:bg-white print:border-dashed">
+                                <div className="w-[140px] pt-1 font-semibold text-gray-700 print:text-black">Menugaskan Sdr:</div>
+                                <div className="flex-1 flex flex-wrap gap-2 min-h-[40px] print:flex-col print:gap-0">
+                                    {assignedPeople.length > 0 ? (
+                                        assignedPeople.map((person) => (
+                                            <Chip key={person.name} person={person} />
+                                        ))
+                                    ) : (
+                                        <span className="text-gray-500 italic p-1">Belum ada personel ditugaskan.</span>
+                                    )}
+                                </div>
+                            </div>
+
+                            <p className="mt-4 print:text-sm">
+                                Untuk melaksanakan Pemeliharaan / Perbaikan / Pengaduan kerusakan
+                            </p>
+                            
+                            <RequestDetailCollapse 
+                                spkData={spkData}
+                                modalImageUrl={modalImageUrl}
+                                setModalImageUrl={setModalImageUrl}
+                                fotoPekerjaan={fotoPekerjaan}
+                                onImageClick={handleImageClick}
+                                showToast={showToast}
+                            />
+
+                            <div className="mt-12 flex justify-between text-xs sm:text-sm print:text-xs min-h-[200px]">
+
+                                {/* KIRI: QR CODE & MENGETAHUI */}
+                                <div className="w-1/2 text-center flex flex-col justify-end items-center">
+                                    
+
+                                    <div className="mb-8 flex flex-col items-center justify-center">
+                                        <div className="bg-white p-2 border border-gray-200 rounded">
+                                            <QrCode
+                                                size={120}  
+                                                style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                                                value={typeof window !== 'undefined' ? `${window.location.origin}/tracking/${spkData.uuid}` : ''}
+                                                viewBox={`0 0 256 256`}
+                                            />
+                                        </div>
+                                        <div className="text-[10px] text-gray-500 mt-2 font-mono tracking-tighter">SCAN TRACKING</div>
+                                    </div>
+
+                                    {/* 2. Mengetahui */}
+                                    <div className="w-full">
+                                        <div className="pb-1">Mengetahui</div>
+                                        <div className="font-semibold flex items-end justify-center min-h-[10px] px-4">
+                                            {spkData.mengetahui || "Ka. Bid Pengembangan Program"}
+                                        </div>
+                                        <div style={{ height: 80 }}></div>
+                                        <>
+                                            {/* Container Tanda Tangan Mengetahui */}
+                                            <div className="flex justify-center items-center h-[80px] w-[150px] relative mb-1 mx-auto">
+                                                {ttdMengetahuiPreview ? (
+                                                    <div className="relative group w-full h-full flex justify-center items-center">
+                                                        <img src={ttdMengetahuiPreview} alt="TTD Mengetahui" className="h-[80px] w-auto object-contain" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="h-[80px]"></div>
+                                                )}
+                                            </div>
+                                            <div className="font-bold border-t border-black inline-block mt-1 pt-1 text-black px-2 mx-auto">
+                                                {spkData.mengetahui_name || "-"}
+                                            </div>
+                                            <div className="text-xs">NPP. {spkData.mengetahui_npp || "..."}</div>
+                                        </>
+                                    </div>
+                                </div>
+
+                                {/* ========================== */}
+                                {/* KANAN: PELAKSANA & MENYETUJUI */}
+                                {/* ========================== */}
+                                <div className="w-1/2 flex flex-col justify-between">
+                                    
+                                    {/* 1. Pelaksana Section */}
+                                    <div className="text-center">
+                                        <div className="font-semibold mb-2">Pelaksana</div>
+                                        
+                                        {/* Container Tanda Tangan */}
+                                        <div className="flex flex-col items-center justify-center">
+                                            <div className="flex justify-center items-center h-[80px] w-[150px] relative mb-1">
+                                                {spkData.penanggung_jawab_ttd ? (
+                                                    <div className="relative group w-full h-full flex justify-center items-center">
+                                                        <img src={getProxyFileUrl(spkData.penanggung_jawab_ttd) || ""} alt="TTD Pelaksana" className="h-[80px] w-auto object-contain" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="h-[80px]"></div>
+                                                )}
+                                            </div>
+
+                                            {/* Nama Pelaksana */}
+                                            {pic ? (
+                                                <>
+                                                    <div className="font-bold border-t border-black inline-block mt-1 pt-1 text-black px-1 mx-auto text-xs whitespace-nowrap">
+                                                        {pic.name}
+                                                    </div>
+                                                    <div className="text-[10px]">
+                                                        {pic.npp ? `NPP. ${pic.npp}` : 'NPP. -'}
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="border-b border-black w-32 mx-auto"></div>
+                                                    <div className="text-[10px] mt-1">NPP. ........................</div>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* 2. Menyetujui Section */}
+                                    <div className="mt-8 text-center">
+                                        <div className="pb-1">Menyetujui</div>
+                                        <div className="font-semibold flex items-end justify-center min-h-[10px] px-4">
+                                            {spkData.menyetujui || "Ka. Sub Bid TI"}
+                                        </div>
+                                        <div style={{ height: 60 }}></div>
+                                        <>
+                                            {/* Container Tanda Tangan Menyetujui */}
+                                            <div className="flex justify-center items-center h-[80px] w-[150px] relative mb-1 mx-auto">
+                                                {ttdMenyetujuiPreview ? (
+                                                    <div className="relative group w-full h-full flex justify-center items-center">
+                                                        <img src={ttdMenyetujuiPreview} alt="TTD Menyetujui" className="h-[80px] w-auto object-contain" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="h-[80px]"></div>
+                                                )}
+                                            </div>
+                                            <div className="font-bold border-t border-black inline-block mt-1 pt-1 text-black px-2 mx-auto">
+                                                {spkData.menyetujui_name || "-"}
+                                            </div>
+                                            <div className="text-xs">NPP. {spkData.menyetujui_npp || "..."}</div>
+                                        </>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

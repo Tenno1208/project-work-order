@@ -49,7 +49,6 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // 4. Ambil data dan kembalikan ke frontend
         const data = await externalResponse.json();
         
         return NextResponse.json({ 

@@ -1,15 +1,8 @@
 import { NextRequest } from 'next/server';
 
-// Pastikan API_BASE_URL didefinisikan di environment variables Anda
 const API_BASE_URL = process.env.API_BASE_URL || "https://workorder123.loca.lt";
-// Path ke API eksternal yang mengembalikan daftar TTD (dalam bentuk JSON)
 const EXTERNAL_TTD_API_PATH = "/api/user/ttd";
 
-/**
- * Endpoint Proxy GET untuk mengambil riwayat TTD (URL TTD) berdasarkan NPP.
- * API ini sekarang mengembalikan JSON dari API eksternal.
- * Klien memanggil: /api/ttd-proxy/[npp]
- */
 export async function GET(request: NextRequest, { params }: { params: { npp: string } }) {
   const npp = params.npp;
   const token = request.headers.get('authorization');
@@ -19,10 +12,8 @@ export async function GET(request: NextRequest, { params }: { params: { npp: str
   }
 
   try {
-    // Membangun URL eksternal menggunakan NPP dari params
     const externalUrl = `${API_BASE_URL}${EXTERNAL_TTD_API_PATH}/${npp}`;
     
-    // Melakukan fetch ke API eksternal untuk mendapatkan JSON (riwayat TTD)
     const apiResponse = await fetch(externalUrl, {
       method: 'GET',
       headers: {

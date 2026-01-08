@@ -1,781 +1,537 @@
+// app/dashboard/layout.tsx
+
 "use client"
 
-import React, { useState, useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation'; 
-import {
-    LayoutDashboard,
-    Users,
-    LogOut,
-    Droplet,
-    ClipboardList,
-    FileText,
-    ChevronLeft,
-    ChevronRight,
-    Bell,
-    Settings,
-    History,
-    Waves,
-    Menu,
-    X,
-    Clock,
-    Loader2,
-} from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import { Menu, X } from 'lucide-react';
 
-// URL API Logout Eksternal
-const LOGOUT_API_URL = "https://gateway.pdamkotasmg.coid/api-gw/portal-pegawai/api/auth/logout";
-const PERMISSIONS_API_LOCAL = "/api/permissions"; 
+import Sidebar from '@/components/Sidebar';
+import Header from '@/components/Header';
+import LogoutModal from '@/components/LogoutModal';
 
-// Tipe Data untuk User
-interface UserData {
-    nama?: string;
-    npp?: string;
-    no_telp?: string;
-    satker?: string;      
-    subsatker?: string;
+const NOTIFICATIONS_API_LOCAL_PROXY = "/api/notifications";
+const NOTIFICATIONS_ALL_API_LOCAL_PROXY = "/api/notifications/all";
+
+interface UserData { 
+    nama?: string; 
+    npp?: string; 
+    no_telp?: string; 
+    satker?: string; 
+    subsatker?: string; 
 }
 
+interface Notification { 
+    id: number; 
+    title: string; 
+    message: string; 
+    read: boolean; 
+    created_at?: string;
+    uuid_pengajuan?: string; 
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-    const router = typeof useRouter === 'function' ? useRouter() : { push: (href: string) => window.location.href = href };
-    const pathname = typeof usePathname === 'function' ? usePathname() : '/dashboard';
+    const router = useRouter();
+    const pathname = usePathname();
 
-    // State yang Anda gunakan
+    // --- STATE MANAGEMENT ---
     const [collapsed, setCollapsed] = useState(false);
-    const [expandedItems, setExpandedItems] = useState<string[]>([]);
-    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-    const [currentTime, setCurrentTime] = useState(new Date());
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [mounted, setMounted] = useState(false);
-    const [loggingOut, setLoggingOut] = useState(false); 
-
-    // State untuk data API
-    const [userData, setUserData] = useState<UserData>({});
+    const [currentTime, setCurrentTime] = useState(new Date());
     const [loading, setLoading] = useState(true);
-    const [userPermissions, setUserPermissions] = useState<string[]>([]);
+    const [loggingOut, setLoggingOut] = useState(false);
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-    // --- FUNGSI BANTU API & CACHING ---
+    const [userData, setUserData] = useState<UserData>({});
+    const [userPermissions, setUserPermissions] = useState<string[]>([]);
+   
+    const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+    const [totalNotificationCount, setTotalNotificationCount] = useState(0);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [allNotifications, setAllNotifications] = useState<Notification[]>([]); 
+    const [showingAllNotifications, setShowingAllNotifications] = useState(false); 
+    const [loadingMoreNotifications, setLoadingMoreNotifications] = useState(false); 
+    const [markingAllAsRead, setMarkingAllAsRead] = useState(false);
+    
+    const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+    const [loadingNotifications, setLoadingNotifications] = useState(false);
+    const [loadingAllNotifications, setLoadingAllNotifications] = useState(false);
+
     const getToken = () => localStorage.getItem("token");
 
-    /**
-     * Mengambil permissions dari API, memparsingnya, dan menyimpannya ke localStorage.
-     * Sudah disesuaikan untuk struktur API { data: { permissions: [...] } }.
-     */
-    const fetchAndStorePermissions = async (token: string) => {
+    const useEventSourceNotifications = useCallback(() => {
+        const storedUserData = localStorage.getItem("user_data");
+        if (!storedUserData) return;
+        
+        let userData: UserData;
         try {
-            const res = await fetch(PERMISSIONS_API_LOCAL, {
-                method: "GET",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                },
-            });
-
-            if (!res.ok) {
-                console.warn("Gagal ambil permissions:", res.status);
-                localStorage.setItem("user_permissions", JSON.stringify([])); 
-                return [];
-            }
-
-            const json = await res.json();
-            
-            // 🎯 PERBAIKAN UTAMA DI SINI
-            const rawPermissions = (json.data && Array.isArray(json.data.permissions)) 
-                                    ? json.data.permissions 
-                                    : [];
-            
-            const permissions: string[] = rawPermissions.map((p: any) => {
-                // Pastikan setiap elemen adalah string sebelum disimpan
-                return typeof p === 'string' ? p : '';
-            }).filter(Boolean); // Hapus nilai kosong
-
-            const finalPermissionsToStore = permissions.length > 0 ? permissions : [];
-
-            console.log("Permissions berhasil di-parse (siap disimpan):", finalPermissionsToStore); 
-
-            // Simpan ke localStorage
-            localStorage.setItem("user_permissions", JSON.stringify(finalPermissionsToStore));
-            console.log("✅ User Permissions stored in localStorage. Length:", finalPermissionsToStore.length);
-            
-            return finalPermissionsToStore;
-
-        } catch (err) {
-            console.error("Error fetching or storing permissions:", err);
-            localStorage.setItem("user_permissions", JSON.stringify([])); 
-            return [];
+            userData = JSON.parse(storedUserData) as UserData;
+        } catch (e) {
+            console.error("Gagal parse user data:", e);
+            return;
         }
-    };
-
-    /**
-     * Mengambil data user dari API dan menyimpannya ke localStorage.
-     */
-    const fetchAndStoreUserData = async (token: string) => {
-        try {
-            const res = await fetch("/api/me", {
-                method: "GET",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                },
-            });
-
-            if (!res.ok) {
-                console.warn("Gagal ambil data user:", res.status);
-                // Handle 401/403: Token tidak valid/expired
-                if (res.status === 401 || res.status === 403) {
-                    localStorage.removeItem("token");
-                    localStorage.removeItem("user_data"); 
-                    localStorage.removeItem("user_permissions"); 
-                    router.push("/login");
+        
+        const npp = userData.npp;
+        if (!npp || npp === '-') return;
+        
+        const token = getToken();
+        if (!token) return;
+        
+        setLoadingNotifications(true);
+        
+        if (window.notificationEventSource) {
+            window.notificationEventSource.close();
+        }
+        
+        const eventSourceUrl = `${NOTIFICATIONS_API_LOCAL_PROXY}/stream?npp=${npp}&token=${encodeURIComponent(token)}`;
+        const eventSource = new EventSource(eventSourceUrl);
+        window.notificationEventSource = eventSource;
+        
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                
+                if (data.connected) {
+                    console.log('Terhubung ke stream notifikasi');
+                    setLoadingNotifications(false);
+                    return;
                 }
-                return {};
+                
+                if (data.error) {
+                    console.error('Error dari stream notifikasi:', data.error);
+                    setLoadingNotifications(false);
+                    return;
+                }
+                
+                const rawApiNotifications = data.data;
+                
+                if (Array.isArray(rawApiNotifications)) {
+                    const mappedNotifications: Notification[] = rawApiNotifications.map((item: any) => ({
+                        id: item.id,
+                        title: item.judul,
+                        message: item.pesan,
+                        read: item.status === 'read',
+                        created_at: item.created_at,
+                        uuid_pengajuan: item.uuid_pengajuan || null,
+                    }))
+                    .sort((a, b) => {
+                        if (a.created_at && b.created_at) {
+                            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                        }
+                        return 0;
+                    });
+                    
+                    setNotifications(mappedNotifications);
+                    setUnreadNotificationCount(data.unread_count || 0);
+                    
+                    const newUnreadNotifications = mappedNotifications.filter(n => !n.read);
+                    if (newUnreadNotifications.length > 0) {
+                        if ("Notification" in window && Notification.permission === "granted") {
+                            const latestNotification = newUnreadNotifications[0];
+                            new Notification(latestNotification.title, {
+                                body: latestNotification.message,
+                                icon: "/favicon.ico",
+                            });
+                        } else if ("Notification" in window && Notification.permission !== "denied") {
+                            Notification.requestPermission().then(permission => {
+                                if (permission === "granted") {
+                                    const latestNotification = newUnreadNotifications[0];
+                                    new Notification(latestNotification.title, {
+                                        body: latestNotification.message,
+                                        icon: "/favicon.ico",
+                                    });
+                                }
+                            });
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Error parsing notification data:', e);
+            } finally {
+                setLoadingNotifications(false);
             }
-
-            const flatUserData = await res.json();
-            const userProfile: UserData = {
-                nama: flatUserData.nama || "Tanpa Nama", 
-                npp: flatUserData.npp || "-",
-                no_telp: flatUserData.no_telp || "-", 
-                satker: flatUserData.satker || "-",         
-                subsatker: flatUserData.subsatker || "-",
-            };
+        };
+        
+        eventSource.onerror = (error) => {
+            console.error('EventSource error:', error);
+            setLoadingNotifications(false);
             
-            localStorage.setItem("user_data", JSON.stringify(userProfile));
-            console.log("✅ User Data loaded from API and stored in localStorage.");
-            return userProfile;
+            setTimeout(() => {
+                if (window.notificationEventSource?.readyState === EventSource.CLOSED) {
+                    useEventSourceNotifications();
+                }
+            }, 5000);
+        };
+    }, []);
 
-        } catch (err) {
-            console.error("Error fetchUserData:", err);
-            return {};
+
+    const fetchAndSetAllNotifications = useCallback(async () => {
+        const storedUserData = localStorage.getItem("user_data");
+        if (!storedUserData) return;
+        
+        const userData = JSON.parse(storedUserData);
+        const npp = userData.npp;
+        
+        if (!npp || npp === '-') {
+            console.error("NPP tidak ditemukan, membatalkan fetch all.");
+            return;
         }
-    };
-    // --- AKHIR FUNGSI BANTU API & CACHING ---
+        
+        const token = getToken();
+        if (!token) return;
+        
+        setLoadingMoreNotifications(true);
+        
+        try {
+            const response = await fetch(`${NOTIFICATIONS_ALL_API_LOCAL_PROXY}/${npp}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+            
+            if (!response.ok) throw new Error("Gagal fetch API lokal");
+            
+            const data = await response.json();
+            
+            const rawData = Array.isArray(data) ? data : (data.data || []); 
+
+            if (Array.isArray(rawData)) {
+                const mappedNotifications: Notification[] = rawData.map((item: any) => ({
+                    id: item.id,
+                    title: item.judul,
+                    message: item.pesan,
+                    read: item.status === 'read',
+                    created_at: item.created_at,
+                    uuid_pengajuan: item.uuid_pengajuan || null,
+                })).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+                setAllNotifications(mappedNotifications);
+                setTotalNotificationCount(mappedNotifications.length);
+            }
+        } catch (error) {
+            console.error('Error fetching all notifications:', error);
+        } finally {
+            setLoadingMoreNotifications(false);
+        }
+    }, []);
 
 
-    // --- UTAMA LOGIC CACHING DI useEffect ---
+    // --- API CALLS ---
+    const markNotificationAsRead = useCallback(async (notificationId: number) => {
+        const token = getToken();
+        if (!token) return;
+
+        try {
+            const res = await fetch(`/api/notifications/update/${notificationId}`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+            });
+
+            if (!res.ok) console.error("Gagal menandai notifikasi sebagai sudah dibaca:", res.status);
+
+            setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, read: true } : n));
+            setAllNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, read: true } : n));
+            setUnreadNotificationCount(prev => Math.max(0, prev - 1));
+            
+        } catch (err) {
+            console.error("Error marking notification as read:", err);
+        }
+    }, []); 
+
+    const markAllNotificationsAsRead = useCallback(async () => { 
+        const token = getToken(); 
+        if (!token) return;
+        const unreadNotifications = (showingAllNotifications ? allNotifications : notifications).filter(n => !n.read); 
+        if (unreadNotifications.length === 0) return;
+        const npp = userData.npp; 
+        if (!npp || npp === '-') return;
+
+        try {
+            const res = await fetch(`${NOTIFICATIONS_API_LOCAL_PROXY}/update/${npp}`, {
+                method: "POST", 
+                headers: { 
+                    Authorization: `Bearer ${token}`, 
+                    "Content-Type": "application/json", 
+                } 
+            });
+            if (!res.ok) return;
+            
+            setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+            setAllNotifications(prev => prev.map(n => ({ ...n, read: true })));
+            setUnreadNotificationCount(0);
+        } catch (err) { 
+            console.error("Error marking all notifications as read:", err); 
+        }
+    }, [notifications, allNotifications, showingAllNotifications, userData.npp]);
+
+
+    const markAllNotificationsAsReadAll = useCallback(async () => { 
+        const token = getToken(); 
+        if (!token) return;
+        
+        const npp = userData.npp; 
+        if (!npp || npp === '-') return;
+
+        setMarkingAllAsRead(true);
+
+        try {
+            const res = await fetch(`/api/notifications/update/all/${npp}`, {
+                method: "PUT", 
+                headers: { 
+                    Authorization: `Bearer ${token}`, 
+                    "Content-Type": "application/json", 
+                } 
+            });
+            
+            if (!res.ok) throw new Error("Gagal update"); 
+            
+            setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+            setAllNotifications(prev => prev.map(n => ({ ...n, read: true })));
+            setUnreadNotificationCount(0);
+
+        } catch (err) { 
+            console.error("Error marking all notifications as read:", err); 
+        } finally {
+            setMarkingAllAsRead(false);
+        }
+    }, [userData.npp]); 
+
+    const handleLoadMoreNotifications = useCallback(() => {
+        if (!showingAllNotifications) {
+            setShowingAllNotifications(true); 
+            if (allNotifications.length === 0) {
+                fetchAndSetAllNotifications();
+            }
+        } else {
+           setShowingAllNotifications(false); 
+        }
+    }, [showingAllNotifications, allNotifications.length, fetchAndSetAllNotifications]);
+
+    const handleNavigation = useCallback((href: string) => { 
+        if (pathname !== href) { 
+            router.push(href); 
+        } 
+    }, [pathname, router]);
+
+    const requestLogout = useCallback(() => {
+        setShowLogoutConfirm(true);
+    }, []);
+
+    const handleLogout = useCallback(async () => {
+        setLoggingOut(true);
+        const token = localStorage.getItem("token");
+        localStorage.removeItem("token"); 
+        localStorage.removeItem("user_data"); 
+        localStorage.removeItem("user_permissions");
+        
+        if (!token) { 
+            router.push("/login"); 
+            setLoggingOut(false); 
+            return; 
+        }
+        try { 
+            await fetch('/api/logout', { 
+                method: 'POST', 
+                headers: { 
+                    'Authorization': `Bearer ${token}`, 
+                }, 
+            }); 
+        } catch (error) { 
+            console.error("Error calling local proxy:", error); 
+        } finally { 
+            router.push("/login"); 
+            setLoggingOut(false); 
+        }
+    }, [router]);
+    
     useEffect(() => {
         setMounted(true);
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-
+        
         const loadInitialData = async () => {
-            const token = getToken();
-
-            if (!token) {
-                console.warn("Token tidak ditemukan, redirect ke login.");
-                router.push("/login");
-                setLoading(false);
-                return;
+            const token = getToken(); 
+            if (!token) { 
+                router.push("/login"); 
+                setLoading(false); 
+                return; 
             }
-
-            let profileData: UserData | null = null;
+            
+            let profileData: UserData | null = null; 
             let permissionsData: string[] | null = null;
             
-            // 1. Coba ambil dari localStorage untuk User Data
-            const storedUserData = localStorage.getItem("user_data");
-            if (storedUserData) {
-                try {
-                    profileData = JSON.parse(storedUserData) as UserData;
-                    setUserData(profileData);
-                    console.log("✅ User Data loaded from localStorage.");
-                } catch (e) {
-                    console.error("Gagal parse stored user data:", e);
+            const storedUserData = localStorage.getItem("user_data"); 
+            if (storedUserData) { 
+                try { 
+                    profileData = JSON.parse(storedUserData) as UserData; 
+                    setUserData(profileData); 
+                } catch (e) { 
+                    console.error("Gagal parse stored user data:", e); 
                     profileData = null; 
-                }
-            }
-
-            // 2. Coba ambil dari localStorage untuk Permissions
-            const storedPermissions = localStorage.getItem("user_permissions");
-            if (storedPermissions && storedPermissions.trim().length > 0) {
-                try {
-                    permissionsData = JSON.parse(storedPermissions) as string[];
-                    setUserPermissions(permissionsData);
-                    console.log("✅ Permissions loaded from localStorage. Count:", permissionsData.length);
-                } catch (e) {
-                    console.error("Gagal parse stored permissions:", e);
-                    permissionsData = null; 
-                }
+                } 
             }
             
-            // 3. Jika Data User TIDAK ADA (atau gagal parse/empty object), Panggil API
-            if (!profileData || Object.keys(profileData).length === 0) {
-                console.log("⏳ User Data not found in localStorage or invalid, fetching from API...");
-                const fetchedData = await fetchAndStoreUserData(token);
-                setUserData(fetchedData);
+            const storedPermissions = localStorage.getItem("user_permissions"); 
+            if (storedPermissions && storedPermissions.trim().length > 0) { 
+                try { 
+                    permissionsData = JSON.parse(storedPermissions) as string[]; 
+                    setUserPermissions(permissionsData); 
+                } catch (e) { 
+                    console.error("Gagal parse stored permissions:", e); 
+                    permissionsData = null; 
+                } 
             }
-
-            // 4. Jika Permissions TIDAK ADA (atau gagal parse/empty array), Panggil API
-            if (!permissionsData || permissionsData.length === 0) {
-                console.log("⏳ Permissions not found in localStorage or invalid, fetching from API...");
-                const fetchedPermissions = await fetchAndStorePermissions(token); 
-                setUserPermissions(fetchedPermissions);
+            
+            if (profileData && profileData.npp && profileData.npp !== '-') { 
+                useEventSourceNotifications(); 
+                fetchAndSetAllNotifications(); 
             }
-
+            
             setLoading(false);
         };
-
+        
         loadInitialData();
+        return () => {
+            clearInterval(timer);
+            if (window.notificationEventSource) {
+                window.notificationEventSource.close();
+            }
+        };
+    }, [router, useEventSourceNotifications, fetchAndSetAllNotifications]);
 
-        return () => clearInterval(timer);
-    }, [router]);
-    // --- AKHIR LOGIC CACHING DI useEffect ---
-
-    // Konfigurasi Menu
-    const menuItems = [
-        {
-            href: "/dashboard",
-            label: "Dashboard",
-            icon: LayoutDashboard,
+    // --- MENU CONFIGURATION ---
+    const allMenuItems = [ 
+        { href: "/dashboard", 
+            label: "Dashboard", 
+            icon: require('lucide-react').LayoutDashboard, 
             description: "Ringkasan & Statistik",
-        },
-        {
-            href: "/dashboard/admin",
-            label: "Admin",
-            icon: Users,
-            description: "Kelola Pengguna",
-        },
-        {
-            href: "/dashboard/lampiran",
-            label: "Data Pengajuan",
-            icon: ClipboardList,
-            description: "Dokumen Lampiran",
+            requiredPermission: "Workorder.view.dashboard"
+            }, 
+        { href: "/dashboard/admin", 
+            label: "Admin", icon: require('lucide-react').Users, 
+            description: "Kelola Pengguna", 
+            requiredPermission: "Workorder.Admin"
+        }, 
+
+        { 
+            label: "Data Pengajuan", 
+            icon: require('lucide-react').ClipboardList, 
+            description: "Dokumen Lampiran", 
+            requiredPermission: "Workorder.pengajuan.views",
             subItems: [
-                {
-                    href: "/dashboard/lampiran/riwayat",
-                    label: "Riwayat Data Pengajuan",
-                    icon: History,
-                },
-            ],
-        },
-        {
-            href: "/dashboard/spk",
-            label: "SPK",
-            icon: FileText,
-            description: "Surat Perintah Kerja",
+                { href: "/dashboard/lampiran/riwayat", label: "Riwayat Data Pengajuan", icon: require('lucide-react').History },
+                { href: "/dashboard/lampiran", label: "Persetujuan Pengajuan", icon: require('lucide-react').CheckCircle },
+            ]
+        }, 
+        { 
+            label: "SPK", 
+            icon: require('lucide-react').FileText, 
+            description: "Surat Perintah Kerja", 
             subItems: [
-                {
-                    href: "/dashboard/spk/riwayat",
-                    label: "Riwayat SPK",
-                    icon: History,
-                },
-            ],
+                { href: "/dashboard/spk/riwayat", label: "Riwayat SPK", icon: require('lucide-react').History },
+                { href: "/dashboard/spk", label: "Daftar Spk", icon: require('lucide-react').List },
+            ], 
+            requiredPermission: "Workorder.spk.views" 
+        },
+        { 
+            href: "/dashboard/laporan", 
+            label: "Laporan", 
+            icon: require('lucide-react').FileBarChart, 
+            description: "Cetak Laporan & Statistik",
+            requiredPermission: "Workorder.view.laporan" 
+        },
+        { 
+            href: "/dashboard/pengaturan", 
+            label: "Pengaturan", 
+            icon: require('lucide-react').Settings, 
+            description: "Pengaturan Sistem",
+            requiredPermission: "Workorder.view.pengaturan", 
         },
     ];
-
-    const getCurrentPage = () => {
-        for (const item of menuItems) {
-            if (item.href === pathname) return item;
-            if (item.subItems) {
-                const subItem = item.subItems.find((sub) => sub.href === pathname);
-                if (subItem) return { ...subItem, parent: item };
-            }
-        }
-        return menuItems[0];
+    
+    const menuItems = allMenuItems.filter(item => !item.requiredPermission || userPermissions.includes(item.requiredPermission));
+    
+    const getCurrentPage = () => { 
+        for (const item of allMenuItems) { 
+            if (item.href === pathname) return item; 
+            if (item.subItems) { 
+                const subItem = item.subItems.find((sub) => sub.href === pathname); 
+                if (subItem) return { ...subItem, parent: item }; 
+            } 
+        } 
+        return menuItems[0] || allMenuItems[0]; 
     };
-
     const currentPage = getCurrentPage();
 
-    const toggleExpand = (href: string) => {
-        setExpandedItems((prev) =>
-            prev.includes(href) ? prev.filter((item) => item !== href) : [...prev, href]
-        );
-    };
+    const displayedNotifications = showingAllNotifications ? allNotifications : notifications;
 
-    const handleNavigation = (href: string) => {
-        if (pathname !== href) {
-            router.push(href);
-        }
-    };
-
-    /**
-     * @description Mengubah logika logout untuk memanggil API eksternal dan menghapus data lokal.
-     */
-    const handleLogout = async () => {
-        setLoggingOut(true);
-        const token = localStorage.getItem("token");
-
-        // Hapus data lokal (token, user_data, permissions) sebelum redirect
-        localStorage.removeItem("token"); 
-        localStorage.removeItem("user_data");
-        localStorage.removeItem("user_permissions");
-        
-        if (!token) {
-            router.push("/login");
-            setLoggingOut(false);
-            return;
-        }
-
-        try {
-            // Panggil API PROXY LOKAL: /api/logout
-            const res = await fetch('/api/logout', { 
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`, 
-                },
-            });
-
-            if (res.ok || res.status === 401) {
-                console.log(`Logout processed. Status: ${res.status}`);
-            } else {
-                console.error(`Logout failed on proxy level or external server returned an error: ${res.status}`);
-            }
-
-        } catch (error) {
-            console.error("Error calling local proxy:", error);
-        } finally {
-            // Selalu redirect ke halaman login
-            router.push("/login");
-            setLoggingOut(false);
-        }
-    };
-
-
+    // --- RENDER ---
     return (
         <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50 relative overflow-hidden text-sm">
-            {/* SIDEBAR DESKTOP */}
-            <div
-                className={`hidden lg:flex flex-col bg-white/80 backdrop-blur-xl border-r border-cyan-100/50 shadow-2xl relative transition-all duration-500 ${
-                    collapsed ? "w-16" : "w-64" 
-                }`}
-                style={{
-                    backgroundImage: "linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(240,253,255,0.9) 100%)",
-                }}
-            >
-                {/* Water Wave Effect at Top */}
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400"></div>
-
-                {/* HEADER SIDEBAR */}
-                <div className="px-4 py-6 border-b border-cyan-100/60 bg-gradient-to-br from-cyan-500 via-blue-600 to-blue-700 relative overflow-hidden">
-                    <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"} relative z-10`}>
-                        <div className="relative group">
-                            <div className="relative bg-gradient-to-br from-white/40 to-white/10 p-2.5 rounded-xl shadow-xl backdrop-blur-md border border-white/30 transition-transform duration-300 group-hover:scale-105">
-                                <Droplet className="text-white drop-shadow-lg" size={24} strokeWidth={2.5} /> 
-                            </div>
-                        </div>
-                        {!collapsed && (
-                            <div className="min-w-0 text-white">
-                                <h1 className="font-bold text-xl tracking-tight drop-shadow-lg">PDAM</h1> 
-                                <p className="text-cyan-100 text-xs font-medium flex items-center gap-1"> 
-                                    <Waves size={12} /> 
-                                    Work Order System
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* MENU */}
-                <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto"> 
-                    {menuItems.map((item) => {
-                        const Icon = item.icon;
-                        const active = pathname === item.href;
-                        const isExpanded = expandedItems.includes(item.href);
-                        return (
-                            <div key={item.href}>
-                                <div
-                                    onClick={() => handleNavigation(item.href)}
-                                    className={`group flex items-center gap-3 ${
-                                        collapsed ? "px-2 justify-center" : "px-4" 
-                                    } py-3 rounded-xl transition-all duration-300 w-full relative overflow-hidden cursor-pointer ${
-                                        active
-                                            ? "bg-gradient-to-r from-cyan-500 via-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30"
-                                            : "hover:bg-gradient-to-r hover:from-cyan-50 hover:to-blue-50 text-slate-700 hover:text-cyan-700 hover:shadow-md"
-                                    }`}
-                                >
-                                    <Icon size={18} strokeWidth={2.5} className="relative z-10 transition-transform duration-300 group-hover:scale-110" /> 
-                                    {!collapsed && (
-                                        <span className="text-sm font-semibold relative z-10">{item.label}</span>
-                                    )}
-                                    {item.subItems && !collapsed && (
-                                        <div
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                toggleExpand(item.href);
-                                            }}
-                                            className="ml-auto p-1.5 hover:bg-white/20 rounded-md transition-colors relative z-10 cursor-pointer" 
-                                        >
-                                            <ChevronRight
-                                                size={14} 
-                                                className={`transition-transform duration-300 ${
-                                                    isExpanded ? "rotate-90" : ""
-                                                }`}
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Sub Items */}
-                                {isExpanded && item.subItems && !collapsed && (
-                                    <div className="ml-6 mt-1 space-y-1 transition-all duration-300"> 
-                                        {item.subItems.map((subItem) => {
-                                            const SubIcon = subItem.icon;
-                                            const subActive = pathname === subItem.href;
-                                            return (
-                                                <div
-                                                    key={subItem.href}
-                                                    onClick={() => handleNavigation(subItem.href)}
-                                                    className={`group flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-300 w-full hover:scale-105 cursor-pointer ${
-                                                        subActive
-                                                            ? "bg-gradient-to-r from-cyan-400 to-blue-500 text-white shadow-md"
-                                                            : "hover:bg-cyan-50 text-slate-600 hover:text-cyan-700"
-                                                    }`}
-                                                >
-                                                    <SubIcon size={16} strokeWidth={2} /> 
-                                                    <span className="text-xs font-medium">{subItem.label}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-
-                    {/* TOGGLE SIDEBAR */}
-                    <div className="px-1 pt-4"> 
-                        <button
-                            onClick={() => setCollapsed(!collapsed)}
-                            className={`flex items-center gap-3 ${
-                                collapsed ? "justify-center px-1" : "px-4"
-                            } py-3 rounded-xl transition-all duration-300 w-full text-slate-700 hover:bg-gradient-to-r hover:from-cyan-50 hover:to-blue-50 hover:text-cyan-700 hover:shadow-md`}
-                        >
-                            {collapsed ? (
-                                <ChevronRight size={18} strokeWidth={2.5} /> 
-                            ) : (
-                                <ChevronLeft size={18} strokeWidth={2.5} /> 
-                            )}
-                            {!collapsed && <span className="text-sm font-semibold">Sembunyikan</span>}
-                        </button>
-                    </div>
-                </nav>
-
-                {/* LOGOUT */}
-                <div className="p-3 border-t border-cyan-100/60 bg-gradient-to-r from-white/50 to-cyan-50/50 backdrop-blur-sm"> 
-                    <button
-                        onClick={() => setShowLogoutConfirm(true)}
-                        disabled={loggingOut} // Matikan tombol saat sedang logout
-                        className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 w-full font-semibold shadow-sm border border-transparent text-slate-700 ${
-                            loggingOut 
-                                ? 'bg-gray-400 cursor-not-allowed text-white'
-                                : 'hover:bg-gradient-to-r hover:from-red-500 hover:to-red-600 hover:shadow-lg hover:border-red-400 hover:text-white'
-                        }`}
-                    >
-                        {loggingOut ? (
-                            <Loader2 size={18} className="animate-spin text-white" />
-                        ) : (
-                            <LogOut size={18} className="group-hover:scale-110 transition-transform" />
-                        )}
-                        {!collapsed && <span className="text-sm">{loggingOut ? 'Memproses Keluar...' : 'Keluar'}</span>}
-                    </button>
-                </div>
-            </div>
-
-            {/* MOBILE MENU BUTTON */}
-            <button
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            <Sidebar 
+                collapsed={collapsed} 
+                setCollapsed={setCollapsed} 
+                menuItems={menuItems} 
+                pathname={pathname} 
+                handleNavigation={handleNavigation} 
+                handleLogout={requestLogout} 
+                loggingOut={loggingOut} 
+            />
+            
+            <button 
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
                 className="lg:hidden fixed top-4 left-4 z-[60] bg-white/90 backdrop-blur-md p-3 rounded-xl shadow-lg border border-cyan-200 transition-transform hover:scale-110"
             >
-                {mobileMenuOpen ? <X size={20} className="text-cyan-600" /> : <Menu size={20} className="text-cyan-600" />} 
+                {mobileMenuOpen ? <X size={20} className="text-cyan-600" /> : <Menu size={20} className="text-cyan-600" />}
             </button>
 
-            {/* MOBILE SIDEBAR */}
-            {mobileMenuOpen && (
-                <div className="lg:hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm transition-opacity" onClick={() => setMobileMenuOpen(false)}>
-                    <div className="w-64 h-full bg-white shadow-2xl transform transition-transform" onClick={(e) => e.stopPropagation()}> 
-                        {/* Mobile menu content */}
-                        <div className="px-4 py-6 border-b border-cyan-100 bg-gradient-to-br from-cyan-500 via-blue-600 to-blue-700 relative overflow-hidden">
-                            <div className="flex items-center gap-3 relative z-10">
-                                <div className="bg-white/40 p-2.5 rounded-xl shadow-xl border border-white/30">
-                                    <Droplet className="text-white" size={24} /> 
-                                </div>
-                                <div className="text-white">
-                                    <h1 className="font-bold text-2xl drop-shadow-lg">PDAM</h1> 
-                                    <p className="text-cyan-100 text-xs flex items-center gap-1">
-                                        <Waves size={12} />
-                                        Work Order System
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                        <nav className="p-3 space-y-1 overflow-y-auto h-[calc(100vh-160px)]"> 
-                            {menuItems.map((item) => {
-                                const Icon = item.icon;
-                                const active = pathname === item.href;
-                                return (
-                                    <button
-                                        key={item.href}
-                                        onClick={() => {
-                                            handleNavigation(item.href);
-                                            setMobileMenuOpen(false);
-                                        }}
-                                        className={`flex items-center gap-3 px-4 py-3 rounded-xl w-full text-left transition-all ${ 
-                                            active 
-                                                ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg"
-                                                : "hover:bg-cyan-50 text-slate-700 hover:text-cyan-700"
-                                        }`}
-                                    >
-                                        <Icon size={18} /> 
-                                        <span className="text-sm font-semibold">{item.label}</span>
-                                    </button>
-                                );
-                            })}
-                        </nav>
-                        <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-cyan-100 bg-white">
-                            <button
-                                onClick={() => {
-                                    setMobileMenuOpen(false);
-                                    setShowLogoutConfirm(true);
-                                }}
-                                disabled={loggingOut}
-                                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all w-full font-semibold ${
-                                    loggingOut 
-                                        ? 'bg-gray-400 cursor-not-allowed text-white'
-                                        : 'hover:bg-red-500 text-slate-700 hover:text-white'
-                                }`}
-                            >
-                                {loggingOut ? (
-                                    <Loader2 size={18} className="animate-spin text-white" />
-                                ) : (
-                                    <LogOut size={18} /> 
-                                )}
-                                <span className="text-sm">{loggingOut ? 'Memproses Keluar...' : 'Keluar'}</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* LOGOUT CONFIRMATION MODAL */}
-            {showLogoutConfirm && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] backdrop-blur-sm transition-opacity">
-                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-[90%] max-w-xs text-center relative overflow-hidden transform transition-all scale-100"> 
-                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400"></div>
-                        <div className="mb-3 flex justify-center"> 
-                            <div className="bg-gradient-to-br from-red-500 to-red-600 p-3 rounded-full shadow-xl"> 
-                                <LogOut className="text-white" size={24} /> 
-                            </div>
-                        </div>
-                        <h2 className="text-xl font-bold text-gray-800 mb-2">Konfirmasi Logout</h2> 
-                        <p className="text-gray-500 text-sm mb-6">
-                            Anda yakin ingin keluar dari sistem?
-                        </p>
-                        <div className="flex justify-center gap-3">
-                            <button
-                                onClick={() => setShowLogoutConfirm(false)}
-                                disabled={loggingOut}
-                                className="px-4 py-2 rounded-lg border-2 border-gray-300 text-gray-700 hover:bg-gray-100 transition-all font-semibold text-sm disabled:opacity-50" 
-                            >
-                                Batal
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setShowLogoutConfirm(false);
-                                    handleLogout();
-                                }}
-                                disabled={loggingOut}
-                                className="px-4 py-2 rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700 shadow-lg hover:shadow-xl transition-all font-semibold text-sm disabled:opacity-50"
-                            >
-                                {loggingOut ? (
-                                    <Loader2 size={16} className="animate-spin mr-1 inline-block" />
-                                ) : (
-                                    'Ya, Logout'
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* MAIN CONTENT */}
             <main className="flex-1 relative flex flex-col h-screen">
-                {/* HEADER */}
-                <div className="sticky top-0 z-40 bg-gradient-to-r from-cyan-500 via-blue-600 to-blue-700 shadow-xl relative overflow-hidden backdrop-blur-xl border-b border-white/10">
-                    {/* Wave Pattern SVG */}
-                    <svg className="absolute bottom-0 left-0 w-full h-12 opacity-10" viewBox="0 0 1440 100" preserveAspectRatio="none"> 
-                        <path fill="white" d="M0,50 C240,80 480,20 720,50 C960,80 1200,20 1440,50 L1440,100 L0,100 Z">
-                            <animate
-                                attributeName="d"
-                                dur="10s"
-                                repeatCount="indefinite"
-                                values="
-                                    M0,50 C240,80 480,20 720,50 C960,80 1200,20 1440,50 L1440,100 L0,100 Z;
-                                    M0,50 C240,20 480,80 720,50 C960,20 1200,80 1440,50 L1440,100 L0,100 Z;
-                                    M0,50 C240,80 480,20 720,50 C960,80 1200,20 1440,50 L1440,100 L0,100 Z
-                                "
-                            />
-                        </path>
-                    </svg>
+                <Header
+                    currentPage={currentPage}
+                    currentTime={currentTime}
+                    mounted={mounted}
+                    userData={userData}
+                    loading={loading}
+                    unreadNotificationCount={unreadNotificationCount}
+                    totalNotificationCount={totalNotificationCount}
+                    notifications={displayedNotifications} 
+                    showNotificationDropdown={showNotificationDropdown}
+                    setShowNotificationDropdown={setShowNotificationDropdown}
+                    loadingNotifications={loadingNotifications}
+                    loadingAllNotifications={loadingAllNotifications}
+                    loadingMoreNotifications={loadingMoreNotifications}
+                    showingAllNotifications={showingAllNotifications}
+                    markNotificationAsRead={markNotificationAsRead}
+                    markAllNotificationsAsRead={markAllNotificationsAsRead}
+                    markAllNotificationsAsReadAll={markAllNotificationsAsReadAll}
+                    onLoadMoreNotifications={handleLoadMoreNotifications}
+                />
 
-                    <div className="relative z-10 px-4 lg:px-6 py-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3"> 
-                        {/* LEFT - Page Info */}
-                        <div className="flex items-center gap-3 ml-12 lg:ml-0"> 
-                            <div className="bg-white/20 backdrop-blur-md p-3 rounded-xl shadow-lg border border-white/30 hover:scale-105 transition-transform"> 
-                                {currentPage.icon && (
-                                    <currentPage.icon className="text-white drop-shadow-md" size={24} strokeWidth={2.5} />
-                                )}
-                            </div>
-                            <div>
-                                <h1 className="text-xl lg:text-2xl font-bold text-white tracking-tight drop-shadow-lg"> 
-                                    {currentPage.label}
-                                </h1>
-                                <p className="text-cyan-100 text-xs font-medium flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 bg-cyan-300 rounded-full"></span>
-                                    {currentPage.description}
-                                </p>
-                            </div>
-                        </div>
-
-
-                        <div className="hidden lg:flex items-center gap-3"> 
-                            <div className="relative group">
-                                {/* Water Drop Icon */}
-                                <div className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-60 group-hover:opacity-100 transition-opacity">
-                                    <Droplet className="text-white/80" size={16} /> 
-                                </div>
-                                
-                                {/* Clock Container */}
-                                <div className="bg-white/15 backdrop-blur-md rounded-xl px-4 py-2 border border-white/20 shadow-lg relative overflow-hidden group-hover:bg-white/20 transition-all"> 
-                                    <div className="absolute inset-0 opacity-20">
-                                        <div className="absolute bottom-0 left-0 right-0 h-full bg-gradient-to-t from-cyan-400/30 to-transparent animate-pulse"></div>
-                                    </div>
-                                    
-                                    {/* Time Display */}
-                                    <div className="relative z-10 flex items-center gap-2"> 
-                                        {mounted && (
-                                            <>
-                                                {/* Icon Clock */}
-                                                <Clock className="text-white/90 drop-shadow-sm" size={18} strokeWidth={2.5} /> 
-
-                                                <div className="flex items-baseline gap-1">
-                                                    <span className="text-xl font-bold text-white tabular-nums"> 
-                                                        {currentTime.toLocaleTimeString("id-ID", {
-                                                            hour: "2-digit",
-                                                            minute: "2-digit",
-                                                        })}
-                                                    </span>
-                                                    <span className="text-cyan-200 text-sm font-medium animate-pulse"> 
-                                                        {currentTime.toLocaleTimeString("id-ID", {
-                                                            second: "2-digit",
-                                                        })}
-                                                    </span>
-                                                </div>
-
-                                                {/* Separator */}
-                                                <div className="w-px h-5 bg-white/30"></div>
-
-                                                {/* Date */}
-                                                <div className="text-cyan-100 text-xs font-medium"> 
-                                                    {currentTime.toLocaleDateString("id-ID", {
-                                                        day: "numeric",
-                                                        month: "short",
-                                                    })}
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-
-                                    
-                                    {/* Bottom Wave Line */}
-                                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-300 to-transparent opacity-50"></div>
-                                </div>
-                                
-                                {/* Wave Icon */}
-                                <div className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-60 group-hover:opacity-100 transition-opacity">
-                                    <Waves className="text-white/80" size={16} /> 
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* RIGHT - User & Notification */}
-                        <div className="flex items-center gap-3 lg:gap-4"> 
-                            {/* User Info */}
-                            <div className="flex items-center bg-white/20 rounded-xl border border-white/30 p-1.5 lg:p-2 pr-3 lg:pr-4 shadow-lg backdrop-blur-md hover:bg-white/25 transition-all"> 
-                                <div className="w-8 h-8 lg:w-10 lg:h-10 bg-gradient-to-br from-white to-cyan-100 rounded-full flex items-center justify-center shadow-md border-2 border-white/50"> 
-                                    <Users className="text-cyan-600" size={16} /> 
-                                </div>
-                                <div className="ml-2 lg:ml-2 text-left">
-                                    {loading ? (
-                                        <>
-                                            <div className="h-3 w-20 bg-white/30 rounded mb-0.5"></div>
-                                            <div className="h-2.5 w-24 bg-white/20 rounded"></div>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <p className="text-white text-xs font-bold leading-tight drop-shadow"> 
-                                                {userData?.nama}
-                                            </p>
-                                            <p className="text-cyan-100 text-xs leading-tight">NPP: {userData?.npp}</p>
-                                        </>
-                                    )}
-                                </div>
-                                <button className="ml-2 lg:ml-3 p-1.5 hover:bg-white/20 rounded-md transition-colors hidden lg:block">
-                                    <Settings className="text-white" size={16} /> 
-                                </button>
-                            </div>
-
-                            {/* Notification */}
-                            <button className="bg-white/20 backdrop-blur-sm p-2 rounded-lg hover:bg-white/30 transition-all duration-300 border border-white/30 shadow-lg relative group"> 
-                                <Bell className="text-white group-hover:scale-110 transition-transform" size={18} /> 
-                                <span className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-br from-red-400 to-red-600 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-md group-hover:scale-110 transition-transform border-2 border-white">
-                                    3
-                                </span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* CONTENT AREA */}
+            
                 <div className="flex-1 overflow-auto p-4 lg:p-6">
                     <div className="max-w-7xl mx-auto">
                         {children}
-
-                        {pathname === "/dashboard" && (
-                            <>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 mt-6"> 
-                                    {[
-                                        { title: "Total Pengguna", value: "1,234", icon: Users, color: "from-blue-500 to-blue-600" },
-                                        { title: "SPK Aktif", value: "56", icon: FileText, color: "from-cyan-500 to-cyan-600" },
-                                        { title: "Pengajuan Baru", value: "89", icon: ClipboardList, color: "from-teal-500 to-teal-600" },
-                                        { title: "Volume Air", value: "2.5M", icon: Droplet, color: "from-blue-400 to-cyan-500" },
-                                    ].map((stat, idx) => (
-                                        <div
-                                            key={idx}
-                                            className="bg-white/90 backdrop-blur-md rounded-xl p-4 shadow-lg border border-cyan-100/50 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer" 
-                                        >
-                                            <div className="flex items-center justify-between mb-3"> 
-                                                <div className={`bg-gradient-to-br ${stat.color} p-2 rounded-lg shadow-md`}> 
-                                                    <stat.icon className="text-white" size={20} /> 
-                                                </div>
-                                                <div className="text-right">
-                                                    <p className="text-2xl font-bold text-gray-800">{stat.value}</p> 
-                                                </div>
-                                            </div>
-                                            <p className="text-gray-600 font-medium text-sm">{stat.title}</p>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* Welcome Card */}
-                                <div className="bg-gradient-to-br from-cyan-500 via-blue-600 to-blue-700 rounded-2xl p-6 shadow-xl text-white relative overflow-hidden"> 
-                                    <div className="absolute inset-0 opacity-20">
-                                        <Waves className="absolute top-4 right-8 w-24 h-24" />
-                                        <Droplet className="absolute bottom-6 left-10 w-20 h-20" />
-                                    </div>
-                                    <div className="relative z-10">
-                                        <h2 className="text-2xl font-bold mb-2 drop-shadow-lg"> 
-                                            Selamat Datang di PDAM Work Order System
-                                        </h2>
-                                        <p className="text-cyan-100 text-base mb-4"> 
-                                            Kelola semua pekerjaan dan pengajuan dengan mudah dan efisien
-                                        </p>
-                                        <button className="bg-white text-blue-600 px-4 py-2.5 rounded-lg font-semibold hover:bg-cyan-50 transition-all shadow-md hover:shadow-lg hover:scale-105 text-sm"> 
-                                            Mulai Sekarang →
-                                        </button>
-                                    </div>
-                                </div>
-                            </>
-                        )}
                     </div>
                 </div>
             </main>
+
+            <LogoutModal 
+                show={showLogoutConfirm} 
+                onConfirm={() => { setShowLogoutConfirm(false); handleLogout(); }} 
+                onCancel={() => setShowLogoutConfirm(false)} 
+                loggingOut={loggingOut} 
+            />
         </div>
     );
+}
+
+declare global {
+    interface Window {
+        notificationEventSource?: EventSource;
+    }
 }

@@ -28,22 +28,19 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-
-
 :root {
   --pdam-blue: #007bff;
   --pdam-light: #e6f2ff;
 }
 
-
 /* Hanya tampilkan area konten utama saat print */
 @media print {
   body * {
-    visibility: hidden; /* sembunyikan semua elemen */
+    visibility: hidden;
   }
 
   #print-area, #print-area * {
-    visibility: visible; /* tampilkan hanya area print */
+    visibility: visible;
   }
 
   #print-area {
@@ -53,25 +50,33 @@ body {
     width: 100%;
   }
 
-  /* Hilangkan background biru sidebar */
   aside, .sidebar {
     display: none !important;
   }
 
-  /* Atur agar ukuran sesuai A4 */
   @page {
     size: A4;
     margin: 15mm;
   }
 
   @keyframes bounce-slow {
-  0%, 100% { transform: translateY(-50%) translateX(-50%); }
-  50% { transform: translateY(-60%) translateX(-50%); }
-}
+    0%, 100% { transform: translateY(-50%) translateX(-50%); }
+    50% { transform: translateY(-60%) translateX(-50%); }
+  }
 
-.animate-bounce-slow {
-  animation: bounce-slow 3s ease-in-out infinite;
-}
+  .animate-bounce-slow {
+    animation: bounce-slow 3s ease-in-out infinite;
+  }
 
-}
+  [contenteditable="true"]:empty:before {
+    content: attr(data-placeholder);
+    color: #9ca3af;
+  }
 
+  .notification-dropdown {
+    position: fixed !important;
+    z-index: 9999 !important;
+    transform: translateZ(0) !important;
+    will-change: transform !important;
+  }
+} /* <-- DITUTUP DI SINI */

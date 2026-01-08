@@ -2,21 +2,42 @@
 
 import { useRouter } from "next/navigation";
 import React, { useEffect, useState, useCallback } from "react";
-import { PlusCircle, Search, Loader2, Eye, Pencil, Trash2, X, AlertTriangle, CheckCircle, Droplet } from "lucide-react";
+import { 
+    PlusCircle, 
+    Search, 
+    Loader2, 
+    Eye, 
+    Pencil, 
+    Trash2, 
+    X, 
+    AlertTriangle, 
+    CheckCircle, 
+    Droplet, 
+    Lock, 
+    Home,
+    Copy // Import icon Copy
+} from "lucide-react";
 
-
-const LIST_API_BASE_PATH = "/api/pengajuan/pelapor"; 
-
+// KONFIGURASI API
+const LIST_API_BASE_PATH = "/api/pengajuan/riwayat"; 
 const DELETE_API_BASE = "/api/pengajuan/delete/";
 const MAX_RETRIES = 1;
 
+// KONFIGURASI PERMISSION
+const CREATE_PERMISSION = 'Workorder.pengajuan.create';
+const RIWAYAT_PERMISSION = 'Workorder.pengajuan.riwayat.views';
+const VIEW_DETAIL_PERMISSION = 'Workorder.pengajuan.riwayat.view'; 
+const EDIT_PERMISSION = 'Workorder.pengajuan.riwayat.edit';
+const DELETE_PERMISSION = 'Workorder.pengajuan.riwayat.delete';
+
+
 // #######################################################################
-// PERBAIKAN 1: PERBARUI TIPE DATA ApiPengajuanItem (Sudah Benar)
+// TIPE DATA
 // #######################################################################
 type ApiPengajuanItem = {
     id: number;
     uuid: string;
-    no_surat: string;
+    no_surat: string | null; // Update: Bisa null dari API
     hal_id: number;
     catatan: string;
     kepada: string;
@@ -47,6 +68,7 @@ type Pengajuan = {
     hal: string;
     name_pelapor: string;
     status: string;
+    no_surat: string; // Tambahkan field ini
 };
 
 type ToastMessage = {
@@ -55,7 +77,7 @@ type ToastMessage = {
     isVisible: boolean;
 };
 
-// --- HELPER FUNCTIONS (Dibiarkan sama) ---
+// --- HELPER FUNCTIONS ---
 
 const formatDate = (isoString: string): string => {
     try {
@@ -118,9 +140,13 @@ const Toast = ({ toast, setToast }: { toast: ToastMessage, setToast: React.Dispa
     );
 };
 
-export default function DataPengajuanPage() {
+export default function RiwayatDataPengajuanPage() {
     const router = useRouter();
 
+    // --- STATE MANAGEMENT ---
+    const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+    const [userPermissions, setUserPermissions] = useState<string[]>([]);
+    
     const [loading, setLoading] = useState(true);
     const [pengajuans, setPengajuans] = useState<Pengajuan[]>([]);
     const [search, setSearch] = useState("");
@@ -133,9 +159,11 @@ export default function DataPengajuanPage() {
 
     const [toast, setToast] = useState<ToastMessage>({ message: '', type: 'success', isVisible: false });
 
-    /**
-     * Menampilkan notifikasi toast sementara.
-     */
+    // --- UTILITY CALLBACKS ---
+    const hasPermission = useCallback((permissionName: string): boolean => {
+        return userPermissions.includes(permissionName);
+    }, [userPermissions]);
+
     const showToast = useCallback((message: string, type: 'success' | 'error') => {
         setToast({ message, type, isVisible: true });
         setTimeout(() => {
@@ -143,111 +171,119 @@ export default function DataPengajuanPage() {
         } , 4000);
     }, []);
 
-    const fetchData = useCallback(async () => {
-    setLoading(true);
-    setAuthError(null);
-
-    let token: string | null = null;
-    let userNpp: string | null = null;
-
-    if (typeof window !== 'undefined') {
-        token = localStorage.getItem('token');
-        userNpp = localStorage.getItem('user_npp');
-
-        if (!userNpp && localStorage.getItem('user_data')) {
-            try {
-                const userData = JSON.parse(localStorage.getItem('user_data') as string);
-                userNpp = userData.npp;
-            } catch (e) {
-                console.error("Gagal parse user_data:", e);
+    // --- EFFECT: Load Permissions ---
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const storedPermissions = localStorage.getItem('user_permissions');
+            if (storedPermissions) {
+                try {
+                    const permissions = JSON.parse(storedPermissions);
+                    if (Array.isArray(permissions)) {
+                        setUserPermissions(permissions);
+                    }
+                } catch (e) {
+                    console.error("Gagal parse user_permissions:", e);
+                    setUserPermissions([]);
+                }
             }
+            setPermissionsLoaded(true);
         }
-    }
+    }, []);
 
-    if (!token) {
-        showToast("Token tidak ditemukan. Login ulang.", "error");
-        setAuthError("Token tidak ada");
+
+    const fetchData = useCallback(async () => {
+        if (!permissionsLoaded) return;
+        if (!hasPermission(RIWAYAT_PERMISSION)) {
+            setAuthError(`Akses Ditolak: Anda tidak memiliki izin (${RIWAYAT_PERMISSION}) untuk melihat riwayat pengajuan.`);
+            setLoading(false);
+            return;
+        }
+
+        setLoading(true);
+        setAuthError(null);
+
+        let token: string | null = null;
+        
+        if (typeof window !== 'undefined') {
+            token = localStorage.getItem('token');
+        }
+
+        if (!token) {
+            showToast("Token tidak ditemukan. Login ulang.", "error");
+            setAuthError("Token tidak ada");
+            setLoading(false);
+            return;
+        }
+
+        const fullApiUrl = LIST_API_BASE_PATH;
+        const headers = {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+        };
+
+        try {
+            const response = await fetch(fullApiUrl, { method: "GET", headers });
+
+            if (response.status === 404) {
+                console.warn("API mengembalikan 404 → data kosong");
+                setPengajuans([]);
+                setLoading(false);
+                return;
+            }
+
+            if (!response.ok) {
+                const errorBody = await response.json().catch(() => ({}));
+                showToast(errorBody.message || "Gagal memuat data", "error");
+                setAuthError("Gagal memuat data");
+                setLoading(false);
+                return;
+            }
+
+            const result: ApiResponse = await response.json();
+
+            if (!result.success || !Array.isArray(result.data)) {
+                console.warn("Data API kosong / bukan array");
+                setPengajuans([]);
+                setLoading(false);
+                return;
+            }
+
+            const activeData = result.data.filter((item) => item.is_deleted !== 1);
+
+            const mapped = activeData.map((item) => {
+                // Bersihkan HTML tags dari keterangan jika ada
+                const rawKeterangan = item.keterangan || item.catatan || item.kode_barang || "Tidak Ada Keterangan";
+                // Opsi sederhana untuk remove tag HTML jika diperlukan, atau biarkan render apa adanya
+                // const cleanKeterangan = rawKeterangan.replace(/<[^>]*>?/gm, ''); 
+
+                return {
+                    id: item.id,
+                    uuid: item.uuid,
+                    tanggal: formatDate(item.created_at),
+                    no_surat: item.no_surat || '-',
+                    hal: rawKeterangan, 
+                    name_pelapor: item.name_pelapor || item.npp_pelapor || "Anonim",
+                    status: item.status || "Pending",
+                };
+            });
+
+            setPengajuans(mapped);
+        } catch (e: any) {
+            console.error("Fetch error:", e);
+            setAuthError("Gagal mengambil data");
+        }
+
         setLoading(false);
-        return;
-    }
-
-    if (!userNpp) {
-        showToast("NPP Pelapor tidak ditemukan.", "error");
-        setAuthError("NPP tidak ada");
-        setLoading(false);
-        return;
-    }
-
-    const fullApiUrl = `${LIST_API_BASE_PATH}/${userNpp}`;
-    const headers = {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-    };
-
-    try {
-        const response = await fetch(fullApiUrl, { method: "GET", headers });
-
-        // ---------- PATCH PENTING ----------
-        // Jika API return 404 → berarti data kosong, bukan error
-        if (response.status === 404) {
-            console.warn("API mengembalikan 404 → data kosong");
-            setPengajuans([]);
-            setLoading(false);
-            return;
-        }
-        // ------------------------------------
-
-        // Jika error selain 404
-        if (!response.ok) {
-            const errorBody = await response.json().catch(() => ({}));
-            showToast(errorBody.message || "Gagal memuat data", "error");
-            setAuthError("Gagal memuat data");
-            setLoading(false);
-            return;
-        }
-
-        const result: ApiResponse = await response.json();
-
-        // ---------- PATCH 2 ----------
-        // Jika API return success false atau data bukan array → anggap kosong saja
-        if (!result.success || !Array.isArray(result.data)) {
-            console.warn("Data API kosong / bukan array");
-            setPengajuans([]);
-            setLoading(false);
-            return;
-        }
-        // ------------------------------
-
-        const activeData = result.data.filter((item) => item.is_deleted !== 1);
-
-        const mapped = activeData.map((item) => ({
-            id: item.id,
-            uuid: item.uuid,
-            tanggal: formatDate(item.created_at),
-            hal:
-                item.keterangan ||
-                item.catatan ||
-                item.kode_barang ||
-                "Tidak Ada Keterangan",
-            name_pelapor: item.name_pelapor || item.npp_pelapor || "Anonim",
-            status: item.status || "Pending",
-        }));
-
-        setPengajuans(mapped);
-    } catch (e: any) {
-        console.error("Fetch error:", e);
-        setAuthError("Gagal mengambil data");
-    }
-
-    setLoading(false);
-}, [showToast]);
+    }, [showToast, hasPermission, permissionsLoaded]);
 
 
     useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+        if (permissionsLoaded) {
+            fetchData();
+        }
+    }, [fetchData, permissionsLoaded]);
 
-    // --- Action Handlers (Dibiarkan sama) ---
+    // --- Action Handlers ---
 
     const generateNoSurat = (): string => {
         const now = new Date();
@@ -259,6 +295,10 @@ export default function DataPengajuanPage() {
     };
 
     const handleBuatPengajuan = () => {
+        if (!hasPermission(CREATE_PERMISSION)) { 
+            showToast(`Akses Ditolak: Anda tidak memiliki izin (${CREATE_PERMISSION}) untuk membuat pengajuan baru.`, "error");
+            return;
+        }
         setCreating(true);
         const nomorSuratBaru = generateNoSurat();
 
@@ -267,32 +307,56 @@ export default function DataPengajuanPage() {
         }
 
         router.push("/dashboard/lampiran/tambah");
-
         setCreating(false);
     };
 
     const handleView = (uuid: string) => {
+        if (!hasPermission(VIEW_DETAIL_PERMISSION)) {
+            showToast(`Akses Ditolak: Anda tidak memiliki izin (${VIEW_DETAIL_PERMISSION}) untuk melihat detail.`, "error");
+            return;
+        }
         router.push(`/dashboard/lampiran/view/${uuid}`);
     };
 
     const handleEdit = (uuid: string) => {
+        if (!hasPermission(EDIT_PERMISSION)) {
+            showToast(`Akses Ditolak: Anda tidak memiliki izin (${EDIT_PERMISSION}) untuk mengedit pengajuan.`, "error");
+            return;
+        }
         localStorage.setItem("current_edit_uuid", uuid);
         router.push(`/dashboard/lampiran/edit/${uuid}`);
     };
 
     const handleDeleteClick = (id: number, uuid: string, hal: string) => {
+        if (!hasPermission(DELETE_PERMISSION)) {
+            showToast(`Akses Ditolak: Anda tidak memiliki izin (${DELETE_PERMISSION}) untuk menghapus pengajuan.`, "error");
+            return;
+        }
         if (isDeleting) return;
         setItemToDelete({ id, uuid, hal });
         setIsDeleteModalOpen(true);
     };
 
+    // --- FUNGSI COPY ---
+    const handleCopy = (text: string) => {
+        if (!text || text === '-') return;
+        navigator.clipboard.writeText(text);
+        showToast(`No Surat "${text}" berhasil disalin!`, "success");
+    };
+
     const handleConfirmDelete = async () => {
+        if (!hasPermission(DELETE_PERMISSION)) {
+            showToast(`Akses Ditolak: Anda tidak memiliki izin (${DELETE_PERMISSION}) untuk menghapus pengajuan.`, 'error');
+            setIsDeleteModalOpen(false);
+            return;
+        }
+
         if (itemToDelete.uuid === null) {
             showToast("Error: UUID data tidak ditemukan.", 'error');
             setIsDeleteModalOpen(false);
             return;
         }
-
+        
         const uuidToDelete = itemToDelete.uuid;
         const idToDelete = itemToDelete.id;
         const halDeleted = itemToDelete.hal;
@@ -370,14 +434,15 @@ export default function DataPengajuanPage() {
             p.hal.toLowerCase().includes(search.toLowerCase()) ||
             p.name_pelapor.toLowerCase().includes(search.toLowerCase()) ||
             p.status.toLowerCase().includes(search.toLowerCase()) ||
-            p.tanggal.toLowerCase().includes(search.toLowerCase())
+            p.tanggal.toLowerCase().includes(search.toLowerCase()) ||
+            p.no_surat.toLowerCase().includes(search.toLowerCase())
     );
 
     const getStatusStyle = (status: string) => {
         switch (status.toLowerCase()) {
             case "approved":
             case "diterima":
-                return "bg-blue-100 text-blue-700 ring-1 ring-blue-300";
+                return "bg-green-100 text-green-700 ring-1 ring-green-300";
             case "rejected":
             case "ditolak":
                 return "bg-red-100 text-red-700 ring-1 ring-red-300";
@@ -387,7 +452,7 @@ export default function DataPengajuanPage() {
             case "diproses":
             case "selesai":
             case "":
-                return "bg-green-100 text-green-700 ring-1 ring-green-300";
+                return "bg-blue-100 text-blue-700 ring-1 ring-blue-300";
             case "error":
                 return "bg-gray-700 text-white";
             default:
@@ -395,7 +460,7 @@ export default function DataPengajuanPage() {
         }
     };
 
-    // --- CUSTOM MODAL COMPONENT (Dibiarkan sama) ---
+    // --- CUSTOM MODAL COMPONENT ---
     const DeleteConfirmationModal = () => {
         if (!isDeleteModalOpen || itemToDelete.id === null) return null;
 
@@ -443,14 +508,66 @@ export default function DataPengajuanPage() {
         );
     };
 
-    // --- RENDER DENGAN STYLING BARU (Dibiarkan sama) ---
+    // --- Access Denied UI ---
+    const AccessDeniedUI = ({ missingPermission }: { missingPermission: string }) => {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 md:p-10 text-center transform transition-all">
+
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-6">
+                        <Lock className="text-red-600" size={32} />
+                    </div>
+                    
+                    <h1 className="text-3xl font-bold text-gray-900 mb-3">Akses Ditolak</h1>
+                    <p className="text-gray-600 mb-6 leading-relaxed">
+                        Maaf, Anda tidak memiliki izin yang cukup untuk mengakses halaman ini.
+                    </p>
+                    
+                    <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                        <p className="text-sm font-semibold text-gray-700 mb-1">Izin yang Diperlukan:</p>
+                        <code className="block bg-white px-3 py-2 rounded border border-red-200 text-red-600 font-mono text-sm">
+                            {missingPermission}
+                        </code>
+                    </div>
+                    
+                    <p className="text-sm text-gray-500 mb-6">
+                        Jika Anda ingin Izin, silakan hubungi administrator sistem Anda.
+                    </p>
+                    
+                    <button
+                        onClick={() => router.push('/dashboard')} 
+                        className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors shadow-md"
+                    >
+                        <Home size={18} />
+                        Kembali ke Dashboard
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
+
+    if (!permissionsLoaded) { 
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <Loader2 className="animate-spin text-blue-600 mr-3" size={32} />
+                <span className="text-xl font-medium text-gray-700">Memuat izin pengguna...</span>
+            </div>
+        );
+    }
+
+    if (!hasPermission(RIWAYAT_PERMISSION)) { 
+        return <AccessDeniedUI missingPermission={RIWAYAT_PERMISSION} />;
+    }
+
+
+    // --- RENDER UTAMA ---
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-8">
             <DeleteConfirmationModal />
             <Toast toast={toast} setToast={setToast} />
 
-            {/* Global Deleting Overlay */}
             {isDeleting && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-60">
                     <div className="bg-white p-6 rounded-xl shadow-2xl flex items-center">
@@ -460,7 +577,6 @@ export default function DataPengajuanPage() {
                 </div>
             )}
 
-            {/* Header dengan Styling RiwayatDataPengajuan */}
             <div className="bg-gradient-to-r from-blue-50 to-white rounded-2xl p-5 border border-blue-100 shadow-lg">
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -476,9 +592,28 @@ export default function DataPengajuanPage() {
                             </p>
                         </div>
                     </div>
+                    
+                    <button
+                        onClick={handleBuatPengajuan}
+                        disabled={creating || isDeleting || !hasPermission(EDIT_PERMISSION)}
+                        title={!hasPermission(EDIT_PERMISSION) ? `Akses Ditolak: Tidak ada izin (${EDIT_PERMISSION})` : "Buat Pengajuan Baru"}
+                        className={`flex items-center gap-2 ${
+                            (creating || isDeleting || !hasPermission(EDIT_PERMISSION)) ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 active:bg-blue-800"
+                        } text-white px-5 py-2.5 rounded-xl shadow-lg transition-all transform hover:scale-[1.02] duration-200 ease-in-out font-medium`}
+                    >
+                        {creating ? (
+                            <>
+                                <Loader2 size={18} className="animate-spin" /> Membuat...
+                            </>
+                        ) : (
+                            <>
+                                <PlusCircle size={18} /> Buat Pengajuan Baru
+                            </>
+                        )}
+                    </button>
                 </div>
 
-                {/* Search Bar dengan Styling RiwayatDataPengajuan */}
+                {/* Search Bar */}
                 <div className="relative max-w-lg mt-5">
                     <Search
                         className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
@@ -494,7 +629,7 @@ export default function DataPengajuanPage() {
                 </div>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-xl border border-blue-100 overflow-hidden">
+            <div className="bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
                 <div className="px-5 py-4 border-b border-blue-100">
                     <h3 className="text-lg font-bold text-gray-900">
                         Daftar Riwayat Pengajuan Perbaikan
@@ -505,91 +640,140 @@ export default function DataPengajuanPage() {
                 </div>
 
                 <div className="overflow-x-auto">
-                    <table className="min-w-full border-collapse">
-                        <thead className="bg-gradient-to-r from-blue-50 to-blue-100">
+                    <table className="min-w-full text-sm text-gray-700 divide-y divide-gray-200">
+                        {/* UPDATE HEADER SESUAI PERMINTAAN */}
+                        <thead className="bg-blue-600 text-white">
                             <tr>
-                                <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider w-[5%] border-b border-blue-200">No</th>
-                                <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider w-[15%] border-b border-blue-200">Tanggal</th>
-                                <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider w-[30%] border-b border-blue-200">Hal (Keterangan)</th>
-                                <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider w-[25%] border-b border-blue-200">Pelapor</th>
-                                <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider w-[15%] border-b border-blue-200">Status</th>
-                                <th className="px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wider w-[10%] border-b border-blue-200">Aksi</th>
+                                <th className="px-4 py-3 text-left font-semibold w-[5%] border-b border-blue-200">No</th>
+                                <th className="px-4 py-3 text-left font-semibold w-[15%] border-b border-blue-200">Tanggal</th>
+                                <th className="px-4 py-3 text-left font-semibold w-[20%] border-b border-blue-200">No. Surat</th>
+                                <th className="px-4 py-3 text-left font-semibold max-w-xs border-b border-blue-200">Hal (Keterangan)</th>
+                                <th className="px-4 py-3 text-left font-semibold w-[15%] border-b border-blue-200">Pelapor</th>
+                                <th className="px-4 py-3 text-left font-semibold w-[10%] border-b border-blue-200">Status</th>
+                                <th className="px-4 py-3 text-center font-semibold w-[10%] border-b border-blue-200">Aksi</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-blue-200">
+                        <tbody className="divide-y divide-gray-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={6} className="py-10 text-center bg-white">
+                                    <td colSpan={7} className="py-10 text-center bg-white">
                                         <Loader2 className="animate-spin inline-block text-blue-600 mr-2" size={24}/>
                                         <span className="text-gray-600 font-medium">Memuat data...</span>
                                     </td>
                                 </tr>
                             ) : authError && filtered.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="py-10 text-center bg-white">
+                                    <td colSpan={7} className="py-10 text-center bg-white">
                                         <AlertTriangle className="inline-block text-red-500 mr-2" size={24}/>
-                                        <span className="text-red-500 font-medium">Gagal memuat data. Mohon periksa koneksi Anda atau coba login ulang.</span>
+                                        <span className="text-red-500 font-medium">{authError}. Mohon periksa koneksi Anda atau coba login ulang.</span>
                                     </td>
                                 </tr>
-                                ) : pengajuans.length === 0 ? (
-        // --- KONDISI 1: Belum punya riwayat pengajuan ---
-                            <tr>
-                                <td colSpan={6} className="py-10 text-center">
-                                    <p className="text-gray-700 text-base font-semibold">
-                                        Anda belum memiliki riwayat pengajuan.
-                                    </p>
-                                    <p className="text-gray-500 text-sm mt-1">
-                                        Silakan buat pengajuan baru.
-                                    </p>
-                                </td>
-                            </tr>
-
-                            ) : (
+                            ) : pengajuans.length === 0 ? (
+                                // KONDISI 1: Benar-benar tidak punya data dari Database
+                                <tr>
+                                    <td colSpan={7} className="py-16 text-center">
+                                        <p className="text-gray-700 text-lg font-semibold mb-2">
+                                            Anda belum memiliki riwayat pengajuan.
+                                        </p>
+                                        <p className="text-gray-500 text-sm mb-4">
+                                            Silakan buat pengajuan baru.
+                                        </p>
+                                        <button
+                                            onClick={handleBuatPengajuan}
+                                            disabled={!hasPermission(EDIT_PERMISSION)}
+                                            className="inline-flex items-center gap-2 bg-blue-100 text-blue-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors"
+                                        >
+                                           <PlusCircle size={16}/> Buat Sekarang
+                                        </button>
+                                    </td>
+                                </tr>
+                            ) : filtered.length === 0 ? (
+                                // KONDISI 2: Data Ada, tapi Search tidak ketemu
+                                <tr>
+                                    <td colSpan={7} className="py-12 text-center">
+                                        <Droplet className="mx-auto text-gray-400 mb-3" size={48} />
+                                        <p className="text-gray-700 text-base font-medium">
+                                            Tidak ada data pengajuan yang ditemukan
+                                        </p>
+                                        <p className="text-gray-500 text-xs mt-1">
+                                            Coba ubah kata kunci pencarian "{search}"
+                                        </p>
+                                        <button 
+                                            onClick={() => setSearch('')}
+                                            className="mt-3 text-blue-600 text-xs font-medium hover:underline"
+                                        >
+                                            Reset Pencarian
+                                        </button>
+                                    </td>
+                                </tr>
+                            ) : (
+                                // KONDISI 3: Data Ada dan Sesuai Search
                                 filtered.map((p, i) => (
                                     <tr
                                         key={p.id}
-                                        className={`hover:bg-blue-50/50 transition-colors duration-200 ${
-                                            i % 2 === 0 ? "bg-white" : "bg-blue-50/20" 
-                                        }`}
+                                        className="bg-white hover:bg-blue-50 transition-colors"
                                     >
-                                        <td className="px-4 py-3 text-xs font-medium text-gray-800 text-center">{i + 1}</td>
+                                        <td className="px-4 py-3 text-center text-xs font-medium text-gray-800">{i + 1}</td>
                                         <td className="px-4 py-3 text-xs text-gray-800 whitespace-nowrap">{p.tanggal}</td>
-                                        <td className="px-4 py-3 text-xs text-gray-800 max-w-xs line-clamp-2">{p.hal}</td>
+                                        
+                                        {/* KOLOM NO SURAT DENGAN COPY */}
+                                        <td className="px-4 py-3 text-xs text-gray-800 font-semibold whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                <span>{p.no_surat}</span>
+                                                {p.no_surat && p.no_surat !== '-' && (
+                                                    <button
+                                                        onClick={() => handleCopy(p.no_surat)}
+                                                        className="text-gray-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-gray-100"
+                                                        title="Salin No Surat"
+                                                    >
+                                                        <Copy size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+
+                                        <td className="px-4 py-3 text-xs text-gray-800 max-w-xs line-clamp-2">
+                                            {/* Render HTML content jika perlu, atau text biasa */}
+                                            <div dangerouslySetInnerHTML={{ __html: p.hal }} />
+                                        </td>
                                         <td className="px-4 py-3 text-xs text-gray-800 font-medium whitespace-nowrap">{p.name_pelapor}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <span
-                                                className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full border ${getStatusStyle(p.status)}`}
+                                                className={`inline-flex px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full border ${getStatusStyle(p.status)}`}
                                             >
                                                 {p.status || 'BELUM DIISI'}
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 text-xs font-medium whitespace-nowrap">
                                             <div className="flex justify-center space-x-2">
+                                                {/* VIEW */}
                                                 <button
                                                     onClick={() => handleView(p.uuid)}
-                                                    title="Lihat Detail"
-                                                    disabled={isDeleting}
-                                                    className="p-1.5 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors duration-200 disabled:opacity-50"
+                                                    title={!hasPermission(VIEW_DETAIL_PERMISSION) ? `Akses Ditolak: Tidak ada izin ${VIEW_DETAIL_PERMISSION}` : "Lihat Detail"}
+                                                    disabled={isDeleting || !hasPermission(VIEW_DETAIL_PERMISSION)}
+                                                    className={`p-1.5 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors duration-200 disabled:opacity-50`}
                                                 >
                                                     <Eye className="text-blue-700 hover:scale-110 transition-transform" size={14} />
                                                 </button>
-
+                                                
+                                                {/* EDIT */}
                                                 <button
                                                     onClick={() => handleEdit(p.uuid)}
-                                                    title="Ubah Data"
-                                                    disabled={isDeleting}
-                                                    className="p-1.5 bg-yellow-100 hover:bg-yellow-200 rounded-md transition-colors duration-200 disabled:opacity-50"
+                                                    title={!hasPermission(EDIT_PERMISSION) ? `Akses Ditolak: Tidak ada izin ${EDIT_PERMISSION}` : "Ubah Data"}
+                                                    disabled={isDeleting || !hasPermission(EDIT_PERMISSION)}
+                                                    className={`p-1.5 bg-yellow-100 hover:bg-yellow-200 rounded-md transition-colors duration-200 disabled:opacity-50`}
                                                 >
                                                     <Pencil className="text-yellow-700 hover:scale-110 transition-transform" size={14} />
                                                 </button>
-
+                                                
+                                                {/* DELETE */}
                                                 <button
                                                     onClick={() => handleDeleteClick(p.id, p.uuid, p.hal)}
-                                                    title="Hapus Pengajuan"
-                                                    disabled={isDeleting || !p.uuid}
-                                                    className={`p-1.5 ${p.uuid ? 'bg-red-100 hover:bg-red-200' : 'bg-gray-100 cursor-not-allowed'} rounded-md transition-colors duration-200 disabled:opacity-50`}
+                                                    title={!hasPermission(DELETE_PERMISSION) ? `Akses Ditolak: Tidak ada izin ${DELETE_PERMISSION}` : "Hapus Pengajuan"}
+                                                    disabled={isDeleting || !p.uuid || !hasPermission(DELETE_PERMISSION)}
+                                                    className={`p-1.5 ${(!p.uuid || !hasPermission(DELETE_PERMISSION)) ? 'bg-gray-100 cursor-not-allowed' : 'bg-red-100 hover:bg-red-200'} rounded-md transition-colors duration-200 disabled:opacity-50`}
                                                 >
-                                                    <Trash2 className={`${p.uuid ? 'text-red-700' : 'text-gray-400'} hover:scale-110 transition-transform`} size={14} />
+                                                    <Trash2 className={`${(!p.uuid || !hasPermission(DELETE_PERMISSION)) ? 'text-gray-400' : 'text-red-700'} hover:scale-110 transition-transform`} size={14} />
                                                 </button>
                                             </div>
                                         </td>
@@ -599,18 +783,6 @@ export default function DataPengajuanPage() {
                         </tbody>
                     </table>
                 </div>
-
-                {filtered.length === 0 && !loading && !authError && (
-                    <div className="px-5 py-8 text-center">
-                        <Droplet className="mx-auto text-gray-500 mb-3" size={40} />
-                        <p className="text-gray-700 text-base font-medium">
-                            Tidak ada data pengajuan yang ditemukan
-                        </p>
-                        <p className="text-gray-500 text-xs mt-1">
-                            Coba ubah kata kunci pencarian
-                        </p>
-                    </div>
-                )}
             </div>
 
             <div className="bg-gradient-to-r from-blue-50 to-white rounded-xl p-4 border border-blue-100">

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Ganti ini dengan URL base File Handler PDAM yang Anda akses untuk gambar
 const FILE_HANDLER_BASE_URL = "https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto/";
 
 /**
@@ -21,8 +20,6 @@ export async function GET(request: NextRequest) {
         return new Response('Authorization token is missing', { status: 401 });
     }
 
-    // Rekonstruksi URL File Handler PDAM 
-    // Contoh: https://.../foto/?path=work-order/2025/11/&filename=file.jpg
     const externalFileUrl = `${FILE_HANDLER_BASE_URL}?path=${path}&filename=${filename}`;
     
     try {
@@ -39,7 +36,6 @@ export async function GET(request: NextRequest) {
             return new Response(`Failed to fetch TTD asset: ${fileResponse.statusText}`, { status: fileResponse.status });
         }
 
-        // Mengembalikan file content dan header secara langsung
         const contentType = fileResponse.headers.get('content-type') || 'image/png';
 
         return new Response(fileResponse.body, {

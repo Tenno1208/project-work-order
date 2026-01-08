@@ -17,14 +17,18 @@ const MAX_RETRIES = 1;
 const MAX_FILES = 4;
 const TTD_PROXY_PATH = "/api/ttd-proxy";
 const REFERENSI_SURAT_LOCAL_PATH = "/api/referensi-surat";
-// KONSTANTA BARU: Proxy untuk mengambil data supervisor
 const SUPERVISOR_PROXY_PATH = "/api/my-supervisor"; 
+const PENGAJUAN_MENGETAHUI_KEPALA = process.env.NEXT_PUBLIC_PENGAJUAN_MENGETAHUI_KEPALA || "Plt. Kepala";
 
 // --- TYPES & UI COMPONENTS ---
 
-type SatkerDef = { id: string; label: string; jabatan: string };
+type SatkerDef = { id: string; label: string; jabatan: string; kd_satker: string; npp_kepala: string; };
 type HalOption = { id: string | number; nama_jenis: string };
-type RefSuratOption = { uuid: string; nomor_surat: string };
+type RefSuratOption = { 
+    uuid: string; 
+    nomor_surat: string;
+    keterangan: string; 
+};
 type NotificationType = 'success' | 'error' | 'warning';
 
 type PegawaiDef = {
@@ -35,12 +39,12 @@ type PegawaiDef = {
     jabatan: string;
 };
 
-// Tipe untuk respons API Supervisor
 type SupervisorData = {
     npp: string;
     name: string;
-    satker: string; // Asumsi: field ini ada
-    jabatan: string; // Asumsi: field ini ada
+    orgunit: string;
+    position: string;
+    tlp?: string;
 } | null;
 
 type ApiPengajuanDetail = {
@@ -66,14 +70,18 @@ interface FormDataState {
     hal: string;
     hal_nama: string;
     kepada: string;
+    kepadaNpp: string;
+    kd_satker: string;
     satker: string;
     kodeBarang: string;
     keterangan: string;
     pelapor: string;
     nppPelapor: string;
     mengetahui: string;
+    mengetahui_name: string; 
     nppMengetahui: string;
     referensiSurat: string;
+    mengetahuiTlp: string; 
 }
 
 interface ModalContent {
@@ -81,6 +89,12 @@ interface ModalContent {
     message: string;
     onConfirm: () => void;
     onCancel: () => void;
+}
+
+async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    return new File([blob], filename, { type: 'image/png' });
 }
 
 type TtdHistoryItem = { originalUrl: string; processedUrl: string };
@@ -160,7 +174,7 @@ const ConfirmationModal = ({ isOpen, content }: { isOpen: boolean, content: Moda
     );
 };
 
-// --- MODAL BARU UNTUK RIWAYAT TTD (MODIFIKASI) ---
+// --- MODAL RIWAYAT TTD DENGAN LOADING HAPUS ---
 const TtdHistoryModal = ({
     isOpen,
     history,
@@ -177,9 +191,10 @@ const TtdHistoryModal = ({
     onDeleteTtd: (url: string) => Promise<void>
 }) => {
     const [selectedTtdItem, setSelectedTtdItem] = useState<TtdHistoryItem | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const handleTtdClick = (item: TtdHistoryItem) => {
-        setSelectedTtdItem(item);
+        if (!isDeleting) setSelectedTtdItem(item);
     };
 
     const handleApplySelection = () => {
@@ -191,8 +206,15 @@ const TtdHistoryModal = ({
     
     const handleDeleteClick = async () => {
         if (selectedTtdItem) {
-            await onDeleteTtd(selectedTtdItem.originalUrl);
-            setSelectedTtdItem(null);
+            setIsDeleting(true);
+            try {
+                await onDeleteTtd(selectedTtdItem.originalUrl);
+                setSelectedTtdItem(null);
+            } catch (error) {
+                console.error("Gagal menghapus:", error);
+            } finally {
+                setIsDeleting(false);
+            }
         }
     };
 
@@ -207,7 +229,8 @@ const TtdHistoryModal = ({
                     </span>
                     <button
                         onClick={onCreateTtd}
-                        className="flex items-center gap-2 px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition"
+                        disabled={isDeleting}
+                        className="flex items-center gap-2 px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition disabled:opacity-50"
                     >
                         <PlusCircle size={18} />
                         Upload TTD Baru
@@ -218,22 +241,28 @@ const TtdHistoryModal = ({
                 </p>
 
                 <div className="grid grid-cols-3 gap-4 max-h-80 overflow-y-auto border p-2 rounded-lg bg-gray-50">
-                    {history.map((item, index) => (
-                        <div
-                            key={index}
-                            onClick={() => handleTtdClick(item)}
-                            className={`p-2 border-2 rounded-lg cursor-pointer transition-all bg-white shadow-sm ${
-                                selectedTtdItem?.processedUrl === item.processedUrl ? 'border-blue-500' : 'border-gray-200 hover:border-blue-400'
-                            }`}
-                        >
-                            <img
-                                src={item.processedUrl}
-                                alt={`TTD ${index + 1}`}
-                                className="w-full h-16 object-contain"
-                            />
-                            <p className="text-xs text-center mt-1 text-gray-500">TTD #{index + 1}</p>
+                    {history.length === 0 ? (
+                        <div className="col-span-3 text-center py-8 text-gray-400">
+                            Belum ada riwayat tanda tangan.
                         </div>
-                    ))}
+                    ) : (
+                        history.map((item, index) => (
+                            <div
+                                key={index}
+                                onClick={() => handleTtdClick(item)}
+                                className={`p-2 border-2 rounded-lg cursor-pointer transition-all bg-white shadow-sm relative ${
+                                    selectedTtdItem?.processedUrl === item.processedUrl ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-blue-400'
+                                } ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                                <img
+                                    src={item.processedUrl}
+                                    alt={`TTD ${index + 1}`}
+                                    className="w-full h-16 object-contain"
+                                />
+                                <p className="text-xs text-center mt-1 text-gray-500">TTD #{index + 1}</p>
+                            </div>
+                        ))
+                    )}
                 </div>
 
                 <div className="flex justify-between items-center mt-6">
@@ -241,23 +270,34 @@ const TtdHistoryModal = ({
                         {selectedTtdItem && (
                             <button
                                 onClick={handleDeleteClick}
-                                className="flex items-center gap-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition"
+                                disabled={isDeleting}
+                                className="flex items-center gap-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition disabled:bg-red-400 min-w-[120px] justify-center"
                             >
-                                <Trash2 size={18} />
-                                Hapus TTD Ini
+                                {isDeleting ? (
+                                    <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        Hapus...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Trash2 size={18} />
+                                        Hapus TTD
+                                    </>
+                                )}
                             </button>
                         )}
                     </div>
                     <div className="flex justify-end gap-3">
                         <button
                             onClick={onClose}
-                            className="px-4 py-2 text-sm font-medium text-white bg-gray-600 rounded-md hover:bg-gray-700 transition"
+                            disabled={isDeleting}
+                            className="px-4 py-2 text-sm font-medium text-white bg-gray-600 rounded-md hover:bg-gray-700 transition disabled:opacity-50"
                         >
                             Batal
                         </button>
                         <button
                             onClick={handleApplySelection}
-                            disabled={!selectedTtdItem}
+                            disabled={!selectedTtdItem || isDeleting}
                             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition disabled:bg-gray-400"
                         >
                             Terapkan
@@ -286,6 +326,7 @@ const TtdCropModal = ({
     const [rotation, setRotation] = useState(0);
     const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    
     const [transparencySettings, setTransparencySettings] = useState({
         whiteThreshold: 235,
         blackThreshold: 35,
@@ -378,7 +419,7 @@ const TtdCropModal = ({
                     </h3>
                     <button
                         onClick={() => setShowSettings(!showSettings)}
-                        className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200 transition flex items-center gap-1"
+                        className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200 transition flex items-center gap-1 font-medium text-black"
                     >
                         <Settings size={16} />
                         Pengaturan
@@ -386,56 +427,32 @@ const TtdCropModal = ({
                 </div>
 
                 {showSettings && (
-                    <div className="mb-4 p-3 bg-gray-50 rounded-lg border">
-                        <h4 className="font-medium text-sm mb-2">Pengaturan Transparansi</h4>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="flex items-center gap-2 text-sm">
-                                    <input
-                                        type="checkbox"
-                                        checked={transparencySettings.useAdvanced}
-                                        onChange={(e) => setTransparencySettings(prev => ({
-                                            ...prev,
-                                            useAdvanced: e.target.checked
-                                        }))}
-                                    />
-                                    Gunakan Mode Transparansi Lanjutan
-                                </label>
-                                <p className="text-xs text-gray-500 mt-1">Mode lanjutan lebih baik untuk tanda tangan dengan berbagai warna</p>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Threshold Putih: {transparencySettings.whiteThreshold}</label>
+                    <div className="mb-4 p-3 bg-gray-100 rounded-lg border border-gray-300">
+                        {/* UPDATE: Judul jadi Hitam Bold */}
+                        <h4 className="font-bold text-sm mb-2 text-black">Pengaturan Transparansi</h4>
+                        <div>
+                            {/* UPDATE: Label Checkbox jadi Hitam Bold */}
+                            <label className="flex items-center gap-2 text-sm font-bold text-black cursor-pointer">
                                 <input
-                                    type="range"
-                                    min="200"
-                                    max="255"
-                                    value={transparencySettings.whiteThreshold}
+                                    type="checkbox"
+                                    checked={transparencySettings.useAdvanced}
                                     onChange={(e) => setTransparencySettings(prev => ({
                                         ...prev,
-                                        whiteThreshold: parseInt(e.target.value)
+                                        useAdvanced: e.target.checked
                                     }))}
-                                    className="w-full"
+                                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                                 />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Threshold Hitam: {transparencySettings.blackThreshold}</label>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="50"
-                                    value={transparencySettings.blackThreshold}
-                                    onChange={(e) => setTransparencySettings(prev => ({
-                                        ...prev,
-                                        blackThreshold: parseInt(e.target.value)
-                                    }))}
-                                    className="w-full"
-                                />
-                            </div>
+                                Gunakan Mode Transparansi Lanjutan
+                            </label>
+                            {/* UPDATE: Deskripsi jadi Hitam (sebelumnya abu-abu) */}
+                            <p className="text-xs text-black mt-1 font-medium">
+                                Mode lanjutan lebih baik untuk tanda tangan dengan pencahayaan tidak merata.
+                            </p>
                         </div>
                     </div>
                 )}
 
-                <div className="relative flex-1 bg-gray-100 rounded-lg overflow-hidden">
+                <div className="relative flex-1 bg-gray-100 rounded-lg overflow-hidden border border-gray-300">
                     <Cropper
                         image={imageSrc}
                         crop={crop}
@@ -449,9 +466,10 @@ const TtdCropModal = ({
                     />
                 </div>
 
-                <div className="mt-4 space-y-2">
+                <div className="mt-4 space-y-3">
                     <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium w-20">Zoom:</span>
+                        {/* Label Zoom Hitam */}
+                        <span className="text-sm font-bold text-black w-20">Zoom:</span>
                         <input
                             type="range"
                             value={zoom}
@@ -460,11 +478,12 @@ const TtdCropModal = ({
                             step={0.1}
                             aria-labelledby="Zoom"
                             onChange={(e) => setZoom(Number(e.target.value))}
-                            className="flex-1"
+                            className="flex-1 accent-blue-600"
                         />
                     </div>
                     <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium w-20">Rotasi:</span>
+                        {/* Label Rotasi Hitam */}
+                        <span className="text-sm font-bold text-black w-20">Rotasi:</span>
                         <input
                             type="range"
                             value={rotation}
@@ -473,7 +492,7 @@ const TtdCropModal = ({
                             step={1}
                             aria-labelledby="Rotation"
                             onChange={(e) => setRotation(Number(e.target.value))}
-                            className="flex-1"
+                            className="flex-1 accent-blue-600"
                         />
                     </div>
                 </div>
@@ -481,14 +500,14 @@ const TtdCropModal = ({
                 <div className="flex justify-end gap-3 mt-4">
                     <button
                         onClick={onCancel}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 transition"
+                        className="px-4 py-2 text-sm font-bold text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 transition"
                     >
                         Batal
                     </button>
                     <button
                         onClick={showCroppedImage}
                         disabled={isProcessing}
-                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition disabled:bg-blue-400"
+                        className="px-4 py-2 text-sm font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition disabled:bg-blue-400"
                     >
                         {isProcessing ? (
                             <>
@@ -505,10 +524,9 @@ const TtdCropModal = ({
     );
 };
 
-// --- HELPER FUNCTION TTD (FINAL UNTUK MENGATASI CORS) ---
 const FALLBACK_IMAGE_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
-async function makeImageTransparent(imgUrl: string, token: string, settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }): Promise<string> {
+async function makeImageTransparent(imgUrl: string, token: string, settings?: { whiteThreshold: number, blackThreshold: number, useAdvanced: boolean }): Promise<string> {
     if (imgUrl.startsWith('data:')) {
         return processImageTransparency(imgUrl, settings);
     }
@@ -612,10 +630,109 @@ async function processImageTransparency(dataUrl: string, settings?: { whiteThres
     });
 }
 
+async function resizeAndMakeTransparent(
+    dataUrl: string, 
+    settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean },
+    targetWidth: number = 600 
+): Promise<string> {
+    return new Promise((resolve) => {
+        try {
+            const whiteThreshold = settings?.whiteThreshold || 235;
+            const blackThreshold = settings?.blackThreshold || 35;
+            const useAdvanced = settings?.useAdvanced !== false;
+
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.src = dataUrl;
+
+            img.onload = () => {
+                const aspectRatio = img.height / img.width;
+                const newWidth = targetWidth;
+                const newHeight = Math.round(newWidth * aspectRatio);
+
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d")!;
+                
+                canvas.width = newWidth;
+                canvas.height = newHeight;
+                
+                ctx.drawImage(img, 0, 0, newWidth, newHeight);
+
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+
+                if (useAdvanced) {
+                    for (let i = 0; i < data.length; i += 4) {
+                        const r = data[i];
+                        const g = data[i + 1];
+                        const b = data[i + 2];
+                        const brightness = (r + g + b) / 3;
+                        const colorVariance = Math.max(r, g, b) - Math.min(r, g, b);
+
+                        if (brightness > whiteThreshold || brightness < blackThreshold) {
+                            data[i + 3] = 0;
+                        } else if (colorVariance < 15 && brightness > 100 && brightness < 200) {
+                            data[i + 3] = 0;
+                        } else if (brightness > 220) {
+                            data[i + 3] = Math.max(0, 255 - (brightness - 220) * 10);
+                        }
+                    }
+                } else {
+                    for (let i = 0; i < data.length; i += 4) {
+                        const r = data[i];
+                        const g = data[i + 1];
+                        const b = data[i + 2];
+                        const brightness = (r + g + b) / 3;
+                        if (brightness > whiteThreshold || brightness < blackThreshold) {
+                            data[i + 3] = 0;
+                        }
+                    }
+                }
+
+                ctx.putImageData(imageData, 0, 0);
+                resolve(canvas.toDataURL("image/png"));
+            };
+            
+            img.onerror = () => {
+                resolve(dataUrl);
+            };
+        } catch (error) {
+            console.error("Error dalam resizeAndMakeTransparent:", error);
+            resolve(dataUrl);
+        }
+    });
+}
+
+// --- KOMPONEN KUSTOM UNTUK SELECT REF SURAT ---
+const CustomOption = (props: any) => {
+    return (
+        <div 
+            {...props.innerProps}
+            className={`${props.className} flex flex-col py-2 px-3 hover:bg-blue-50 cursor-pointer`}
+            title={props.data.keterangan} // Tooltip untuk keterangan lengkap
+        >
+            <div className="font-medium text-sm">{props.data.label}</div>
+            <div className="text-xs text-gray-500 truncate max-w-xs">
+                {props.data.keterangan || "Tidak ada keterangan"}
+            </div>
+        </div>
+    );
+};
+
+// PERBAIKAN: CustomSingleValue menampilkan label (nomor surat) dengan benar
+const CustomSingleValue = (props: any) => {
+    return (
+        <div {...props.innerProps} className={props.className}>
+            <div className="font-medium text-sm">{props.data.label || props.data.value}</div>
+        </div>
+    );
+};
 
 export default function LampiranPengajuanPage() {
     const router = useRouter();
     const didMountRef = useRef(false);
+
+    const [satkerAsalDisplay, setSatkerAsalDisplay] = useState<string>("");
 
     const [editUuid, setEditUuid] = useState<string | null>(null);
     const isEditMode = !!editUuid;
@@ -633,14 +750,18 @@ export default function LampiranPengajuanPage() {
         hal: "",
         hal_nama: "",
         kepada: "",
+        kepadaNpp: "",
+        kd_satker: "",
         satker: "",
         kodeBarang: "",
         keterangan: "",
         pelapor: "",
         nppPelapor: "",
         mengetahui: "",
+        mengetahui_name: "",
         nppMengetahui: "",
         referensiSurat: "",
+        mengetahuiTlp: "",
     });
 
     const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -658,9 +779,7 @@ export default function LampiranPengajuanPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalContent, setModalContent] = useState<ModalContent | null>(null);
 
-    // PERUBAHAN: State ttdHistory menggunakan tipe baru
-    const [ttdHistory, setTtdHistory] = useState<TtdHistoryItem[]>([]
-);
+    const [ttdHistory, setTtdHistory] = useState<TtdHistoryItem[]>([]);
     const [isTtdHistoryModalOpen, setIsTtdHistoryModalOpen] = useState(false);
     const ttdFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -672,7 +791,52 @@ export default function LampiranPengajuanPage() {
         useAdvanced: true
     });
 
-    // PERUBAHAN: Fungsi fetchTtdHistory yang diperbarui
+    const [supervisorOrgunit, setSupervisorOrgunit] = useState<string>("");
+
+    const selectedRefSuratOption = refSuratOptions.find(opt => opt.nomor_surat === form.referensiSurat);
+
+    const handleReferensiSuratChange = (option: any) => {
+        const selectedValue = option ? option.value : "";
+        
+        setForm((f) => ({ 
+            ...f, 
+            referensiSurat: selectedValue 
+        }));
+        
+        if (selectedValue) {
+            const refSurat = refSuratOptions.find(opt => opt.nomor_surat === selectedValue);
+            if (refSurat) {
+                const italicRef = `<i>${refSurat.nomor_surat}</i>`;
+                
+                if (form.keterangan) {
+                    const lines = form.keterangan.split('\n');
+                    if (lines.length >= 4) {
+                        lines[3] = italicRef;
+                        setForm((f) => ({ 
+                            ...f, 
+                            keterangan: lines.join('\n') 
+                        }));
+                    } else {
+                        while (lines.length < 3) {
+                            lines.push('');
+                        }
+                        lines.push(italicRef);
+                        setForm((f) => ({ 
+                            ...f, 
+                            keterangan: lines.join('\n') 
+                        }));
+                    }
+                } else {
+                    const newKeterangan = ['', '', '', italicRef].join('\n');
+                    setForm((f) => ({ 
+                        ...f, 
+                        keterangan: newKeterangan 
+                    }));
+                }
+            }
+        }
+    };
+
     const fetchTtdHistory = useCallback(async (token: string, npp: string) => {
         try {
             const res = await fetch(`${TTD_PROXY_PATH}/${npp}`, {
@@ -685,19 +849,15 @@ export default function LampiranPengajuanPage() {
                 const serverTtdPath = json.ttd_path || null;
                 const serverTtdList = json.ttd_list || [];
                 
-                // --- PERUBAHAN START: Normalisasi URL TTD ---
-
                 const normalizeUrl = (path: string): string => {
                     if (path.startsWith('http')) {
-                        return path; // Sudah URL lengkap
+                        return path;
                     }
-                    // Path relatif (contoh: uploads/ttd/ttd0222.png) harus digabungkan dengan Base URL PDAM
                     const base = PDAM_TTD_BASE_URL.endsWith('/') ? PDAM_TTD_BASE_URL.slice(0, -1) : PDAM_TTD_BASE_URL;
                     const cleanPath = path.startsWith('/') ? path.slice(1) : path;
                     return `${base}/${cleanPath}`;
                 };
 
-                // Kumpulkan semua path potensial
                 let rawPaths: string[] = [];
                 if (serverTtdPath && typeof serverTtdPath === 'string') {
                     rawPaths.push(serverTtdPath);
@@ -706,15 +866,11 @@ export default function LampiranPengajuanPage() {
                     rawPaths.push(...serverTtdList);
                 }
 
-                // Normalisasi dan deduplikasi
                 const uniqueNormalizedPaths = Array.from(new Set(rawPaths.map(normalizeUrl)));
-                // --- PERUBAHAN END ---
                 
                 if (uniqueNormalizedPaths.length > 0) {
-                    // PERUBAHAN: Buat array objek dengan URL asli dan yang sudah diproses
                     const historyItems: TtdHistoryItem[] = await Promise.all(
                         uniqueNormalizedPaths.map(async (finalUrl: string) => {
-                            // finalUrl sekarang adalah URL TTD lengkap yang benar (PDAM Base URL)
                             const processedUrl = await makeImageTransparent(finalUrl, token, transparencySettings);
                             return {
                                 originalUrl: finalUrl,
@@ -729,8 +885,10 @@ export default function LampiranPengajuanPage() {
                         const normalizedServerTtdPath = normalizeUrl(serverTtdPath);
                         const primaryTtdItem = historyItems.find(item => item.originalUrl === normalizedServerTtdPath) || historyItems[0];
                         setTtdPelaporPreview(primaryTtdItem.processedUrl);
+                        setTtdScale(1.8); 
                     } else if (historyItems.length > 0) {
                         setTtdPelaporPreview(historyItems[0].processedUrl);
+                        setTtdScale(1.8); 
                     }
                     
                 } else {
@@ -765,12 +923,15 @@ export default function LampiranPengajuanPage() {
                 hal: data.hal_id?.toString() || "",
                 hal_nama: halOption?.nama_jenis || data.catatan || "",
                 kepada: data.kepada || "",
-                satker: satkers.find(s => s.label === data.satker)?.label || data.satker || "", // Menggunakan label satker
+                kepadaNpp: data.npp_kepala_satker || "",
+                kd_satker: data.kepada || "", 
+                satker: satkers.find(s => s.label === data.satker)?.label || data.satker || "", 
                 kodeBarang: data.kode_barang || "",
                 keterangan: data.keterangan || data.catatan || "",
                 pelapor: data.name || "",
                 nppPelapor: data.npp || "",
                 mengetahui: data.mengetahui || "",
+                mengetahui_name: data.mengetahui || "",
                 nppMengetahui: data.npp_mengetahui || "",
                 referensiSurat: "",
             });
@@ -821,43 +982,77 @@ export default function LampiranPengajuanPage() {
             console.error("❌ Error ambil data detail pengajuan:", err.message);
             setNotification({ type: 'error', message: `Gagal memuat detail pengajuan: ${err.message}. Kembali ke daftar.` });
             localStorage.removeItem('current_edit_uuid');
-            router.push("/dashboard/lampiran");
+            router.push("/dashboard/lampiran/riwayat");
         } finally {
             setInitialLoading(false);
         }
     }, [router, transparencySettings]);
 
 
-    // Fungsi baru untuk mengambil data supervisor
-    const fetchSupervisor = useCallback(async (token: string): Promise<SupervisorData> => {
-        try {
-            // Panggil proxy API yang akan meneruskan permintaan ke API PDAM
-            const res = await fetch(SUPERVISOR_PROXY_PATH, {
-                headers: { Authorization: `Bearer ${token}` },
-                cache: "no-store",
-            });
+const fetchSupervisor = useCallback(async (token: string): Promise<SupervisorData> => {
+    try {
+        console.log("🔍 Fetching supervisor data from:", SUPERVISOR_PROXY_PATH);
+        
+        const res = await fetch(SUPERVISOR_PROXY_PATH, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+        });
 
-            if (!res.ok) {
-                console.error(`Gagal memuat data supervisor. Status: ${res.status}`);
-                return null;
-            }
+        console.log("📡 Supervisor API Response Status:", res.status);
 
-            const result = await res.json();
-            
-            // Asumsi struktur respons proxy API: { success: true, data: { npp: '...', name: '...', jabatan: '...' } }
-            if (result.success && result.data && result.data.npp) {
-                return result.data as SupervisorData;
-            } else {
-                console.warn("Data supervisor tidak ditemukan atau struktur tidak sesuai.");
-                return null;
-            }
-
-        } catch (err) {
-            console.error("Error fetching supervisor data via proxy:", err);
-            setNotification({ type: 'warning', message: 'Gagal mengambil data pimpinan otomatis. Harap isi manual.' });
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error(`❌ Gagal memuat data supervisor. Status: ${res.status}`, errorText);
             return null;
         }
-    }, []);
+
+        const result = await res.json();
+        console.log("📦 Supervisor API Response Data:", result);
+        
+        
+        if (result.npp && result.name) {
+            console.log("✅ Supervisor data berhasil dimuat (direct data):", result);
+            return {
+                npp: result.npp,
+                name: result.name,
+                orgunit: result.orgunit || '',
+                position: result.position || '',
+                tlp: result.tlp || ''
+            } as SupervisorData;
+        }
+        
+        if (result.success && result.data && result.data.npp) {
+            console.log("✅ Supervisor data berhasil dimuat (success wrapper):", result.data);
+            return {
+                npp: result.data.npp,
+                name: result.data.name,
+                orgunit: result.data.orgunit || '',
+                position: result.data.position || '',
+                tlp: result.data.tlp || ''
+            } as SupervisorData;
+        } 
+        
+        if (result.status === 200 && result.data && result.data.npp) {
+            console.log("✅ Supervisor data berhasil dimuat (status wrapper):", result.data);
+            return {
+                npp: result.data.npp,
+                name: result.data.name,
+                orgunit: result.data.orgunit || '',
+                position: result.data.position || '',
+                tlp: result.data.tlp || ''
+            } as SupervisorData;
+        } 
+        
+        console.warn("⚠️ Data supervisor tidak ditemukan atau struktur tidak sesuai:", result);
+        return null;
+
+    } catch (err: any) {
+        console.error("❌ Error fetching supervisor data via proxy:", err);
+        console.error("Error details:", err.message, err.stack);
+        setNotification({ type: 'warning', message: 'Gagal mengambil data pimpinan otomatis. Harap isi manual.' });
+        return null;
+    }
+}, []);
 
 
     useEffect(() => {
@@ -882,32 +1077,32 @@ export default function LampiranPengajuanPage() {
             let pegawaiMap: PegawaiDef[] = [];
             let refOptionsMap: RefSuratOption[] = [];
             
-            // --- AMBIL DATA SATKER ASAL DARI localStorage ---
-            let satkerDariStorage: string = "";
+            let kdParentAsal = "";
+            let namaSatkerAsal = "";
             let jabatanDariStorage: string = "Ka.Unit";
             const userDataString = localStorage.getItem("user_data");
             if (userDataString) {
                 try {
                     const localUserData = JSON.parse(userDataString);
-                    satkerDariStorage = localUserData.satker || "";
+                    kdParentAsal = localUserData.kdparent || ""; 
+                    namaSatkerAsal = localUserData.satker || "";
                     jabatanDariStorage = localUserData.jabatan || localUserData.jabsatker || "Ka.Unit";
+                        
+                        setSatkerAsalDisplay(namaSatkerAsal);
                 } catch (e) {
                     console.error("Gagal parse user_data dari localStorage:", e);
                 }
             }
-            // -----------------------------------------------------------
 
             try {
-                // Panggil API untuk data pendukung
                 const [userRes, halRes, satkerRes, pegawaiRes, refSuratRes] = await Promise.all([
                     fetch("/api/me", { headers }),
                     fetch("/api/hal", { headers, cache: "no-store" }),
-                    fetch("/api/satker", { headers }), // PANGGIL API SATKER
-                    fetch("/api/all-pegawai", { headers }), // PANGGIL API PEGAWAI (untuk fallback mengetahui)
+                    fetch("/api/satker", { headers }), 
+                    fetch("/api/all-pegawai", { headers }), 
                     fetch(REFERENSI_SURAT_LOCAL_PATH, { headers, cache: "no-store" }),
                 ]);
 
-                // 1. Ambil Data User
                 const userData = await userRes.json();
                 if (userData?.nama && userData?.npp) {
                     userNpp = userData.npp;
@@ -917,14 +1112,14 @@ export default function LampiranPengajuanPage() {
                             ...f,
                             pelapor: userData.nama,
                             nppPelapor: userData.npp,
-                            satker: satkerDariStorage || f.satker,
+                            satker: kdParentAsal,
+                            kd_satker: kdParentAsal,
                         }));
                     }
                 } else {
                     console.warn("Gagal mendapatkan data user/NPP.");
                 }
 
-                // 2. Ambil Data Hal
                 const halJson = await halRes.json();
                 if (halJson?.success && Array.isArray(halJson.data)) {
                     halOptionsMap = halJson.data.map((item: any) => ({
@@ -934,27 +1129,27 @@ export default function LampiranPengajuanPage() {
                     setHalOptions(halOptionsMap);
                 }
 
-                // 3. Ambil Data Satker
                 const satkerData = await satkerRes.json();
                 if (Array.isArray(satkerData?.data)) {
                     satkersMap = satkerData.data.map((item: any) => ({
                         id: item.id?.toString(),
                         label: item.satker_name,
                         jabatan: item.jabsatker || "Ka.Unit",
+                        kd_satker: item.kd_satker,            
+                        npp_kepala: item.npp_kepala_satker || ""
                     }));
                     
-                    if (satkerDariStorage && !satkersMap.some(s => s.label === satkerDariStorage)) {
-                        satkersMap.push({ id: satkerDariStorage, label: satkerDariStorage, jabatan: jabatanDariStorage });
+                    if (namaSatkerAsal && !satkersMap.some(s => s.label === namaSatkerAsal)) {
+                        satkersMap.push({ id: namaSatkerAsal, label: namaSatkerAsal, jabatan: jabatanDariStorage });
                     }
                     setSatkers(satkersMap);
-                } else {
-                    if (satkerDariStorage) {
-                        setSatkers([{ id: satkerDariStorage, label: satkerDariStorage, jabatan: jabatanDariStorage }]);
-                    }
+                    } else {
+                        if (namaSatkerAsal) {
+                            setSatkers([{ id: namaSatkerAsal, label: namaSatkerAsal, jabatan: jabatanDariStorage }]);
+                }
                     console.warn("Gagal memuat data Satker dari API, menggunakan data localStorage untuk Satker Asal.");
                 }
 
-                // 4. Ambil Data Pegawai (untuk fallback dan referensi)
                 const pegawaiJson = await pegawaiRes.json();
                 if (pegawaiJson?.success && Array.isArray(pegawaiJson.data)) {
                     pegawaiMap = pegawaiJson.data.map((item: any) => ({
@@ -967,43 +1162,45 @@ export default function LampiranPengajuanPage() {
                     setAllPegawai(pegawaiMap);
                 }
 
-                // 5. Ambil Data Referensi Surat
                 const refSuratJson = await refSuratRes.json();
                 if (refSuratJson?.success && Array.isArray(refSuratJson.data)) {
                     refOptionsMap = refSuratJson.data.map((item: any) => ({
                         uuid: item.uuid || null,
                         nomor_surat: item.no_surat,
+                        keterangan: item.keterangan || "",
                     }));
                     setRefSuratOptions(refOptionsMap);
                 } else {
                     console.warn("Gagal memuat referensi surat atau data kosong:", refSuratJson);
                 }
                 
-                // 6. Ambil Data Supervisor (Pimpinan Satker)
                 let supervisorData: SupervisorData = null;
                 if (userNpp) {
+                    console.log("🔄 Mengambil data supervisor untuk NPP:", userNpp);
                     supervisorData = await fetchSupervisor(token);
+                    console.log("📊 Hasil supervisor data:", supervisorData);
                 }
-                
+
                 if (supervisorData && !storedUuid) {
+                    console.log("✅ Mengisi form dengan data supervisor:", supervisorData.name, supervisorData.npp, supervisorData.orgunit);
                     setForm(f => ({
                         ...f,
-                        mengetahui: supervisorData!.name,
+                        mengetahui: `${PENGAJUAN_MENGETAHUI_KEPALA} ${supervisorData!.orgunit || ''}`,
+                        mengetahui_name: supervisorData!.name,
                         nppMengetahui: supervisorData!.npp,
-                        // Update Satker Asal berdasarkan data Supervisor jika diperlukan
-                        // satker: supervisorData!.satker, 
+                        mengetahuiTlp: supervisorData!.tlp || '',
                     }));
+                    setSupervisorOrgunit(supervisorData.orgunit);
                 } else if (!storedUuid) {
+                    console.warn("⚠️ Gagal memuat data supervisor atau dalam mode edit");
                     setNotification({ type: 'warning', message: 'Gagal memuat data Pimpinan Satker otomatis. Harap isi manual atau periksa data Anda.' });
                 }
 
 
-                // 7. Ambil Riwayat TTD
                 if (userNpp) {
                     await fetchTtdHistory(token, userNpp);
                 }
                 
-                // 8. Ambil Detail Pengajuan (Jika mode edit)
                 if (storedUuid) {
                     await fetchPengajuanDetail(token, storedUuid, halOptionsMap, satkersMap);
                 }
@@ -1024,10 +1221,6 @@ export default function LampiranPengajuanPage() {
     const handleChange = (
         e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
     ) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
-
-    // LOGIKA LAMA UNTUK MENCARI MENGETAHUI DIHAPUS/DINONAKTIFKAN
-    // Karena sekarang menggunakan API Supervisor.
-    // useEffect(() => { ... }, [form.satker, satkers, allPegawai, setNotification, isEditMode]);
 
 
     const handleHalChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -1076,8 +1269,6 @@ export default function LampiranPengajuanPage() {
         }
     };
 
-    // --- LOGIC TTD BARU ---
-
     const handleTtdFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files?.[0]) return;
         const file = e.target.files[0];
@@ -1090,18 +1281,28 @@ export default function LampiranPengajuanPage() {
         e.target.value = '';
     };
 
-    const handleTtdCropComplete = async (croppedImage: string, settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }) => {
-        setIsTtdCropModalOpen(false);
-        setTtdImageForCrop(null);
+    const handleTtdCropComplete = async (
+    croppedImage: string, 
+    settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }
+) => {
+    setIsTtdCropModalOpen(false);
+    setTtdImageForCrop(null);
 
-        if (settings) {
-            setTransparencySettings(settings);
-        }
+    if (settings) {
+        setTransparencySettings(settings);
+    }
 
-        const token = localStorage.getItem("token") || '';
-        const transparentUrl = await makeImageTransparent(croppedImage, token, transparencySettings);
-        setTtdPelaporPreview(transparentUrl);
-    };
+    const transparentAndResizedUrl = await resizeAndMakeTransparent(
+        croppedImage, 
+        settings || transparencySettings, 
+        600  
+    );
+    
+    setTtdPelaporPreview(transparentAndResizedUrl);
+    setTtdScale(1.8);
+    
+    console.log("✅ TTD sudah di-crop, resize, dan dibuat transparan");
+};
 
     const handleTtdCropCancel = () => {
         setIsTtdCropModalOpen(false);
@@ -1109,19 +1310,20 @@ export default function LampiranPengajuanPage() {
         setTtdPelaporFile(null);
     };
 
-    // PERUBAHAN: Handler seleksi sekarang menerima objek item
     const handleTtdSelectionFromHistory = (item: TtdHistoryItem) => {
-        setTtdPelaporPreview(item.processedUrl); // Gunakan URL yang sudah diproses
-        setTtdPelaporFile(null);
-        setIsTtdHistoryModalOpen(false);
-    };
+    setTtdPelaporPreview(item.processedUrl);
+    setTtdPelaporFile(null);
+    
+    setTtdScale(1.8);
+    
+    setIsTtdHistoryModalOpen(false);
+};
 
     const handleCreateTtd = useCallback(() => {
         setIsTtdHistoryModalOpen(false);
         ttdFileInputRef.current?.click();
     }, []);
 
-    // PERUBAHAN: Handler hapus tetap menerima string (originalUrl)
     const handleDeleteTtd = useCallback(async (urlToDelete: string) => {
         const token = localStorage.getItem("token");
         if (!token) {
@@ -1136,14 +1338,14 @@ export default function LampiranPengajuanPage() {
                 return;
             }
 
-            const res = await fetch(`/api/ttd-delete`, {
+            const res = await fetch(`/api/user/delete/ttd`, { 
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
-                },
+            },
                 body: JSON.stringify({ npp: userNpp, ttd_url: urlToDelete }),
-            });
+        });
 
             if (!res.ok) {
                 const errorData = await res.json();
@@ -1153,6 +1355,9 @@ export default function LampiranPengajuanPage() {
             setNotification({ type: 'success', message: 'Tanda tangan berhasil dihapus.' });
             
             await fetchTtdHistory(token, userNpp);
+
+            setTtdPelaporPreview(null);
+            setTtdPelaporFile(null);
 
         } catch (error: any) {
             console.error("Error deleting TTD:", error);
@@ -1167,8 +1372,6 @@ export default function LampiranPengajuanPage() {
             handleCreateTtd();
         }
     };
-    // --- END LOGIC TTD BARU ---
-
 
     const handlePrint = () => {
         setIsPrintMode(true);
@@ -1178,87 +1381,195 @@ export default function LampiranPengajuanPage() {
         }, 300);
     };
 
+    // --- Definisi variabel sebelum penggunaan ---
+    const selectedSatker = satkers.find((s) => s.label === form.satker);
+    const mengetahuiPegawai = allPegawai.find(p => p.npp === form.nppMengetahui);
+    const jabatanMengetahuiBase = supervisorOrgunit || mengetahuiPegawai?.jabatan || selectedSatker?.jabatan || "Ka.Unit";
+    const jabatanMengetahui = `${PENGAJUAN_MENGETAHUI_KEPALA} ${jabatanMengetahuiBase}`;
+
     const proceedSubmission = useCallback(async () => {
-        setIsModalOpen(false);
-        setIsSubmitting(true);
+    setIsModalOpen(false);
+    setIsSubmitting(true);
 
-        try {
-            const token = localStorage.getItem("token");
-            if (!token) {
-                setNotification({ type: 'error', message: "Token tidak ditemukan. Silakan login ulang." });
-                return;
-            }
-
-            const formDataToSend = new FormData();
-
-            Object.entries(form).forEach(([key, value]) => {
-                formDataToSend.append(key, value);
-            });
-
-            files.forEach((file, index) => {
-                formDataToSend.append(`new_file_${index}`, file);
-            });
-
-            if (ttdPelaporFile) {
-                formDataToSend.append('ttdPelapor', ttdPelaporFile);
-            }
-            else if (ttdPelaporPreview && !isEditMode) {
-                formDataToSend.append('ttdPelaporPath', ttdPelaporPreview);
-            }
-
-            if (isEditMode && editUuid) {
-                formDataToSend.append('uuid', editUuid);
-                formDataToSend.append('existingFiles', JSON.stringify(existingFilePaths));
-            }
-
-            const submitUrl = isEditMode ? `${UPDATE_API_PATH}/${editUuid}` : SUBMIT_API_PATH;
-            const method = isEditMode ? "PUT" : "POST";
-
-            let finalResult: any = null;
-
-            for (let i = 0; i < MAX_RETRIES; i++) {
-                try {
-                    const res = await fetch(submitUrl, {
-                        method: method,
-                        headers: {
-                            "Authorization": `Bearer ${token}`,
-                        },
-                        body: formDataToSend,
-                    });
-
-                    finalResult = await res.json();
-
-                    if (!res.ok || !finalResult.success) {
-                        throw new Error(finalResult.message || `Gagal ${isEditMode ? 'mengubah' : 'mengajukan'}. Status: ${res.status}`);
-                    }
-
-                    if (finalResult.success) {
-                        setNotification({
-                            type: 'success',
-                            message: finalResult.message || `Pengajuan berhasil ${isEditMode ? 'diubah' : 'dikirim'}!`
-                        });
-                        localStorage.removeItem('current_edit_uuid');
-                        router.push("/dashboard/lampiran");
-                        return;
-                    }
-
-                } catch (error: any) {
-                    console.error(`Gagal submit (Percobaan ${i + 1}/${MAX_RETRIES}):`, error.message);
-                    if (i === MAX_RETRIES - 1) throw error;
-                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
-                }
-            }
-
-        } catch (error: any) {
-            console.error("Error saat submit data:", error);
-            setNotification({
-                type: 'error',
-                message: `Error jaringan/server: ${error.message}`
-            });
-        } finally {
-            setIsSubmitting(false);
+    try {
+        const token = localStorage.getItem("token");
+        if (!token) {
+            setNotification({ type: 'error', message: "Token tidak ditemukan. Silakan login ulang." });
+            return;
         }
-    }, [form, files, ttdPelaporFile, ttdPelaporPreview, isEditMode, editUuid, existingFilePaths, router]);
+
+        // ========================================================
+        // 1. SIAPKAN DATA YANG AKAN DIKIRIM
+        // ========================================================
+        const formDataToSend = new FormData();
+
+        // Cari data satker tujuan berdasarkan kd_satker yang dipilih
+        const selectedSatkerTujuan = satkers.find(s => s.kd_satker === form.kepada);
+        
+        // Ambil NPP Kepala Satker dari data yang dipilih
+        const nppKepalaSatkerTujuan = selectedSatkerTujuan?.npp_kepala || "";
+
+        // ========================================================
+        // 2. DEBUG LOG - LIHAT DATA SEBELUM DIKIRIM
+        // ========================================================
+        console.log("=".repeat(70));
+        console.log("🔍 DEBUG: DATA FINAL SEBELUM DIKIRIM");
+        console.log("=".repeat(70));
+        console.log("Form State:", form);
+        console.log("Satker Tujuan yang Dipilih:", selectedSatkerTujuan);
+        console.log("NPP Kepala Satker Tujuan:", nppKepalaSatkerTujuan);
+        console.log("kd_satker (asal):", form.satker);
+        console.log("kepada (tujuan):", form.kepada);
+        console.log("=".repeat(70));
+
+        // ========================================================
+        // 3. KIRIM DATA WAJIB SATU PER SATU
+        // ========================================================
+        
+        formDataToSend.append('hal', form.hal);
+        formDataToSend.append('hal_nama', form.hal_nama);
+        
+        formDataToSend.append('kepada', form.kepada); 
+        formDataToSend.append('kepadaNpp', nppKepalaSatkerTujuan); 
+        formDataToSend.append('kd_satker', form.kepada); 
+        
+        formDataToSend.append('satker', form.satker); 
+        
+        formDataToSend.append('kodeBarang', form.kodeBarang);
+        formDataToSend.append('keterangan', form.keterangan);
+        formDataToSend.append('pelapor', form.pelapor);
+        formDataToSend.append('nppPelapor', form.nppPelapor);
+
+        // ========================================================
+        // 4. KIRIM DATA OPSIONAL (HANYA JIKA ADA ISI)
+        // ========================================================
+        if (form.mengetahui) formDataToSend.append('mengetahui', form.mengetahui);
+        if (form.mengetahui_name) formDataToSend.append('mengetahui_name', form.mengetahui_name);
+        if (form.nppMengetahui) formDataToSend.append('nppMengetahui', form.nppMengetahui);
+        if (form.mengetahuiTlp) formDataToSend.append('mengetahuiTlp', form.mengetahuiTlp);
+        if (form.referensiSurat) formDataToSend.append('referensiSurat', form.referensiSurat);
+
+        // ========================================================
+        // 5. KIRIM DATA UNTUK MODE EDIT
+        // ========================================================
+        if (isEditMode && editUuid) {
+            formDataToSend.append('uuid', editUuid);
+            formDataToSend.append('existingFiles', JSON.stringify(existingFilePaths));
+        }
+
+        // ========================================================
+        // 6. KIRIM FILE LAMPIRAN
+        // ========================================================
+        files.forEach((file, index) => {
+            formDataToSend.append(`new_file_${index}`, file);
+        });
+
+        // ========================================================
+        // 7. PROSES DAN KIRIM TTD (JIKA ADA)
+        // ========================================================
+        if (ttdPelaporFile) {
+            console.log("🔄 Memproses TTD baru dari file upload...");
+            const reader = new FileReader();
+            const processedTtd = await new Promise<File>((resolve, reject) => {
+                reader.onload = async (e) => {
+                    try {
+                        const dataUrl = e.target?.result as string;
+                        const processedDataUrl = await resizeAndMakeTransparent(dataUrl, transparencySettings, 600);
+                        const processedFile = await dataURLtoFile(processedDataUrl, `ttd-${Date.now()}.png`);
+                        resolve(processedFile);
+                    } catch (error) {
+                        console.error("❌ Error processing TTD:", error);
+                        reject(error);
+                    }
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(ttdPelaporFile);
+            });
+            formDataToSend.append('ttdPelapor', processedTtd);
+        } else if (ttdPelaporPreview && !isEditMode) {
+            if (ttdPelaporPreview.startsWith('data:')) {
+                const processedDataUrl = await resizeAndMakeTransparent(ttdPelaporPreview, transparencySettings, 600);
+                const processedFile = await dataURLtoFile(processedDataUrl, `ttd-from-preview-${Date.now()}.png`);
+                formDataToSend.append('ttdPelapor', processedFile);
+            }
+        }
+
+        // ========================================================
+        // 8. DEBUG LOG - LIHAT FINAL PAYLOAD
+        // ========================================================
+        console.log("=".repeat(70));
+        console.log("📤 FINAL PAYLOAD YANG AKAN DIKIRIM KE API:");
+        console.log("=".repeat(70));
+        for (let pair of formDataToSend.entries()) {
+            // Jangan log file binary
+            if (pair[1] instanceof File) {
+                console.log(pair[0], `File: ${pair[1].name} (${pair[1].size} bytes)`);
+            } else {
+                console.log(pair[0], pair[1]);
+            }
+        }
+        console.log("=".repeat(70));
+
+        // ========================================================
+        // 9. KIRIM KE API
+        // ========================================================
+        const submitUrl = isEditMode ? `${UPDATE_API_PATH}/${editUuid}` : SUBMIT_API_PATH;
+        const method = isEditMode ? "PUT" : "POST";
+
+        let finalResult: any = null;
+        for (let i = 0; i < MAX_RETRIES; i++) {
+            try {
+                const res = await fetch(submitUrl, {
+                    method: method,
+                    headers: {
+                        "Authorization": `Bearer ${token}`,
+                    },
+                    body: formDataToSend,
+                });
+
+                const contentType = res.headers.get("content-type");
+                if (contentType && contentType.indexOf("application/json") !== -1) {
+                    finalResult = await res.json();
+                } else {
+                    const text = await res.text();
+                    console.error("Respons bukan JSON:", text);
+                    throw new Error(`Server error: ${res.status} ${res.statusText}`);
+                }
+
+                console.log("=".repeat(70));
+                console.log(`📦 RESPONS API (Percobaan ${i + 1}):`, finalResult);
+                console.log("=".repeat(70));
+
+                if (!res.ok || !finalResult.success) {
+                    throw new Error(finalResult.message || `Gagal ${isEditMode ? 'mengubah' : 'mengajukan'}. Status: ${res.status}`);
+                }
+                
+                if (finalResult.success) {
+                    setNotification({
+                        type: 'success',
+                        message: finalResult.message || `Pengajuan berhasil ${isEditMode ? 'diubah' : 'dikirim'}!`
+                    });
+                    localStorage.removeItem('current_edit_uuid');
+                    router.push("/dashboard/lampiran/riwayat");
+                    return;
+                }
+            } catch (error: any) {
+                console.error(`Gagal submit (Percobaan ${i + 1}/${MAX_RETRIES}):`, error.message);
+                if (i === MAX_RETRIES - 1) throw error;
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+    } catch (error: any) {
+        console.error("Error saat submit data:", error);
+        setNotification({
+            type: 'error',
+            message: `Error Server: ${error.message}`
+        });
+    } finally {
+        setIsSubmitting(false);
+    }
+}, [form, files, ttdPelaporFile, ttdPelaporPreview, isEditMode, editUuid, existingFilePaths, router, satkers, transparencySettings]); 
 
 
     const handleAjukan = async () => {
@@ -1312,15 +1623,44 @@ export default function LampiranPengajuanPage() {
             .toString()
             .padStart(2, "0")}-${d.getFullYear()}`;
     const todayStr = `Semarang, ${formatDate(new Date())}`;
-    // PERUBAHAN: selectedSatker dicari berdasarkan form.satker (yang sekarang berisi label satker)
-    const selectedSatker = satkers.find((s) => s.label === form.satker);
-    // Jabatan yang Mengetahui kini diambil dari form state, yang diisi oleh data Supervisor.
-    // Jika tidak ada data Supervisor, gunakan jabatan dari Satker asal.
-    const mengetahuiPegawai = allPegawai.find(p => p.npp === form.nppMengetahui);
-    const jabatanMengetahui = mengetahuiPegawai?.jabatan || selectedSatker?.jabatan || "Ka.Unit";
 
     const totalFilesCount = previews.length;
     const isMaxFilesReached = totalFilesCount >= MAX_FILES;
+
+    const renderKeterangan = () => {
+        if (isPrintMode) {
+            const lines = form.keterangan.split('\n');
+            return (
+                <div>
+                    {lines.map((line, index) => {
+                        if (line.includes('<i>') && line.includes('</i>')) {
+                            const italicText = line.match(/<i>(.*?)<\/i>/)?.[1] || '';
+                            const beforeText = line.split('<i>')[0];
+                            const afterText = line.split('</i>')[1] || '';
+                            
+                            return (
+                                <div key={index} style={{ minHeight: '1.2em' }}>
+                                    {beforeText}<span style={{ fontStyle: 'italic' }}>{italicText}</span>{afterText}
+                                </div>
+                            );
+                        }
+                        return <div key={index} style={{ minHeight: '1.2em' }}>{line || '\u00A0'}</div>;
+                    })}
+                </div>
+            );
+        } else {
+            return (
+                <textarea
+                    name="keterangan"
+                    value={form.keterangan}
+                    onChange={handleChange}
+                    placeholder="Tuliskan uraian kerusakan / perbaikan di sini..."
+                    className="w-full resize-none border border-gray-300 rounded p-2"
+                    rows={6}
+                />
+            );
+        }
+    };
 
     return (
         <div className="p-6 min-h-screen">
@@ -1341,6 +1681,32 @@ export default function LampiranPengajuanPage() {
                 .big-box { border: 1px solid #000; min-height: 120px; padding: 8px; }
                 .select-print-only { display: none; }
                 .ttd-container { border: 1px solid #ccc; }
+                .loading-overlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background-color: rgba(255, 255, 255, 0.7);
+                    z-index: 9999;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                }
+                .loading-content {
+                    text-align: center;
+                    padding: 20px;
+                }
+                .disabled-overlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background-color: rgba(255, 255, 255, 0.5);
+                    z-index: 9998;
+                    pointer-events: none;
+                }
             `}</style>
 
             <Notification notification={notification} setNotification={setNotification} />
@@ -1359,6 +1725,19 @@ export default function LampiranPengajuanPage() {
                 onCropComplete={handleTtdCropComplete}
                 onCancel={handleTtdCropCancel}
             />
+
+            {/* Loading Overlay */}
+            {isSubmitting && (
+                <div className="loading-overlay">
+                    <div className="loading-content">
+                        <div className="flex items-center justify-center mb-4">
+                            <Loader2 size={40} className="animate-spin text-blue-600" />
+                        </div>
+                        <div className="text-xl font-semibold text-gray-800">Sedang mengirim data...</div>
+                        <div className="text-sm text-gray-600">Mohon tunggu sebentar, jangan tutup halaman ini.</div>
+                    </div>
+                </div>
+            )}
 
             <div className="max-w-[900px] mx-auto bg-white border border-gray-300 shadow-md rounded-lg text-gray-800">
                 <div className="p-4 flex items-center justify-between border-b no-print">
@@ -1392,7 +1771,6 @@ export default function LampiranPengajuanPage() {
                     
                     <div className="mt-4 flex gap-20">
                         <div className="w-1/2 text-sm">
-                            {/* HAL */}
                             <div className="flex items-center gap-2 mb-2">
                                 <span className="font-semibold whitespace-nowrap">Hal:</span>
                                 {isPrintMode ? (
@@ -1418,7 +1796,6 @@ export default function LampiranPengajuanPage() {
                                 )}
                             </div>
                             
-                            {/* REFERENSI SURAT - DIUBAH MENJADI SEKECIL MUNGKIN */}
                             <div className="flex items-center gap-2">
                                 <span className="text-xs font-semibold whitespace-nowrap">Ref. Surat:</span>
                                 {isPrintMode ? (
@@ -1427,18 +1804,35 @@ export default function LampiranPengajuanPage() {
                                     <div className="flex-1 flex flex-col justify-center select-input-only">
                                         <Select
                                             name="referensiSurat"
-                                            value={form.referensiSurat ? { value: form.referensiSurat, label: form.referensiSurat } : null}
-                                            onChange={(option) =>
-                                                setForm((f) => ({ ...f, referensiSurat: option ? option.value : "" }))
-                                            }
-                                            options={refSuratOptions.map((opt) => ({ value: opt.nomor_surat, label: opt.nomor_surat }))}
+                                            value={form.referensiSurat ? { 
+                                                value: form.referensiSurat, 
+                                                label: form.referensiSurat,
+                                                keterangan: selectedRefSuratOption?.keterangan || ""
+                                            } : null}
+                                            onChange={handleReferensiSuratChange}
+                                            options={refSuratOptions.map((opt) => ({ 
+                                                value: opt.nomor_surat, 
+                                                label: opt.nomor_surat,
+                                                keterangan: opt.keterangan
+                                            }))}
                                             placeholder="Pilih ref..."
                                             className="w-full text-[10px]" 
+                                            
+                                            components={{
+                                                Option: CustomOption,
+                                            }}
+
                                             styles={{
-                                                menu: (base) => ({ ...base, zIndex: 50, position: "absolute", fontSize: '0.6rem' }), 
+                                                menu: (base) => ({ 
+                                                    ...base, 
+                                                    zIndex: 50, 
+                                                    position: "absolute", 
+                                                    fontSize: '0.9rem',  
+                                                    minWidth: '250px',  
+                                                }), 
                                                 control: (base) => ({
                                                     ...base,
-                                                    minHeight: '20px', 
+                                                    minHeight: '20px',
                                                     height: '20px', 
                                                     fontSize: '0.7rem', 
                                                     border: '1px solid #d1d5db', 
@@ -1448,7 +1842,7 @@ export default function LampiranPengajuanPage() {
                                                 }),
                                                 valueContainer: (base) => ({...base, height: '20px', padding: '0 4px'}), 
                                                 input: (base) => ({...base, margin: '0'}),
-                                                singleValue: (base) => ({...base, margin: '0'}),
+                                                singleValue: (base) => ({...base, margin: '0'}), // Default singleValue akan mengikuti style ini
                                                 placeholder: (base) => ({...base, margin: '0', fontSize: '0.65rem'}), 
                                                 indicatorsContainer: (base) => ({...base, height: '20px', padding: '0 2px'}), 
                                                 indicatorSeparator: () => ({ display: 'none' }),
@@ -1465,7 +1859,6 @@ export default function LampiranPengajuanPage() {
                             </div>
                         </div>
 
-                        {/* KEPADA YTH */}
                         <div className="w-1/2 text-sm">
                             Kepada Yth. <br />
                             {isPrintMode ? (
@@ -1474,12 +1867,26 @@ export default function LampiranPengajuanPage() {
                                 <div className="select-input-only">
                                     <Select
                                         name="kepada"
-                                        // Menggunakan satkers yang diisi dari API
-                                        value={form.kepada ? { value: form.kepada, label: form.kepada } : null}
-                                        onChange={(option) =>
-                                            setForm((f) => ({ ...f, kepada: option ? option.value : "" }))
-                                        }
-                                        options={satkers.map((s) => ({ value: s.label, label: s.label }))}
+                                        value={form.kepada ? { 
+                                            value: form.kepada, 
+                                            label: satkers.find(s => s.kd_satker === form.kepada)?.label || form.kepada 
+                                        } : null}
+                                        onChange={(option) => {
+                                            const selectedSatker = satkers.find(s => s.kd_satker === option?.value);
+                                            console.log("DEBUG: Satker yang dipilih di dropdown:", selectedSatker);
+                                            
+                                            setForm((f) => ({ 
+                                                ...f, 
+                                                kepada: option ? option.value : "", 
+                                                kepadaNpp: option ? option.npp : "",
+                                                kd_satker: option ? option.value : ""
+                                            }));
+                                        }}
+                                        options={satkers.map((s) => ({ 
+                                            value: s.kd_satker, 
+                                            label: s.label, 
+                                            npp: s.npp_kepala 
+                                        }))}
                                         placeholder="Cari atau pilih tujuan..."
                                         className="text-sm w-64"
                                         styles={{
@@ -1497,28 +1904,28 @@ export default function LampiranPengajuanPage() {
                         </div>
                     </div>
                     
-                    {/* SATKER ASAL */}
                     <div className="mt-3 text-sm grid grid-cols-12 gap-3 items-center">
                         <div className="col-span-3 font-semibold">Satker Asal:</div>
                         <div className="col-span-9">
                             {isPrintMode || !user ? (
-                                <span>{selectedSatker?.label || form.satker || "Memuat Data ..."}</span>
+                                <span>{satkerAsalDisplay || "Memuat Data ..."}</span>
                             ) : (
                                 <input
                                     type="text"
-                                    name="satker"
-                                    // Satker Asal diisi dari form state (yang diambil dari localStorage)
-                                    value={selectedSatker?.label || form.satker}
-                                    onChange={(e) => setForm(f => ({ ...f, satker: e.target.value }))}
-                                    placeholder="Satker diambil dari Local Storage"
-                                    readOnly={true} // Read-only karena diambil dari Local Storage
+                                    name="satker_display"
+                                    
+                                    value={satkerAsalDisplay} 
+                                    
+                                    readOnly={true} 
+                                    
                                     className="w-full p-1 border border-gray-300 rounded bg-gray-100 cursor-default"
                                 />
                             )}
+                            
+                            <input type="hidden" name="satker" value={form.satker} />
                         </div>
                     </div>
 
-                    {/* KODE BARANG */}
                     <div className="grid grid-cols-12 gap-3 items-center mt-3 text-sm">
                         <div className="col-span-3 font-semibold">Kode Barang :</div>
                         <div className="col-span-9">
@@ -1534,26 +1941,14 @@ export default function LampiranPengajuanPage() {
                                     className="w-full p-1 border border-gray-300 rounded"
                                 />
                             )}
+                            <input type="hidden" name="satker" value={form.satker} />
                         </div>
                     </div>
                     
-                    {/* KETERANGAN / URAIAN */}
                     <div className="mt-4 big-box text-sm">
-                        {isPrintMode ? (
-                            <div style={{ whiteSpace: "pre-wrap" }}>{form.keterangan}</div>
-                        ) : (
-                            <textarea
-                                name="keterangan"
-                                value={form.keterangan}
-                                onChange={handleChange}
-                                placeholder="Tuliskan uraian kerusakan / perbaikan di sini..."
-                                className="w-full resize-none border border-gray-300 rounded p-2"
-                                rows={6}
-                            />
-                        )}
+                        {renderKeterangan()}
                     </div>
                     
-                    {/* LAMPIRAN FILE (NO PRINT) */}
                     <div className="mt-4 no-print">
                         <label className="flex items-center gap-2">
                             <Upload size={16} /> Lampiran Foto/Dokumen ({totalFilesCount} / {MAX_FILES})
@@ -1603,21 +1998,18 @@ export default function LampiranPengajuanPage() {
                         </div>
                     )}
 
-                    {/* PENUTUP SURAT */}
                     <div className="mt-3 text-xs text-left">
                         Demikian laporan kami untuk menjadi periksa dan mohon untuk perhatian.
                     </div>
                     
-                    {/* TANDA TANGAN */}
-                    <div className="mt-20 flex justify-center text-center gap-60">
+                    <div className="mt-20 flex justify-center text-center gap-40">
                         <div>
                             <div className="text-sm font-semibold">Mengetahui</div>
-                            {/* Menggunakan jabatan yang diisi dari API Supervisor atau Satker lokal */}
                             <div className="text-xs">{jabatanMengetahui}</div> 
-                            <div className="mt-1 flex justify-center h-[40px] items-center">
+                            <div className="mt-12 flex justify-center h-[40px] items-center">
                             </div>
                             <div className="mt-1 text-sm">
-                                ({form.mengetahui || "..........................."})
+                                ({form.mengetahui_name || "..........................."})
                             </div>
                             <div className="text-xs mt-1">
                                 NPP: {form.nppMengetahui || "__________"}
@@ -1668,16 +2060,16 @@ export default function LampiranPengajuanPage() {
                             </div>
 
                             {isPrintMode && ttdPelaporPreview && (
-                                <div className="mt-1 flex justify-center h-[70px] items-center">
+                                <div className="mt-10 flex justify-center h-[70px] items-center">
                                     <img
                                         src={ttdPelaporPreview}
                                         alt="Tanda tangan pelapor"
                                         style={{ transform: `scale(${ttdScale})`, transformOrigin: "center center" }}
-                                        className="w-28 h-auto object-contain"
+                                        className="w-28 mb-12 h-auto object-contain"
                                     />
                                 </div>
                             )}
-                            <div className="mt-0 text-sm">{form.pelapor || "(...........................)"}</div>
+                            <div className="mt-0 text-sm">({form.pelapor || "..........................."})</div>
                             <div className="text-xs mt-1">NPP: {form.nppPelapor || "__________"}</div>
                         </div>
                     </div>

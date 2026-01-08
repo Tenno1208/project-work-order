@@ -746,6 +746,13 @@ const SaveConfirmModal = ({
     );
 };
 
+const cleanFilePath = (path: string): string => {
+    if (!path) return "";
+    let cleaned = path.replace(/\/\//g, '/');
+    cleaned = cleaned.replace(/(\.[\w\d]+)\1$/i, '$1');
+    return cleaned;
+};
+
 // --- START COMPONENT ---
 
 export default function EditPengajuanForm({ params }: any) {
@@ -807,6 +814,22 @@ export default function EditPengajuanForm({ params }: any) {
     const [debugUrl, setDebugUrl] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isPrintMode, setIsPrintMode] = useState(false);
+
+    const [currentUserNpp, setCurrentUserNpp] = useState<string | null>(null);
+
+    // 2. TAMBAHKAN USE EFFECT INI (Untuk ambil NPP user yang login)
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const userStr = localStorage.getItem("user_data");
+            if (userStr) {
+                try {
+                    const userObj = JSON.parse(userStr);
+                    // Pastikan key 'npp' sesuai dengan penyimpanan localstorage anda
+                    setCurrentUserNpp(userObj.npp || userObj.user_npp || null); 
+                } catch (e) { console.error("Gagal parse user data", e); }
+            }
+        }
+    }, []);
 
     // --- HANDLER LOGIC ---
    const fetchTtdMengetahuiHistory = useCallback(async (token: string, npp: string) => {
@@ -885,13 +908,11 @@ export default function EditPengajuanForm({ params }: any) {
         e.target.value = '';
     };
 
-    // Tambahkan fungsi-fungsi ini tepat di bawah fungsi handleTtdUpload:
 const handleAddFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
     
     const file = e.target.files[0];
     
-    // Cek apakah sudah mencapai batas maksimal
     if (filePreviews.length + newFiles.length >= MAX_FILES) {
         setNotification({
             type: 'warning',
@@ -900,29 +921,23 @@ const handleAddFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         return;
     }
     
-    // Tambahkan file ke state
     setNewFiles(prev => [...prev, file]);
     
-    // Buat preview untuk file baru
     const previewUrl = URL.createObjectURL(file);
     setFilePreviews(prev => [...prev, previewUrl]);
     
-    // Reset input
     e.target.value = '';
 };
 
 const handleRemoveFile = (index: number) => {
-    // Hapus dari preview
     const removedPreview = filePreviews[index];
     setFilePreviews(prev => prev.filter((_, i) => i !== index));
     
-    // Hapus dari state file baru jika ini adalah file baru
     if (index >= filePreviews.length - newFiles.length) {
         const newFileIndex = index - (filePreviews.length - newFiles.length);
         setNewFiles(prev => prev.filter((_, i) => i !== newFileIndex));
     }
     
-    // Revoke URL untuk mencegah memory leak
     if (!removedPreview.startsWith('http')) {
         URL.revokeObjectURL(removedPreview);
     }
@@ -1077,7 +1092,6 @@ const handleRemoveFile = (index: number) => {
         setSaveConfirmModal({ isOpen: true });
     };
 
-// Ganti seluruh fungsi handleUpdate dengan ini:
 const handleUpdate = async () => {
     if (!formData) return;
     
@@ -1085,39 +1099,42 @@ const handleUpdate = async () => {
     setError(null);
     
     const token = localStorage.getItem('token');
-    
     if (!token) {
-        setNotification({
-            type: 'error',
-            message: 'Token tidak ditemukan. Silakan login kembali.'
-        });
+        setNotification({ type: 'error', message: 'Token hilang. Login ulang.' });
         setIsSaving(false);
-        setSaveConfirmModal({ isOpen: false });
         return;
     }
     
     try {
-        // Upload file baru jika ada
-        const uploadedFilePaths = [];
+        // 1. Upload File Baru Dulu
+        const uploadedFilePaths: string[] = [];
+        
         if (newFiles.length > 0) {
-            setNotification({ type: 'warning', message: 'Sedang mengupload lampiran...' });
+            setNotification({ type: 'warning', message: 'Mengupload lampiran baru...' });
             
+            // Upload satu per satu
             for (const file of newFiles) {
                 try {
-                    const uploadedPath = await uploadLampiranToFileHandler(file, token);
-                    uploadedFilePaths.push(uploadedPath);
-                } catch (error: any) {
-                    console.error("Gagal upload lampiran:", error);
-                    setNotification({ type: 'error', message: `Gagal upload lampiran: ${error.message}` });
+                    const path = await uploadLampiranToFileHandler(file, token);
+                    uploadedFilePaths.push(path);
+                } catch (err: any) {
+                    console.error("Gagal upload:", err);
+                    setNotification({ type: 'error', message: `Gagal upload file: ${file.name}` });
                     setIsSaving(false);
-                    return;
+                    return; // Stop jika ada file gagal
                 }
             }
         }
         
-        // Gabungkan file lama dengan file baru
-        const allFilePaths = [...formData.file, ...uploadedFilePaths];
-        
+        // 2. Gabungkan File Lama + File Baru
+        // Pastikan formData.file selalu array
+        const currentFiles = Array.isArray(formData.file) ? formData.file : [];
+        const combinedFiles = [...currentFiles, ...uploadedFilePaths];
+
+        console.log("File Lama:", currentFiles);
+        console.log("File Baru:", uploadedFilePaths);
+        console.log("Total yang dikirim:", combinedFiles);
+
         const apiData = {
             hal: formData.hal,
             hal_id: formData.hal,
@@ -1130,11 +1147,15 @@ const handleUpdate = async () => {
             tlp_pelapor: formData.tlp_pelapor,
             kode_barang: formData.kode_barang,
             keterangan: formData.keterangan,
-            file: allFilePaths, // Gunakan semua file path
+            
+            file: combinedFiles, 
+            
             mengetahui: formData.mengetahui,
             npp_mengetahui: formData.npp_mengetahui,
             no_surat: formData.no_surat,
             no_referensi: formData.no_referensi,
+            ttd_pelapor: formData.ttd_pelapor, 
+            ttd_mengetahui: formData.ttd_mengetahui
         };
         
         const response = await fetch(`/api/pengajuan/edit/${uuid}`, {
@@ -1146,34 +1167,13 @@ const handleUpdate = async () => {
             body: JSON.stringify(apiData),
         });
         
-        const contentType = response.headers.get('content-type');
-        let result;
-        
-        if (contentType && contentType.includes('application/json')) {
-            const responseText = await response.text();
-            
-            try {
-                result = JSON.parse(responseText);
-            } catch (e) {
-                console.error('Failed to parse JSON:', e);
-                throw new Error(`Response bukan JSON: ${responseText.substring(0, 100)}...`);
-            }
-        } else {
-            const responseText = await response.text();
-            console.error('Non-JSON response:', responseText);
-            throw new Error(`Server mengembalikan response non-JSON: ${responseText.substring(0, 100)}...`);
-        }
+        const result = await response.json();
         
         if (!response.ok || !result.success) {
-            throw new Error(result.message || 'Gagal memperbarui data pengajuan');
+            throw new Error(result.message || 'Gagal update data.');
         }
         
-        // Notifikasi yang lebih jelas
-        setNotification({
-            type: 'success',
-            message: '✅ Data pengajuan berhasil diperbarui!'
-        });
-        
+        setNotification({ type: 'success', message: 'Data berhasil diperbarui!' });
         setSaveConfirmModal({ isOpen: false });
         
         setTimeout(() => {
@@ -1181,12 +1181,8 @@ const handleUpdate = async () => {
         }, 1500);
         
     } catch (error: any) {
-        console.error('Error updating pengajuan:', error);
-        setError(error.message || 'Gagal terhubung ke server');
-        setNotification({
-            type: 'error',
-            message: error.message || 'Gagal memperbarui data'
-        });
+        console.error('Update error:', error);
+        setNotification({ type: 'error', message: error.message });
     } finally {
         setIsSaving(false);
     }
@@ -1230,38 +1226,36 @@ const uploadLampiranToFileHandler = async (file: File, token: string): Promise<s
     const formData = new FormData();
     formData.append('photo', file);
     
-    // Buat nama file unik dengan timestamp
     const timestamp = new Date().getTime();
-    const originalName = file.name.split('.').slice(0, -1).join('.');
-    const extension = file.name.split('.').pop();
-    formData.append('filename', `work-order-${originalName}-${timestamp}.${extension}`);
+    // PERBAIKAN: Tambah random string agar nama file unik & panjang
+    const randomStr = Math.random().toString(36).substring(2, 10);
+    // Backend otomatis mendeteksi ekstensi, jadi kita kirim nama dasarnya saja
+    formData.append('filename', `work-order-${timestamp}-${randomStr}`);
     
     const date = new Date();
-    const folderPath = `work-order/${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/`;
+    // PERBAIKAN: Hapus slash '/' di akhir path untuk mencegah double slash '//'
+    const folderPath = `work-order/${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}`; 
     formData.append('path', folderPath);
 
     const res = await fetch('/api/file-handler/foto', {
         method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
         body: formData
     });
 
     if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || "Gagal mengupload lampiran ke server.");
+        throw new Error(err.message || "Gagal mengupload lampiran.");
     }
 
     const json = await res.json();
     
-    if (json.data && json.data.filepath) {
-        return json.data.filepath;
-    } else if (json.data && json.data.local_path) {
-        return json.data.local_path; 
-    }
-    
-    throw new Error("Respon upload tidak valid.");
+    let rawPath = "";
+    if (json.data && json.data.filepath) rawPath = json.data.filepath;
+    else if (json.data && json.data.local_path) rawPath = json.data.local_path;
+    else throw new Error("Respon upload tidak valid.");
+
+    return cleanFilePath(rawPath);
 };
 
 const executeStatusUpdate = async (status: 'approved' | 'rejected') => {
@@ -2015,95 +2009,47 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                     </div>
 
                     <div id="ttd-mengetahui-section" className="mt-10 flex justify-between px-10 text-center">
-                        
-
-                        {/* Kolom Mengetahui */}
+    
+                        {/* KOLOM MENGETAHUI */}
                         <div className="flex flex-col items-center w-[200px]">
                             <div className="h-10 flex flex-col justify-end pb-1">
                                 <div className="text-sm font-semibold">Mengetahui</div>
-                                <div className="text-[10px] leading-tight text-gray-600">{jabatanMengetahui}</div>
+                                <div className="text-[10px] leading-tight text-gray-600">{formData.mengetahui}</div>
                             </div>
 
-                            {/* TTD Mengetahui dengan Container Fixed */}
-                            <div className="w-[200px] h-[80px] flex items-center justify-center my-1 relative">
+                            <div className="w-[200px] h-[100px] flex items-center justify-center my-1 relative border border-transparent hover:border-gray-100 transition-colors">
                                 {ttdMengetahuiPreview ? (
-                                    <>
-                                        <img
-                                            src={ttdMengetahuiPreview}
-                                            alt="TTD Mengetahui"
-                                            className="max-w-full max-h-full object-contain"
-                                        />
-                                        {!isPrintMode && (
-                                            <button
-                                                type="button"
-                                                className="absolute top-0 right-0 bg-blue-600 text-white rounded-full p-1 hover:bg-blue-700 transition"
-                                                onClick={() => handleTtdMengetahuiButtonClick()}
-                                                title="Ganti TTD"
-                                            >
-                                                <Settings size={14} />
-                                            </button>
-                                        )}
-                                    </>
+                                    <img 
+                                        src={ttdMengetahuiPreview} 
+                                        alt="TTD Mengetahui" 
+                                        className="w-full h-full object-contain" 
+                                    />
                                 ) : (
-                                    !isPrintMode ? (
-                                        <div className="text-center w-full">
-                                            {ttdMengetahuiHistory.length > 0 && (
-                                                <div className="grid grid-cols-3 gap-2 max-w-[180px] mb-2 mx-auto">
-                                                    {ttdMengetahuiHistory.slice(0, 3).map((item, index) => (
-                                                        <div
-                                                            key={index}
-                                                            onClick={() => handleTtdMengetahuiSelectionFromHistory(item)}
-                                                            className="cursor-pointer border border-gray-200 rounded p-1 hover:border-blue-400 transition-colors h-10 w-full flex items-center justify-center"
-                                                        >
-                                                            <img
-                                                                src={item.processedUrl}
-                                                                alt={`TTD ${index + 1}`}
-                                                                className="max-h-full max-w-full object-contain"
-                                                            />
-                                                        </div>
-                                                    ))}
-                                                    {ttdMengetahuiHistory.length > 3 && (
-                                                        <div 
-                                                            onClick={() => setIsTtdMengetahuiHistoryModalOpen(true)}
-                                                            className="flex items-center justify-center border border-gray-200 rounded p-1 cursor-pointer hover:border-blue-400 transition-colors h-10"
-                                                        >
-                                                            <span className="text-xs text-gray-500">+{ttdMengetahuiHistory.length - 3}</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                            
-                                            <button
-                                                type="button"
-                                                className={`flex items-center justify-center border border-gray-300 px-3 py-1 rounded text-xs cursor-pointer transition mx-auto
-                                                ${isFinalStatus ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white hover:bg-gray-50 text-blue-600'}`}
-                                                onClick={() => handleTtdMengetahuiButtonClick()}
-                                                disabled={isFinalStatus}
-                                            >
-                                                <Upload size={14} className="mr-1" /> 
-                                                {ttdMengetahuiPreview ? 'Ganti TTD' : 'Pilih TTD'}
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="text-xs text-gray-400"></div>
-                                    )
+                                    <div className="text-xs text-gray-300 italic h-full flex items-center justify-center w-full">
+                                        (Belum ditandatangani)
+                                    </div>
+                                )}
+
+                                {currentUserNpp && formData.npp_mengetahui && String(currentUserNpp) === String(formData.npp_mengetahui) && !isFinalStatus && !isPrintMode && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-10 transition-all opacity-0 hover:opacity-100 group">
+                                        <label className="cursor-pointer bg-white px-3 py-1 rounded shadow text-xs font-bold text-blue-600 flex items-center gap-1 hover:bg-blue-50">
+                                            <Pencil size={12} /> {ttdMengetahuiPreview ? 'Ganti TTD' : 'Upload TTD'}
+                                            <input 
+                                                type="file" 
+                                                className="hidden" 
+                                                accept="image/*" 
+                                                onChange={(e) => handleTtdUpload(e, 'mengetahui')} 
+                                            />
+                                        </label>
+                                    </div>
                                 )}
                             </div>
 
-                            <div className="mt-1 w-full">
-                                <input
-                                    type="text"
-                                    name="mengetahui"
-                                    value={formData.mengetahui_name || formData.mengetahui}
-                                    onChange={handleInputChange}
-                                    className="text-center w-full border-b border-gray-300 p-0.5 text-sm bg-gray-100 font-medium underline decoration-gray-400 underline-offset-2 break-words"
-                                    placeholder="(Nama Jelas)"
-                                    disabled={true} 
-                                    readOnly
-                                />
-                                <div className="text-xs mt-0.5">
-                                    NPP: {formData.nppMengetahui || "__________"}
+                            <div className="mt-1 w-full border-t border-gray-400 pt-1">
+                                <div className="font-bold text-sm underline decoration-gray-400 underline-offset-2">
+                                    {formData.mengetahui_name}
                                 </div>
+                                <div className="text-xs">NPP: {formData.npp_mengetahui || "-"}</div>
                             </div>
                         </div>
 

@@ -12,7 +12,11 @@ import {
     ClipboardList,
     Clock,
     Building2,
-    CalendarDays
+    CalendarDays,
+    Users, // Icon baru untuk Staf
+    ChevronDown, // Icon untuk Collapse/Expand
+    ChevronUp, // Icon untuk Collapse/Expand
+    Award // Icon untuk Penanggung Jawab
 } from 'lucide-react';
 
 // Helper format tanggal & jam
@@ -31,7 +35,6 @@ const formatDateTime = (dateString: string) => {
     return { date, time };
 };
 
-// Helper untuk menentukan ikon berdasarkan jenis aktivitas
 const getStepIcon = (item: any) => {
     const source = item.source?.toLowerCase() || "";
     const title = item.title?.toLowerCase() || "";
@@ -46,6 +49,98 @@ const getStepIcon = (item: any) => {
     return <Clock size={18} />;
 };
 
+const StafCard = ({ title, data, defaultOpen = false }: { title: string, data: any, defaultOpen?: boolean }) => {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+
+    const stafs = data?.stafs || [];
+    
+    const menyetujui = { 
+        nama: data?.menyetujui_name || "-", 
+        npp: data?.menyetujui_npp || "-",
+        jabatan: data?.menyetujui || "-" 
+    };
+    const mengetahui = { 
+        nama: data?.mengetahui_name || "-", 
+        npp: data?.mengetahui_npp || "-",
+        jabatan: data?.mengetahui || "-" 
+    };
+
+    return (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6 transition-all duration-300">
+            <button 
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full px-6 py-4 flex justify-between items-center bg-slate-50 hover:bg-slate-100 transition-colors"
+            >
+                <div className="flex items-center gap-2 text-cyan-800 font-bold text-sm">
+                    <Users size={18} />
+                    <span>{title}</span>
+                </div>
+                {isOpen ? <ChevronUp size={18} className="text-gray-500" /> : <ChevronDown size={18} className="text-gray-500" />}
+            </button>
+
+            {isOpen && (
+                <div className="p-6 border-t border-gray-100 space-y-6 animate-in slide-in-from-top-2 duration-300">
+                    
+                    {/* BAGIAN 1: STAF PELAKSANA */}
+                    <div>
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Tim Pelaksana</h4>
+                        {stafs.length > 0 ? (
+                            <div className="space-y-3">
+                                {stafs.map((staf: any, index: number) => (
+                                    <div key={index} className={`flex items-start gap-3 p-3 rounded-lg border ${staf.is_penanggung_jawab ? 'bg-cyan-50 border-cyan-100' : 'bg-white border-gray-100'}`}>
+                                        <div className={`mt-1 p-1.5 rounded-full ${staf.is_penanggung_jawab ? 'bg-cyan-100 text-cyan-600' : 'bg-gray-100 text-gray-500'}`}>
+                                            {staf.is_penanggung_jawab ? <Award size={16} /> : <User size={16} />}
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-semibold text-gray-800">{staf.nama || "-"}</p>
+                                            <p className="text-xs text-gray-500 font-mono">NPP: {staf.npp || "-"}</p>
+                                            {staf.is_penanggung_jawab && (
+                                                <span className="inline-block mt-1 text-[10px] bg-cyan-600 text-white px-2 py-0.5 rounded-full font-medium">
+                                                    Penanggung Jawab
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-sm text-gray-400 italic text-center py-2">- Belum ada staf ditugaskan -</p>
+                        )}
+                    </div>
+
+                    <div className="border-t border-gray-100 my-4"></div>
+
+                    {/* BAGIAN 2: PIHAK TERKAIT (Grid 2 Kolom) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+
+                        {/* MENYETUJUI */}
+                        <div>
+                            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Menyetujui</h4>
+                            <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                <p className="text-sm font-semibold text-gray-800">{menyetujui.nama}</p>
+                                <p className="text-[10px] text-gray-500 mb-1">{menyetujui.jabatan}</p>
+                                <p className="text-xs text-gray-500 font-mono">NPP: {menyetujui.npp}</p>
+                            </div>
+                        </div>
+
+                        {/* MENGETAHUI (Full Width di Mobile, Grid di Desktop) */}
+                        <div className="md:col-span-2">
+                            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Mengetahui</h4>
+                            <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                <p className="text-sm font-semibold text-gray-800">{mengetahui.nama}</p>
+                                <p className="text-[10px] text-gray-500 mb-1">{mengetahui.jabatan}</p>
+                                <p className="text-xs text-gray-500 font-mono">NPP: {mengetahui.npp}</p>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 export default function TrackingPage() {
     const params = useParams();
     const uuid = params.uuid as string;
@@ -58,7 +153,6 @@ export default function TrackingPage() {
         const fetchData = async () => {
             if (!uuid) return;
             try {
-                // Panggil API Proxy Lokal
                 const res = await fetch(`/api/tracking-proxy?uuid=${uuid}`);
                 
                 const contentType = res.headers.get("content-type");
@@ -103,12 +197,11 @@ export default function TrackingPage() {
         );
     }
 
-    // Urutkan timeline dari TERBARU ke TERLAMA
     const sortedTimeline = [...(data.timeline || [])].sort((a: any, b: any) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
-    // Ambil data utama (Prioritas SPK, fallback ke Pengajuan)
+    // Ambil data utama (Prioritas SPK -> Pengajuan)
     const infoUtama = data.spk || data.pengajuan || {};
     const judulPekerjaan = infoUtama.uraian_pekerjaan || infoUtama.keterangan || "-";
     const noSurat = data.no_surat || "-";
@@ -160,6 +253,9 @@ export default function TrackingPage() {
                     </div>
                 </div>
 
+                {/* KOMPONEN STAF & PIHAK TERKAIT (COLLAPSIBLE) */}
+                <StafCard title="Detail Staf & Pihak Terkait" data={infoUtama} />
+
                 {/* TIMELINE SECTION */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                     <h3 className="text-sm font-bold text-gray-800 mb-6 flex items-center gap-2">
@@ -167,29 +263,21 @@ export default function TrackingPage() {
                         Riwayat Aktivitas
                     </h3>
                     
-                    {/* Container Garis Vertikal */}
                     <div className="relative border-l-2 border-slate-200 ml-3 space-y-8 pb-2">
-                        {/* MAPPING DATA TIMELINE:
-                           Bagian ini akan otomatis meloop data dari API.
-                           Jika data ada 5, maka akan muncul 5 blok history + bulatan.
-                        */}
                         {sortedTimeline.map((item: any, index: number) => {
-                            const isLatest = index === 0; // Item paling atas
+                            const isLatest = index === 0;
                             const { date, time } = formatDateTime(item.created_at);
 
                             return (
                                 <div key={item.id || index} className="relative pl-8">
-                                    
-                                    {/* BULATAN INDIKATOR (DOTS) */}
                                     <div className={`absolute -left-[9px] top-1 w-[18px] h-[18px] rounded-full border-[3px] flex items-center justify-center z-10 bg-white ${
                                         isLatest 
-                                            ? "border-cyan-500 shadow-[0_0_0_3px_rgba(6,182,212,0.2)]" // Style untuk status terbaru (Biru + Glow)
-                                            : "border-slate-300" // Style untuk history lama (Abu-abu)
+                                            ? "border-cyan-500 shadow-[0_0_0_3px_rgba(6,182,212,0.2)]" 
+                                            : "border-slate-300"
                                     }`}>
                                         {isLatest && <div className="w-2 h-2 bg-cyan-500 rounded-full"></div>}
                                     </div>
 
-                                    {/* KONTEN HISTORY */}
                                     <div className={`${isLatest ? "opacity-100" : "opacity-80"}`}>
                                         <div className="flex items-center gap-2 mb-1">
                                             <span className={`text-sm font-bold ${isLatest ? 'text-cyan-700' : 'text-slate-700'}`}>
@@ -197,7 +285,6 @@ export default function TrackingPage() {
                                             </span>
                                         </div>
                                         
-                                        {/* Pesan / Message */}
                                         <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-100 mb-1 leading-relaxed">
                                             <p className="font-medium mb-0.5">{item.status}</p>
                                             {item.message && item.message !== "-" && (
@@ -205,7 +292,6 @@ export default function TrackingPage() {
                                             )}
                                         </div>
 
-                                        {/* Tanggal & Jam */}
                                         <p className="text-[10px] text-slate-400 font-medium mt-1">
                                             {date} • {time}
                                         </p>

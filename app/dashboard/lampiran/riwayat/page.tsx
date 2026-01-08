@@ -15,7 +15,8 @@ import {
     Droplet, 
     Lock, 
     Home,
-    Copy // Import icon Copy
+    Copy,
+    MapPin // 1. Import Icon MapPin
 } from "lucide-react";
 
 // KONFIGURASI API
@@ -37,7 +38,7 @@ const DELETE_PERMISSION = 'Workorder.pengajuan.riwayat.delete';
 type ApiPengajuanItem = {
     id: number;
     uuid: string;
-    no_surat: string | null; // Update: Bisa null dari API
+    no_surat: string | null;
     hal_id: number;
     catatan: string;
     kepada: string;
@@ -68,7 +69,7 @@ type Pengajuan = {
     hal: string;
     name_pelapor: string;
     status: string;
-    no_surat: string; // Tambahkan field ini
+    no_surat: string;
 };
 
 type ToastMessage = {
@@ -251,11 +252,7 @@ export default function RiwayatDataPengajuanPage() {
             const activeData = result.data.filter((item) => item.is_deleted !== 1);
 
             const mapped = activeData.map((item) => {
-                // Bersihkan HTML tags dari keterangan jika ada
                 const rawKeterangan = item.keterangan || item.catatan || item.kode_barang || "Tidak Ada Keterangan";
-                // Opsi sederhana untuk remove tag HTML jika diperlukan, atau biarkan render apa adanya
-                // const cleanKeterangan = rawKeterangan.replace(/<[^>]*>?/gm, ''); 
-
                 return {
                     id: item.id,
                     uuid: item.uuid,
@@ -337,11 +334,18 @@ export default function RiwayatDataPengajuanPage() {
         setIsDeleteModalOpen(true);
     };
 
-    // --- FUNGSI COPY ---
+    // --- FUNGSI COPY & TRACKING ---
     const handleCopy = (text: string) => {
         if (!text || text === '-') return;
         navigator.clipboard.writeText(text);
         showToast(`No Surat "${text}" berhasil disalin!`, "success");
+    };
+
+    // 2. Fungsi Handle Tracking (Baru)
+    const handleTracking = (uuid: string) => {
+        if (!uuid) return;
+        // Membuka tab baru ke halaman tracking
+        window.open(`/tracking/${uuid}`, '_blank');
     };
 
     const handleConfirmDelete = async () => {
@@ -683,7 +687,7 @@ export default function RiwayatDataPengajuanPage() {
                                             disabled={!hasPermission(EDIT_PERMISSION)}
                                             className="inline-flex items-center gap-2 bg-blue-100 text-blue-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors"
                                         >
-                                           <PlusCircle size={16}/> Buat Sekarang
+                                            <PlusCircle size={16}/> Buat Sekarang
                                         </button>
                                     </td>
                                 </tr>
@@ -716,18 +720,30 @@ export default function RiwayatDataPengajuanPage() {
                                         <td className="px-4 py-3 text-center text-xs font-medium text-gray-800">{i + 1}</td>
                                         <td className="px-4 py-3 text-xs text-gray-800 whitespace-nowrap">{p.tanggal}</td>
                                         
-                                        {/* KOLOM NO SURAT DENGAN COPY */}
+                                        {/* KOLOM NO SURAT DENGAN COPY & TRACKING */}
                                         <td className="px-4 py-3 text-xs text-gray-800 font-semibold whitespace-nowrap">
                                             <div className="flex items-center gap-2">
                                                 <span>{p.no_surat}</span>
                                                 {p.no_surat && p.no_surat !== '-' && (
-                                                    <button
-                                                        onClick={() => handleCopy(p.no_surat)}
-                                                        className="text-gray-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-gray-100"
-                                                        title="Salin No Surat"
-                                                    >
-                                                        <Copy size={14} />
-                                                    </button>
+                                                    <>
+                                                        {/* TOMBOL COPY */}
+                                                        <button
+                                                            onClick={() => handleCopy(p.no_surat)}
+                                                            className="text-gray-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-gray-100"
+                                                            title="Salin No Surat"
+                                                        >
+                                                            <Copy size={14} />
+                                                        </button>
+                                                        
+                                                        {/* 3. TOMBOL TRACKING (Update disini) */}
+                                                        <button
+                                                            onClick={() => handleTracking(p.uuid)}
+                                                            className="text-gray-400 hover:text-orange-500 p-1 rounded hover:bg-orange-50 transition-colors"
+                                                            title="Lacak Status"
+                                                        >
+                                                            <MapPin size={14} />
+                                                        </button>
+                                                    </>
                                                 )}
                                             </div>
                                         </td>

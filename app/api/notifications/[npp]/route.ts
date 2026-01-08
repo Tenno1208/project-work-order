@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const NGROK_API_URL = process.env.API_BASE_URL || "https://fermentable-nonarchitecturally-brittney.ngrok-free.dev";
+const NGROK_API_URL = process.env.API_BASE_URL || "https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti";
 
 export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) {
   const path = params.path.join('/'); 

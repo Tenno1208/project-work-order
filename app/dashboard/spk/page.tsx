@@ -34,10 +34,8 @@ type SPKItem = {
     status: string;
     uuid: string;
     namaPetugas?: string;
-    // Tambahan field untuk pengecekan NPP
     menyetujui_npp?: string | null;
     mengetahui_npp?: string | null;
-    // PENTING: Tambahkan field TTD untuk pengecekan file signature
     mengetahui_ttd?: string | null; 
 };
 

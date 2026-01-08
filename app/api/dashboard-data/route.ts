@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-const NGROK_API_URL = process.env.API_BASE_URL || "https://fermentable-nonarchitecturally-brittney.ngrok-free.dev"; 
+const NGROK_API_URL = process.env.API_BASE_URL || "https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti"; 
 const BACKEND_DASHBOARD_ENDPOINT = "/api/dashboard/data";
 
 export async function GET(request: NextRequest) {

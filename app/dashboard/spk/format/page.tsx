@@ -403,19 +403,19 @@ const PengajuanDetailView = ({ detail, onImageClick }: { detail: PengajuanDetail
         <div className="flex text-xs mb-2 print:text-[12px]"><div className="w-[120px] text-gray-700">Perihal</div><div className="flex-1">:{detail.nama_jenis} ({detail.hal_id})</div></div>
         <div className="text-xs mb-2 p-2 border border-gray-200 rounded print:border-none print:p-0"><div className="text-gray-700 mb-1">Uraian Detail:</div><p className="whitespace-pre-wrap print:text-[12px]">{detail.keterangan || 'Tidak ada uraian detail.'}</p></div>
 
-        {/* TTD Pengajuan View Only */}
+        {/* TTD Pengajuan View Only - DIUPDATE: Ukuran diperbesar ke h-28 (112px) */}
         <div className="grid grid-cols-2 gap-4 pt-4 print:grid-cols-2">
             <div className="border border-gray-200 rounded-lg p-3 print:p-1 print:border-dashed">
                 <div className="text-black text-xs mb-2">Tanda Tangan Mengetahui:</div>
-                <div className="text-center h-40 flex flex-col justify-end items-center">
-                    {detail.ttd_mengetahui_path ? <img src={getProxyFileUrl(detail.ttd_mengetahui_path) || ""} alt="TTD Mengetahui" className="h-32 w-auto object-contain mb-1" /> : <span className="text-gray-500 italic text-xs h-32 flex items-center justify-center">TTD tidak tersedia.</span>}
+                <div className="text-center min-h-[120px] flex flex-col justify-end items-center">
+                    {detail.ttd_mengetahui_path ? <img src={getProxyFileUrl(detail.ttd_mengetahui_path) || ""} alt="TTD Mengetahui" className="h-28 w-auto object-contain mb-1" /> : <span className="text-gray-500 italic text-xs h-28 flex items-center justify-center">TTD tidak tersedia.</span>}
                     <p className="text-xs mt-1 text-gray-700">{detail.mengetahui_name || '-'}</p>
                 </div>
             </div>
             <div className="border border-gray-200 rounded-lg p-3 print:p-1 print:border-dashed">
                 <div className="text-black text-xs mb-2">Tanda Tangan Pelapor:</div>
-                <div className="text-center h-40 flex flex-col justify-end items-center">
-                    {detail.ttd_pelapor_path ? <img src={getProxyFileUrl(detail.ttd_pelapor_path) || ""} alt="TTD Pelapor" className="h-32 w-auto object-contain mb-1 cursor-pointer" onClick={() => onImageClick(getProxyFileUrl(detail.ttd_pelapor_path) || '')} /> : <span className="text-gray-500 italic text-xs h-32 flex items-center justify-center">TTD tidak tersedia.</span>}
+                <div className="text-center min-h-[120px] flex flex-col justify-end items-center">
+                    {detail.ttd_pelapor_path ? <img src={getProxyFileUrl(detail.ttd_pelapor_path) || ""} alt="TTD Pelapor" className="h-28 w-auto object-contain mb-1 cursor-pointer" onClick={() => onImageClick(getProxyFileUrl(detail.ttd_pelapor_path) || '')} /> : <span className="text-gray-500 italic text-xs h-28 flex items-center justify-center">TTD tidak tersedia.</span>}
                     <p className="text-xs mt-1 text-gray-700">{detail.name_pelapor}</p>
                 </div>
             </div>
@@ -602,13 +602,31 @@ const RequestDetailCollapse = ({ nomorSpk, showToast, spkData, jenisPekerjaanOpt
             const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
             const result = await res.json();
             if (!res.ok || !result.success || !result.data) throw new Error(result.message || `Gagal memuat detail pengajuan.`);
+            
             const data = result.data;
             const masterhal = result.masterhal;
+            const kdParent = result.kd_parent; 
+            
             const detailData = {
-                uuid: data.uuid, no_surat: data.no_surat, nama_jenis: masterhal?.nama_jenis || data.hal || 'N/A', hal_id: masterhal?.kode || data.hal_id || 'N/A', kepada: data.kepada || 'N/A', satker: data.satker || 'N/A', name_pelapor: data.name_pelapor || data.name || 'N/A', npp_pelapor: data.npp_pelapor || 'N/A', tlp_pelapor: data.tlp_pelapor || 'N/A', ttd_pelapor_path: data.ttd_pelapor, mengetahui: data.mengetahui || 'N/A', mengetahui_name: data.mengetahui_name || 'N/A', ttd_mengetahui_path: data.ttd_mengetahui, keterangan: data.keterangan || 'Tidak ada keterangan.', file_paths: Array.isArray(data.file) ? data.file : (data.file ? [data.file] : []), tanggal: data.tanggal || '-', kode_barang: data.kode_barang || null,
+                uuid: data.uuid, 
+                no_surat: data.no_surat, 
+                nama_jenis: masterhal?.nama_jenis || data.hal || 'N/A', 
+                hal_id: masterhal?.kode || data.hal_id || 'N/A', 
+                kepada: data.kepada || 'N/A', 
+                satker: kdParent?.parent_satker || data.satker || 'N/A', 
+                name_pelapor: data.name_pelapor || data.name || 'N/A', 
+                npp_pelapor: data.npp_pelapor || 'N/A', 
+                tlp_pelapor: data.tlp_pelapor || 'N/A', 
+                ttd_pelapor_path: data.ttd_pelapor, 
+                mengetahui: data.mengetahui || 'N/A', 
+                mengetahui_name: data.mengetahui_name || 'N/A', 
+                ttd_mengetahui_path: data.ttd_mengetahui, 
+                keterangan: data.keterangan || 'Tidak ada keterangan.', 
+                file_paths: Array.isArray(data.file) ? data.file : (data.file ? [data.file] : []), 
+                tanggal: data.tanggal || '-', 
+                kode_barang: data.kode_barang || null,
             };
             
-            // Simpan ke cache
             pengajuanDetailCache.set(nomorSpk, detailData);
             setDetail(detailData);
         } catch (err: any) { 

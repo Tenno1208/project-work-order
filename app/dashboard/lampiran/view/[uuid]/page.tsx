@@ -570,13 +570,6 @@ export default function DetailPengajuanPage({ params }: { params: { uuid: string
                         </div>
                     )}
 
-                    <div className="mt-4 text-sm text-gray-500 no-print">
-                        Status Pengajuan: <span className={`px-2 py-1 rounded text-xs font-bold ${
-                            data.status.toLowerCase() === 'approved' ? 'bg-green-100 text-green-700' : 
-                            data.status.toLowerCase() === 'rejected' ? 'bg-red-100 text-red-700' : 
-                            'bg-yellow-100 text-yellow-700'
-                        }`}>{status}</span>
-                    </div>
 
                     <div className="mt-3 text-xs text-left">
                         Demikian laporan kami untuk menjadi periksa dan mohon untuk perhatian.

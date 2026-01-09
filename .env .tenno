@@ -1,0 +1,167 @@
+API_BASE_URL="https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti" 
+
+API_BASE_URL_PORTAL_PEGAWAI="https://gateway.pdamkotasmg.co.id/api-gw-balanced/portal-pegawai/api"
+
+NEXT_PUBLIC_EXTERNAL_API_URL="https://getpost.id/"
+
+NEXT_PUBLIC_IMAGE_STORAGE_BASE_URL="https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto/?path="
+
+# ==========================================================
+# --PENGAJUAN--
+# ==========================================================
+
+GET_API_PENGAJUAN_URL=${API_BASE_URL}/api/pengajuan/views?page={number}
+POST_API_PENGAJUAN_URL=${API_BASE_URL}/api/pengajuan
+GET_API_DETAIL_PENGAJUAN=${API_BASE_URL}/api/pengajuan/view/{uuid}
+DELETE_API_PENGAJUAN_URL=${API_BASE_URL}/api/pengajuan/delete/{uuid}
+EDIT_API_PENGAJUAN_URL=${API_BASE_URL}/api/pengajuan/edit/{uuid}
+UPDATE_API_PENGAJUAN_URL=${API_BASE_URL}/api/pengajuan{uuid}/status
+
+# ==========================================================
+# --SPK--
+# ==========================================================
+
+GET_API_SPK_URL=${API_BASE_URL}/api/spk/views/data
+POST_API_SPK_URL=${API_BASE_URL}/api/spk/menuggaskan
+GET_API_DETAIL_DATA_SPK=${API_BASE_URL}/api/spk/view/{uuid}
+DELETE_API_SPK_URL=${API_BASE_URL}/api/spk/delete/{uuid}
+UPDATE_API_SPK_URL=${API_BASE_URL}/api/spk/{uuid}/update
+
+# ==========================================================
+# --HAL--
+# ==========================================================
+
+GET_API_HAL_DROPDOWN=${API_BASE_URL}/api/hal
+
+# ==========================================================
+# --JENIS PEKERJAAN-- 
+# ==========================================================
+
+GET_API_JENISPEKERJAAN_DROPDOWN=${API_BASE_URL}/api/master-jenis-pekerjaan
+        <{-_+}>                        
+# ==========================================================
+# --MENUGGASKAN-- 
+# ==========================================================
+
+POST_API_SPK_MENUGGASKAN=${API_BASE_URL}/api/spk/menugaskan
+            
+# ==========================================================
+# --TANDA TANGAN-- 
+# ==========================================================
+
+GET_API_PENGAJUAN_TTD=${API_BASE_URL}/api/user/ttd/{npp}
+
+            
+# ==========================================================
+# --RIWAYAT PENGAJUAN-- 
+# ==========================================================
+
+GET_API_PENGAJUAN_RIWAYAT_PELAPOR=${API_BASE_URL}/api/pengajuan/pelapor/{npp}
+GET_API_PENGAJUAN_RIWAYAT_MENGETAHUI=${API_BASE_URL}/api/pengajuan/mengetahui/{npp}
+
+# ==========================================================
+# --REFERENSI SURAT-- 
+# ==========================================================
+
+GET_API_PENGAJUAN_REFERENSI_SURAT=${API_BASE_URL}/api/pengajuan/rferensi/surat
+
+# ==========================================================
+# --PIC--
+# ==========================================================
+
+GET_API_SPK_PIC=${API_BASE_URL}/api/spk/pic/{npp}
+
+# ==========================================================
+# --CREATE TTD-- 
+# ==========================================================
+
+GET_API_CREATE_TTD=${API_BASE_URL}/api/user/create/ttd
+
+# ==========================================================
+# --DELETE TTD-- 
+# ==========================================================
+
+GET_API_TTD_DELETE=${API_BASE_URL}/api/user/delete/ttd/{url}
+
+# ==========================================================
+# --PERMISSIONS NAME-- 
+# ==========================================================
+
+GET_API_PERMISSIONS_NAME=${API_BASE_URL}/api/workorder/permissions{npp}
+
+# ==========================================================j
+# --SPK VIEW-- 
+# ==========================================================
+
+GET_API_SPK_VIEW=${API_BASE_URL}/api/spk/view/{uuid}
+
+# ==========================================================
+# --RIWAYAT SPK STAFF-- 
+# ==========================================================
+
+GET_API_SPK_RIWAYAT_STAF=${API_BASE_URL}/api/spk/staf/{npp}
+
+# ==========================================================
+# --RIWYAT SPK MENGETAHUI-- 
+# ==========================================================
+
+GET_API_SPK_RIWAYAT_MENGETAHUI=${API_BASE_URL}/api/spk/mengetahui/{npp}
+
+# ==========================================================
+# --Mengetahui Pengajuan-- 
+# ==========================================================
+
+NEXT_PUBLIC_PENGAJUAN_MENGETAHUI_KEPALA=Plt. Kepala
+
+# ==========================================================
+# --Notifikasi-- 
+# ==========================================================
+
+GET_API_NOTIFIKASI=${API_BASE_URL}/api/notifications/{npp}
+UPDATE_API_NOTIFIKASI_READ=${API_BASE_URL}/api/notifications/update/{id}
+GET_ALL_API_NOTIFIKASI=${API_BASE_URL}/api/notifications/all
+UPDATE_ALL_NOTIFIKASI_READ=${API_BASE_URL}/api/notifications/update/all/{npp}
+UPDATE_API_ID_NOTIFIKASI_READ_ALL=${API_BASE_URL}/api/notifications/update/{id}
+
+# ==========================================================
+# --Dashboard-- 
+# ==========================================================
+
+GET_API_NOTIFIKASI=${API_BASE_URL}/api/dashboard/data
+
+# ==========================================================
+# --Status-- 
+# ==========================================================
+
+GET_API_SPK_STATUS=${API_BASE_URL}/api/master/status/spk
+
+# ==========================================================
+# --Tracking-- 
+# ==========================================================
+
+GET_API_TRACKING_NOTOKEN_NOSURAT=${API_BASE_URL}/tracking/nosuruat/{no_surat}
+GET_API_TRACKING_NOTOKEN_UUID=${API_BASE_URL}/tracking/uuid/{uuid}
+
+# ==========================================================
+# --Laporan -- 
+# ==========================================================
+
+GET_API_LAPORAN_PENGAJUAN=${API_BASE_URL}/api/report/data/pengajuan
+GET_API_LAPORAN_SPK=${API_BASE_URL}api/report/data/spk
+
+npp
+
+6908321002
+
+pak sigit 
+
+690829503
+vwmc5i
+
+pak anton
+
+690839804
+690839804
+
+sabri
+6908322014

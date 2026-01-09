@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from 'react'; // Tambahkan useEffect
+import React, { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
-import { useRouter, usePathname, useSearchParams } from 'next/navigation'; // Tambahkan usePathname, useSearchParams
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 
 interface Notification {
     id: number;
@@ -39,21 +39,15 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
     markingAllAsRead = false,
 }) => {
     const router = useRouter();
-    // PERUBAHAN 1: Ambil Pathname dan SearchParams untuk deteksi perubahan halaman
     const pathname = usePathname();
     const searchParams = useSearchParams();
     
     const [isRedirecting, setIsRedirecting] = useState(false);
     
-    // PERUBAHAN 2: useEffect untuk mematikan loading saat URL berubah
+    // Matikan loading saat URL berubah
     useEffect(() => {
-        // Setiap kali pathname atau searchParams berubah, matikan loading
         setIsRedirecting(false);
     }, [pathname, searchParams]);
-    
-    React.useEffect(() => {
-        console.log('NotificationDropdown rendered with notifications:', notifications);
-    }, [notifications]);
     
     const formatNotificationDate = (dateString?: string) => {
         if (!dateString) return '';
@@ -70,44 +64,73 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
         return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
     };
 
-    // --- LOGIKA PEMETAAN URL (Sesuai Request) ---
+    // =====================================================================
+    // --- LOGIKA MAPPING REDIRECT (SATU PESAN SATU LINK) ------------------
+    // =====================================================================
     const getRedirectUrl = (notification: Notification): string => {
-        const title = notification.title ? notification.title.toLowerCase() : '';
-        const message = notification.message ? notification.message.toLowerCase() : '';
+        const title = notification.title || "";
         const uuid = notification.uuid_pengajuan;
 
-        // Jika tidak ada UUID, kembalikan ke halaman list notifikasi
+        // Jika tidak ada UUID, lempar ke halaman list notifikasi
         if (!uuid) return '/dashboard/notifications';
 
-        if (title.includes('penanggung jawab') || message.includes('menjadi pic')) {
-            return `/dashboard/spk/edit/${uuid}`;
-        }
-
-        if (title.includes('penugasan baru') || message.includes('ditugaskan dalam spk')) {
-            return `/dashboard/spk/view/${uuid}`;
-        }
-
-        // 3. KASUS: SPK Ditugaskan (Pelapor) -> SPK EDIT
-        if (title.includes('spk ditugaskan') || message.includes('telah ditugaskan oleh')) {
-            return `/dashboard/spk/edit/${uuid}`;
-        }
-
-        // 4. KASUS: Status Pengajuan Diupdate -> PENGAJUAN VIEW
-        if (title.includes('status pengajuan') || message.includes('diupdate menjadi')) {
-            return `/dashboard/lampiran/view/${uuid}`;
-        }
-
-        // 5. KASUS: Pengajuan Baru Masuk (Approval/Mengetahui) -> PENGAJUAN EDIT
-        if (title.includes('pengajuan baru') || message.includes('menunggu persetujuan')) {
+        // 1. Pengajuan Baru Masuk (Approval) -> Edit (Untuk TTD)
+        // Edit biasanya pakai Path Param [uuid], tapi sesuaikan dengan struktur folder Anda.
+        // Asumsi: folder edit menggunakan [uuid] -> /dashboard/lampiran/edit/[uuid]
+        if (title === "Pengajuan Baru Masuk") {
             return `/dashboard/lampiran/edit/${uuid}`;
         }
 
-        // --- FALLBACK DEFAULT ---
-        if (title.includes('spk') || message.includes('spk')) {
-            return `/dashboard/spk/view/${uuid}`;
+        // 2. Status Pengajuan Diupdate (Info ke Pelapor) -> View
+        // View menggunakan Query Param -> /dashboard/lampiran/view?uuid=...
+        if (title === "Status Pengajuan Diupdate") {
+            return `/dashboard/lampiran/view/${uuid}`;
         }
 
-        return `/dashboard/lampiran/view/${uuid}`;
+        // 3. SPK Ditugaskan (Info ke Pelapor) -> View
+        // View menggunakan Query Param -> /dashboard/spk/view?uuid=...
+        if (title === "SPK Ditugaskan") {
+            return `/dashboard/spk/view?uuid=${uuid}`;
+        }
+
+        // 4. Penanggung Jawab Baru (PIC) -> Edit SPK (Isi Laporan)
+        // Edit SPK biasanya pakai Path Param -> /dashboard/spk/format/[uuid]
+        if (title === "Penanggung Jawab Baru") {
+            return `/dashboard/spk/format?uuid=${uuid}`; // Ubah ke query param jika folder format/page.tsx tidak punya [uuid]
+        }
+
+        // 5. Penugasan Baru (Anggota Tim) -> View SPK (Lihat Tugas)
+        if (title === "Penugasan Baru") {
+            return `/dashboard/spk/view?uuid=${uuid}`;
+        }
+
+        // 6. SPK Menunggu Persetujuan (Menyetujui) -> Edit SPK (TTD)
+        if (title === "SPK Menunggu Persetujuan") {
+            return `/dashboard/spk/format?uuid=${uuid}`; // Ubah ke query param jika perlu
+        }
+
+        // 7. SPK Menunggu Tanda Tangan (Mengetahui) -> Edit SPK (TTD)
+        if (title.toLowerCase().includes("spk menunggu tanda tangan")) {
+            return `/dashboard/spk/format?uuid=${uuid}`; // Ubah ke query param jika perlu
+        }
+
+        // 8. SPK Selesai (Info) -> View SPK
+        if (title === "SPK Selesai") {
+            return `/dashboard/spk/view?uuid=${uuid}`;
+        }
+
+        // 9. Ada Penugasan SPK Baru (Kepala Unit/Satker) -> Halaman Assign SPK
+        // Asumsi: Halaman assign juga menggunakan query param ?uuid=...
+        if (title === "Ada Penugasan SPK Baru") {
+            return `/dashboard/spk/assign?uuid=${uuid}`; 
+        }
+
+        // --- FALLBACK DEFAULT (JIKA JUDUL TIDAK DIKENALI) ---
+        if (title.toLowerCase().includes('spk')) {
+            return `/dashboard/spk/view?uuid=${uuid}`;
+        }
+
+        return `/dashboard/lampiran/view?uuid=${uuid}`;
     };
 
     const handleNotificationClick = (e: React.MouseEvent, notification: Notification) => {
@@ -117,24 +140,17 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
         const targetUrl = getRedirectUrl(notification);
         
         // Cek agar tidak loading jika url tujuan SAMA dengan url sekarang
-        if (targetUrl === pathname) {
-             console.log("Already on the target page");
+        if (targetUrl === pathname + (searchParams.toString() ? `?${searchParams.toString()}` : '')) {
              return;
         }
 
-        // Mulai animasi loading fullscreen
         setIsRedirecting(true);
         
-        console.log('Notification clicked:', notification);
-        
-        // Fire-and-forget mark as read
         if (!notification.read) {
             onMarkAsRead(notification.id).catch(err => 
                 console.error("Gagal menandai notifikasi:", err)
             );
         }
-        
-        console.log('Redirecting immediately to:', targetUrl);
         
         router.push(targetUrl);
     };
@@ -148,13 +164,13 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
 
     const getClickIndicatorText = (notification: Notification): string => {
         const url = getRedirectUrl(notification);
-        if (url.includes('/edit/')) return 'Klik untuk memproses data';
+        if (url.includes('/edit/') || url.includes('/format') || url.includes('/assign')) return 'Klik untuk memproses data';
         return 'Klik untuk melihat detail';
     };
 
     const getIndicatorColor = (notification: Notification): string => {
         const url = getRedirectUrl(notification);
-        if (url.includes('/edit/')) return 'text-orange-500';
+        if (url.includes('/edit/') || url.includes('/format') || url.includes('/assign')) return 'text-orange-500';
         return 'text-blue-500';
     };
     

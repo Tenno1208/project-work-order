@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-// Helper Header CORS agar bisa diakses dari localhost & 127.0.0.1
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*", // Mengizinkan semua domain
     "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -20,7 +19,7 @@ export async function GET(request: Request) {
     const authHeader = request.headers.get('Authorization');
 
     // URL Backend Ngrok
-    const API_BASE_URL = "https://fermentable-nonarchitecturally-brittney.ngrok-free.dev";
+    const API_BASE_URL = "https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti";
     
     let targetEndpoint = "";
     if (mode === 'pengajuan') {

@@ -25,12 +25,11 @@ const DELETE_API_BASE = "/api/pengajuan/delete/";
 const MAX_RETRIES = 1;
 
 // KONFIGURASI PERMISSION
-const CREATE_PERMISSION = 'Workorder.pengajuan.create';
-const RIWAYAT_PERMISSION = 'Workorder.pengajuan.riwayat.views';
-const VIEW_DETAIL_PERMISSION = 'Workorder.pengajuan.riwayat.view'; 
-const EDIT_PERMISSION = 'Workorder.pengajuan.riwayat.edit';
-const DELETE_PERMISSION = 'Workorder.pengajuan.riwayat.delete';
-
+const CREATE_PERMISSION = 'workorder-pti.pengajuan.create';
+const RIWAYAT_PERMISSION = 'workorder-pti.pengajuan.riwayat.views';
+const VIEW_DETAIL_PERMISSION = 'workorder-pti.pengajuan.riwayat.view'; 
+const EDIT_PERMISSION = 'workorder-pti.pengajuan.riwayat.edit';
+const DELETE_PERMISSION = 'workorder-pti.pengajuan.riwayat.delete';
 
 // #######################################################################
 // TIPE DATA

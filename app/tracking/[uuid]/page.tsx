@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { 
     CheckCircle2, 
@@ -13,75 +13,51 @@ import {
     Clock,
     Building2,
     CalendarDays,
-    Users, // Icon baru untuk Staf
-    ChevronDown, // Icon untuk Collapse/Expand
-    ChevronUp, // Icon untuk Collapse/Expand
-    Award // Icon untuk Penanggung Jawab
+    Users, 
+    ChevronDown, 
+    ChevronUp, 
+    Award,
+    Lock,       
+    Key,        
+    LogIn,      
+    X,
+    Eye,        
+    EyeOff      
 } from 'lucide-react';
 
-// Helper format tanggal & jam
+// ====================================================================
+// --- HELPER FUNCTIONS -----------------------------------------------
+// ====================================================================
+
 const formatDateTime = (dateString: string) => {
     if (!dateString) return { date: "-", time: "-" };
     const dateObj = new Date(dateString);
-    
-    const date = dateObj.toLocaleDateString("id-ID", {
-        day: "numeric", month: "short", year: "numeric"
-    });
-    
-    const time = dateObj.toLocaleTimeString("id-ID", {
-        hour: "2-digit", minute: "2-digit"
-    });
-
+    const date = dateObj.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+    const time = dateObj.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
     return { date, time };
 };
 
-const getStepIcon = (item: any) => {
-    const source = item.source?.toLowerCase() || "";
-    const title = item.title?.toLowerCase() || "";
-    const status = item.status?.toLowerCase() || "";
-
-    if (source.includes("pengajuan")) return <FileText size={18} />;
-    if (title.includes("ditandatangani") || source.includes("ttd")) return <PenTool size={18} />;
-    if (source.includes("pic") || source.includes("update") || source.includes("edit")) return <ClipboardList size={18} />;
-    if (status.includes("ditugaskan")) return <User size={18} />;
-    if (status.includes("approved") || status.includes("selesai")) return <CheckCircle2 size={18} />;
-    
-    return <Clock size={18} />;
-};
+// ====================================================================
+// --- SUB COMPONENTS -------------------------------------------------
+// ====================================================================
 
 const StafCard = ({ title, data, defaultOpen = false }: { title: string, data: any, defaultOpen?: boolean }) => {
     const [isOpen, setIsOpen] = useState(defaultOpen);
-
     const stafs = data?.stafs || [];
     
-    const menyetujui = { 
-        nama: data?.menyetujui_name || "-", 
-        npp: data?.menyetujui_npp || "-",
-        jabatan: data?.menyetujui || "-" 
-    };
-    const mengetahui = { 
-        nama: data?.mengetahui_name || "-", 
-        npp: data?.mengetahui_npp || "-",
-        jabatan: data?.mengetahui || "-" 
-    };
+    const menyetujui = { nama: data?.menyetujui_name || "-", npp: data?.menyetujui_npp || "-", jabatan: data?.menyetujui || "-" };
+    const mengetahui = { nama: data?.mengetahui_name || "-", npp: data?.mengetahui_npp || "-", jabatan: data?.mengetahui || "-" };
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6 transition-all duration-300">
-            <button 
-                onClick={() => setIsOpen(!isOpen)}
-                className="w-full px-6 py-4 flex justify-between items-center bg-slate-50 hover:bg-slate-100 transition-colors"
-            >
+            <button onClick={() => setIsOpen(!isOpen)} className="w-full px-6 py-4 flex justify-between items-center bg-slate-50 hover:bg-slate-100 transition-colors">
                 <div className="flex items-center gap-2 text-cyan-800 font-bold text-sm">
-                    <Users size={18} />
-                    <span>{title}</span>
+                    <Users size={18} /><span>{title}</span>
                 </div>
                 {isOpen ? <ChevronUp size={18} className="text-gray-500" /> : <ChevronDown size={18} className="text-gray-500" />}
             </button>
-
             {isOpen && (
                 <div className="p-6 border-t border-gray-100 space-y-6 animate-in slide-in-from-top-2 duration-300">
-                    
-                    {/* BAGIAN 1: STAF PELAKSANA */}
                     <div>
                         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Tim Pelaksana</h4>
                         {stafs.length > 0 ? (
@@ -94,27 +70,15 @@ const StafCard = ({ title, data, defaultOpen = false }: { title: string, data: a
                                         <div>
                                             <p className="text-sm font-semibold text-gray-800">{staf.nama || "-"}</p>
                                             <p className="text-xs text-gray-500 font-mono">NPP: {staf.npp || "-"}</p>
-                                            {staf.is_penanggung_jawab && (
-                                                <span className="inline-block mt-1 text-[10px] bg-cyan-600 text-white px-2 py-0.5 rounded-full font-medium">
-                                                    Penanggung Jawab
-                                                </span>
-                                            )}
+                                            {staf.is_penanggung_jawab && <span className="inline-block mt-1 text-[10px] bg-cyan-600 text-white px-2 py-0.5 rounded-full font-medium">Penanggung Jawab</span>}
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                        ) : (
-                            <p className="text-sm text-gray-400 italic text-center py-2">- Belum ada staf ditugaskan -</p>
-                        )}
+                        ) : <p className="text-sm text-gray-400 italic text-center py-2">- Belum ada staf ditugaskan -</p>}
                     </div>
-
                     <div className="border-t border-gray-100 my-4"></div>
-
-                    {/* BAGIAN 2: PIHAK TERKAIT (Grid 2 Kolom) */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    
-
-                        {/* MENYETUJUI */}
                         <div>
                             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Menyetujui</h4>
                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
@@ -123,8 +87,6 @@ const StafCard = ({ title, data, defaultOpen = false }: { title: string, data: a
                                 <p className="text-xs text-gray-500 font-mono">NPP: {menyetujui.npp}</p>
                             </div>
                         </div>
-
-                        {/* MENGETAHUI (Full Width di Mobile, Grid di Desktop) */}
                         <div className="md:col-span-2">
                             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Mengetahui</h4>
                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
@@ -133,7 +95,6 @@ const StafCard = ({ title, data, defaultOpen = false }: { title: string, data: a
                                 <p className="text-xs text-gray-500 font-mono">NPP: {mengetahui.npp}</p>
                             </div>
                         </div>
-
                     </div>
                 </div>
             )}
@@ -141,40 +102,194 @@ const StafCard = ({ title, data, defaultOpen = false }: { title: string, data: a
     );
 };
 
+// ====================================================================
+// --- MAIN PAGE COMPONENT --------------------------------------------
+// ====================================================================
+
 export default function TrackingPage() {
     const params = useParams();
     const uuid = params.uuid as string;
     
+    // --- STATE TRACKING ---
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            if (!uuid) return;
-            try {
-                const res = await fetch(`/api/tracking-proxy?uuid=${uuid}`);
-                
-                const contentType = res.headers.get("content-type");
-                if (!contentType || !contentType.includes("application/json")) {
-                    throw new Error("Respon server tidak valid.");
+    // --- STATE LOGIN MODAL ---
+    const [showLoginModal, setShowLoginModal] = useState(false);
+    const [npp, setNpp] = useState("");
+    const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
+    const [loginLoading, setLoginLoading] = useState(false);
+    const [loginError, setLoginError] = useState("");
+
+    // --- FUNCTION FETCH DATA ---
+    const fetchData = useCallback(async () => {
+        if (!uuid) return;
+        setLoading(true);
+        setError(null);
+
+        // 1. Cek Token di LocalStorage
+        const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
+        
+        // Jika tidak ada token, langsung tampilkan modal login dan stop loading
+        if (!token) {
+            setShowLoginModal(true);
+            setLoading(false);
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/tracking-proxy?uuid=${uuid}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}` 
                 }
-
-                const json = await res.json();
-
-                if (!res.ok) throw new Error(json.message || "Gagal memuat data tracking");
-                
-                setData(json); 
-            } catch (err: any) {
-                console.error("Error fetching:", err);
-                setError(err.message);
-            } finally {
+            });
+            
+            // 3. Handle Unauthorized (401)
+            if (res.status === 401) {
+                localStorage.removeItem("token");
+                setShowLoginModal(true);
                 setLoading(false);
+                return;
             }
-        };
 
-        fetchData();
+            const contentType = res.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                throw new Error("Respon server tidak valid.");
+            }
+
+            const json = await res.json();
+
+            if (!res.ok) throw new Error(json.message || "Gagal memuat data tracking");
+            
+            setData(json); 
+            setShowLoginModal(false); 
+
+        } catch (err: any) {
+            console.error("Error fetching:", err);
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
     }, [uuid]);
+
+    // --- EFFECT ---
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    // --- LOGIN HANDLER ---
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoginLoading(true);
+        setLoginError("");
+
+        try {
+            const res = await fetch("/api/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ npp, password }),
+            });
+
+            const result = await res.json();
+
+            if (res.ok && result.success) {
+                localStorage.setItem("token", result.token);
+                setShowLoginModal(false);
+                setNpp("");
+                setPassword("");
+                fetchData();
+            } else {
+                setLoginError(result.message || "Login gagal.");
+            }
+        } catch (err) {
+            setLoginError("Terjadi kesalahan koneksi.");
+        } finally {
+            setLoginLoading(false);
+        }
+    };
+
+    // --- RENDER LOGIN MODAL ---
+    if (showLoginModal) {
+        return (
+            <div className="fixed inset-0 bg-slate-900 bg-opacity-90 flex items-center justify-center p-4 z-[9999] backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in-95 duration-300">
+                    <div className="text-center mb-6">
+                        <div className="w-16 h-16 bg-cyan-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Lock className="w-8 h-8 text-cyan-600" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-slate-800">Akses Terbatas</h2>
+                        <p className="text-slate-500 text-sm mt-2">Sesi Anda berakhir atau Anda belum login. Silakan login untuk melihat data.</p>
+                    </div>
+
+                    {/* ERROR MESSAGE DI ATAS FORM */}
+                    {loginError && (
+                        <div className="mb-6 p-3 bg-red-50 border border-red-100 rounded-lg flex items-start gap-3 text-red-600 text-sm animate-in slide-in-from-top-2">
+                            <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                            <span>{loginError}</span>
+                        </div>
+                    )}
+
+                    <form onSubmit={handleLogin} className="space-y-5">
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider ml-1">NPP</label>
+                            <div className="relative">
+                                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input 
+                                    type="text" 
+                                    value={npp}
+                                    onChange={(e) => setNpp(e.target.value)}
+                                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all text-slate-800 text-sm font-medium"
+                                    placeholder="Masukkan NPP Anda"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider ml-1">Password</label>
+                            <div className="relative">
+                                <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input 
+                                    type={showPassword ? "text" : "password"} 
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="w-full pl-11 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all text-slate-800 text-sm font-medium"
+                                    placeholder="Masukkan Password"
+                                    required
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-600 transition-colors focus:outline-none"
+                                    tabIndex={-1}
+                                >
+                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
+                            </div>
+                        </div>
+
+                        <button 
+                            type="submit" 
+                            disabled={loginLoading}
+                            className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-cyan-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed mt-2"
+                        >
+                            {loginLoading ? (
+                                <Loader2 className="animate-spin" size={20} />
+                            ) : (
+                                <>
+                                    <LogIn size={20} /> Login & Lihat Tracking
+                                </>
+                            )}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        );
+    }
+
+    // --- RENDER CONTENT (LOADING / ERROR / DATA) ---
 
     if (loading) {
         return (
@@ -193,6 +308,12 @@ export default function TrackingPage() {
                 </div>
                 <h1 className="text-lg font-bold text-gray-800 mb-2">Data Tidak Ditemukan</h1>
                 <p className="text-gray-600 text-sm">{error || "Kode tracking tidak valid."}</p>
+                <button 
+                    onClick={() => { localStorage.removeItem("token"); setShowLoginModal(true); }}
+                    className="mt-4 text-cyan-600 underline text-sm"
+                >
+                    Coba Login Ulang
+                </button>
             </div>
         );
     }
@@ -201,7 +322,6 @@ export default function TrackingPage() {
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
-    // Ambil data utama (Prioritas SPK -> Pengajuan)
     const infoUtama = data.spk || data.pengajuan || {};
     const judulPekerjaan = infoUtama.uraian_pekerjaan || infoUtama.keterangan || "-";
     const noSurat = data.no_surat || "-";
@@ -209,7 +329,6 @@ export default function TrackingPage() {
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans pb-10">
-            {/* Header Sederhana */}
             <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-50">
                 <div className="flex items-center gap-2 text-cyan-700">
                     <Building2 size={20} />
@@ -218,8 +337,6 @@ export default function TrackingPage() {
             </div>
 
             <div className="max-w-xl mx-auto px-4 pt-6">
-                
-                {/* KARTU INFO UTAMA (SPK) */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
                     <div className="mb-4">
                         <span className="bg-cyan-50 text-cyan-700 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wide border border-cyan-100">
@@ -253,10 +370,8 @@ export default function TrackingPage() {
                     </div>
                 </div>
 
-                {/* KOMPONEN STAF & PIHAK TERKAIT (COLLAPSIBLE) */}
                 <StafCard title="Detail Staf & Pihak Terkait" data={infoUtama} />
 
-                {/* TIMELINE SECTION */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                     <h3 className="text-sm font-bold text-gray-800 mb-6 flex items-center gap-2">
                         <CalendarDays size={16} className="text-cyan-600" />
@@ -308,7 +423,6 @@ export default function TrackingPage() {
                     )}
                 </div>
 
-                {/* Footer Info */}
                 <div className="mt-8 text-center px-6 pb-6">
                     <p className="text-[10px] text-gray-400 font-mono">
                         ID: {data.tracking_id || uuid}

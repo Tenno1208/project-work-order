@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { Droplet, Printer, Upload, X, Check, AlertTriangle, Loader2, PlusCircle, History, Crop, Settings, Trash2 } from "lucide-react";
+import { Droplet, Printer, Upload, X, Check, AlertTriangle, Loader2, PlusCircle, History, Crop, Settings, Trash2, Lock, Home } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Draggable from "react-draggable";
 import Select from "react-select";
@@ -728,9 +728,43 @@ const CustomSingleValue = (props: any) => {
     );
 };
 
+// --- COMPONENT: ACCESS DENIED UI ---
+const AccessDeniedUI = () => {
+    const router = useRouter();
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 md:p-10 text-center transform transition-all">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-6">
+                    <Lock className="text-red-600" size={32} />
+                </div>
+                <h1 className="text-3xl font-bold text-black mb-3">Akses Ditolak</h1>
+                <p className="text-black mb-6 leading-relaxed">
+                    Maaf, Anda tidak memiliki izin untuk membuat pengajuan baru.
+                </p>
+                <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                    <p className="text-sm font-semibold text-black mb-1">Membutuhkan izin:</p>
+                    <code className="block bg-white px-3 py-2 rounded border border-red-200 text-red-600 font-mono text-sm">
+                        workorder-pti.pengajuan.create
+                    </code>
+                </div>
+                <button
+                    onClick={() => router.push('/dashboard')} 
+                    className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors shadow-md"
+                >
+                    <Home size={18} />
+                    Kembali ke Dashboard
+                </button>
+            </div>
+        </div>
+    );
+};
+
 export default function LampiranPengajuanPage() {
     const router = useRouter();
     const didMountRef = useRef(false);
+
+    const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+    const [hasAccess, setHasAccess] = useState(false);
 
     const [satkerAsalDisplay, setSatkerAsalDisplay] = useState<string>("");
 
@@ -1054,8 +1088,41 @@ const fetchSupervisor = useCallback(async (token: string): Promise<SupervisorDat
     }
 }, []);
 
+// --- 1. CEK PERMISSION ---
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const storedPermissions = localStorage.getItem('user_permissions');
+            let perms: string[] = [];
+            
+            if (storedPermissions) {
+                try {
+                    perms = JSON.parse(storedPermissions);
+                } catch (e) {
+                    console.error("Error parsing permissions", e);
+                }
+            }
+
+            // Logic: Cek permission 'workorder-pti.pengajuan.create'
+            if (perms.includes('workorder-pti.pengajuan.create')) {
+                setHasAccess(true);
+            } else {
+                setHasAccess(false);
+            }
+            
+            setPermissionsLoaded(true);
+        }
+    }, []);
+
 
     useEffect(() => {
+
+        if (!permissionsLoaded) return; // Tunggu permission load
+        if (!hasAccess) {
+            setInitialLoading(false); // Matikan loading jika tidak ada akses
+            setLoading(false);
+            return; 
+        }
+
         if (didMountRef.current) return;
         didMountRef.current = true;
 
@@ -1215,7 +1282,7 @@ const fetchSupervisor = useCallback(async (token: string): Promise<SupervisorDat
 
         fetchInitialData();
 
-    }, [router, fetchPengajuanDetail, fetchTtdHistory, fetchSupervisor]);
+    }, [router, fetchPengajuanDetail, fetchTtdHistory, fetchSupervisor, permissionsLoaded, hasAccess]);
 
 
     const handleChange = (
@@ -1661,6 +1728,30 @@ const fetchSupervisor = useCallback(async (token: string): Promise<SupervisorDat
             );
         }
     };
+
+    if (!permissionsLoaded) {
+        return (
+            <div className="flex justify-center items-center h-screen bg-gray-100">
+                <Loader2 className="animate-spin text-blue-600 mr-3" size={32} />
+                <span className="text-xl text-black">Memeriksa izin akses...</span>
+            </div>
+        );
+    }
+
+    // 2. Cek Akses Ditolak
+    if (!hasAccess) {
+        return <AccessDeniedUI />;
+    }
+
+    // 3. Loading Data Awal (Opsional, agar tidak blank saat fetch data)
+    if (initialLoading) {
+        return (
+            <div className="flex justify-center items-center h-screen bg-gray-100">
+                <Loader2 className="animate-spin text-blue-600 mr-3" size={32} />
+                <span className="text-xl text-black">Memuat data formulir...</span>
+            </div>
+        );
+    }
 
     return (
         <div className="p-6 min-h-screen">

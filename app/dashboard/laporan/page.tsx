@@ -4,8 +4,12 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { 
     FileBarChart, Filter, Building2, Printer, 
-    Loader2, FileText, Briefcase, Hash, ChevronDown, Search, X
+    Loader2, FileText, Briefcase, Hash, ChevronDown, Search, X,
+    Lock, Home // Tambahan Icon
 } from "lucide-react";
+
+// --- KONSTANTA PERMISSION ---
+const VIEW_LAPORAN_PERMISSION = "workorder-pti.view.laporan";
 
 // --- TIPE DATA ---
 interface OptionItem {
@@ -20,6 +24,37 @@ interface OptionItem {
     code?: string;
     [key: string]: any; 
 }
+
+// --- KOMPONEN: ACCESS DENIED UI (Sesuai Referensi) ---
+const AccessDeniedUI = ({ missingPermission }: { missingPermission: string }) => {
+    const router = useRouter();
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 md:p-10 text-center transform transition-all">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-6">
+                    <Lock className="text-red-600" size={32} />
+                </div>
+                <h1 className="text-3xl font-bold text-black mb-3">Akses Ditolak</h1>
+                <p className="text-black mb-6 leading-relaxed">
+                    Maaf, Anda tidak memiliki izin yang cukup untuk mengakses halaman ini.
+                </p>
+                <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                    <p className="text-sm font-semibold text-black mb-1">Izin yang Diperlukan:</p>
+                    <code className="block bg-white px-3 py-2 rounded border border-red-200 text-red-600 font-mono text-sm">
+                        {missingPermission}
+                    </code>
+                </div>
+                <button
+                    onClick={() => router.push('/dashboard')} 
+                    className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors shadow-md"
+                >
+                    <Home size={18} />
+                    Kembali ke Dashboard
+                </button>
+            </div>
+        </div>
+    );
+};
 
 // --- KOMPONEN: SEARCHABLE DROPDOWN ---
 const SearchableDropdown = ({ 
@@ -190,8 +225,33 @@ export default function LaporanPage() {
     const [listStatusSpk, setListStatusSpk] = useState<OptionItem[]>([]);
     const [loadingOptions, setLoadingOptions] = useState(false);
 
-    // --- LOAD DATA ---
+    // --- CHECK PERMISSION ---
     useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const storedPermissions = localStorage.getItem('user_permissions');
+            if (storedPermissions) {
+                try {
+                    const permissions = JSON.parse(storedPermissions);
+                    if (Array.isArray(permissions) && permissions.includes(VIEW_LAPORAN_PERMISSION)) {
+                        setHasAccess(true);
+                    } else {
+                        setHasAccess(false);
+                    }
+                } catch (e) {
+                    console.error("Gagal parse user_permissions:", e);
+                    setHasAccess(false);
+                }
+            } else {
+                setHasAccess(false);
+            }
+            setPermissionsLoaded(true);
+        }
+    }, []);
+
+    // --- LOAD DATA (Hanya jika punya akses) ---
+    useEffect(() => {
+        if (!hasAccess) return;
+
         const fetchOptions = async () => {
             setLoadingOptions(true);
             try {
@@ -227,11 +287,11 @@ export default function LaporanPage() {
             }
         };
         fetchOptions();
-    }, []);
+    }, [hasAccess]);
 
     // Load Status SPK
     useEffect(() => {
-        if (jenisLaporan === 'spk') {
+        if (jenisLaporan === 'spk' && hasAccess) {
             const fetchStatus = async () => {
                 try {
                     const token = localStorage.getItem('token');
@@ -245,19 +305,12 @@ export default function LaporanPage() {
             };
             fetchStatus();
         }
-    }, [jenisLaporan]);
+    }, [jenisLaporan, hasAccess]);
 
     // Reset filter
     useEffect(() => {
         setStatus(""); setSatker(""); setHalId(""); setJenisPekerjaanId("");
     }, [jenisLaporan]);
-
-    // Auth check
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            setHasAccess(true); setPermissionsLoaded(true);
-        }
-    }, []);
 
     // --- HANDLE CETAK ---
     const handleOpenPDF = (e: React.FormEvent) => {
@@ -312,7 +365,11 @@ export default function LaporanPage() {
     ];
 
     if (!permissionsLoaded) return <div className="min-h-[60vh] flex items-center justify-center"><Loader2 className="animate-spin text-blue-600"/></div>;
-    if (!hasAccess) return <div className="p-8 text-center">Akses Ditolak</div>;
+    
+    // --- SHOW ACCESS DENIED UI JIKA TIDAK PUNYA IZIN ---
+    if (!hasAccess) {
+        return <AccessDeniedUI missingPermission={VIEW_LAPORAN_PERMISSION} />;
+    }
 
     return (
         <div className="space-y-6">

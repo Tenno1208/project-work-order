@@ -165,7 +165,7 @@ export default function DashboardPage() {
 
     // --- SETTINGS FUNCTION ---
     const handleSettingsClick = useCallback(() => {
-        if (hasPermission('Workorder.view.pengaturan')) {
+        if (hasPermission('workorder-pti.view.pengaturan')) {
             router.push('/pengaturan');
         } else {
             setShowSettingsAccessDenied(true);
@@ -189,7 +189,8 @@ export default function DashboardPage() {
         );
     }
 
-    if (!hasPermission('Workorder.view.dashboard')) {
+
+    if (!hasPermission('workorder-pti.view.dashboard')) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
                 <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 md:p-10 text-center transform transition-all">
@@ -206,9 +207,8 @@ export default function DashboardPage() {
                             <div className="flex items-center gap-2">
                                 <span className="text-red-500">✗</span>
                                 <code className="bg-red-100 text-red-700 px-2 py-1 rounded text-sm font-mono">
-                                    Workorder.view.dashboard
+                                    workorder-pti.view.dashboard
                                 </code>
-                                <span className="text-sm text-gray-600">- Mengakses Dashboard</span>
                             </div>
                         </div>
                     </div>
@@ -217,12 +217,20 @@ export default function DashboardPage() {
                     </p>
                     <button
                         onClick={() => setShowLogoutModal(true)}
-                        className="w-full bg-blue-600 text-white py-3 rounded-lg mt-4 flex items-center justify-center"
+                        className="w-full bg-blue-600 text-white py-3 rounded-lg mt-4 flex items-center justify-center hover:bg-blue-700 transition-colors"
                     >
                         <User size={18} className="inline-block mr-2" />
                         Kembali ke Login
                     </button>
                 </div>
+
+                {/* --- TAMBAHKAN MODAL DI SINI AGAR BISA MUNCUL --- */}
+                <LogoutModal 
+                    show={showLogoutModal} 
+                    onConfirm={handleLogout} 
+                    onCancel={() => setShowLogoutModal(false)} 
+                    loggingOut={loggingOut} 
+                />
             </div>
         );
     }
@@ -252,7 +260,7 @@ export default function DashboardPage() {
                             <div className="flex items-center gap-2">
                                 <span className="text-red-500">✗</span>
                                 <code className="bg-red-100 text-red-700 px-2 py-1 rounded text-sm font-mono">
-                                    Workorder.view.pengaturan
+                                    workorder-pti.view.pengaturan
                                 </code>
                                 <span className="text-sm text-gray-600">- Mengakses Pengaturan</span>
                             </div>

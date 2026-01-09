@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, CheckCircle, AlertTriangle } from 'lucide-react'; // Tambah Icon untuk Toast
 
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
@@ -12,6 +12,13 @@ import LogoutModal from '@/components/LogoutModal';
 
 const NOTIFICATIONS_API_LOCAL_PROXY = "/api/notifications";
 const NOTIFICATIONS_ALL_API_LOCAL_PROXY = "/api/notifications/all";
+
+// --- TIPE DATA TOAST ---
+type ToastMessage = {
+    show: boolean;
+    message: string;
+    type: "success" | "error";
+};
 
 interface UserData { 
     nama?: string; 
@@ -30,6 +37,20 @@ interface Notification {
     uuid_pengajuan?: string; 
 }
 
+// --- KOMPONEN TOAST SEDERHANA ---
+const ToastBox = ({ toast, onClose }: { toast: ToastMessage, onClose: () => void }) =>
+    toast.show && (
+        <div className={`fixed top-5 right-5 px-4 py-3 rounded-xl shadow-xl text-white text-sm z-[100] transition-all duration-300 flex items-center gap-3 animate-in slide-in-from-right-5 ${
+            toast.type === "success" ? "bg-green-600" : "bg-red-600"
+        }`}>
+            {toast.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+            <span className="font-medium">{toast.message}</span>
+            <button onClick={onClose} className="ml-2 bg-white/20 rounded-full p-1 hover:bg-white/30 transition">
+                <X size={14} />
+            </button>
+        </div>
+    );
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
@@ -43,6 +64,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const [loggingOut, setLoggingOut] = useState(false);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
+    // STATE TOAST (Tambahan)
+    const [toast, setToast] = useState<ToastMessage>({ show: false, message: "", type: "success" });
+
     const [userData, setUserData] = useState<UserData>({});
     const [userPermissions, setUserPermissions] = useState<string[]>([]);
    
@@ -52,6 +76,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const [allNotifications, setAllNotifications] = useState<Notification[]>([]); 
     const [showingAllNotifications, setShowingAllNotifications] = useState(false); 
     const [loadingMoreNotifications, setLoadingMoreNotifications] = useState(false); 
+    
+    // State Loading untuk Button "Tandai Semua"
     const [markingAllAsRead, setMarkingAllAsRead] = useState(false);
     
     const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
@@ -60,6 +86,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     const getToken = () => localStorage.getItem("token");
 
+    // Helper untuk menampilkan Toast
+    const showToast = useCallback((message: string, type: "success" | "error") => {
+        setToast({ show: true, message, type });
+        setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
+    }, []);
+
+    // ... (Kode useEventSourceNotifications SAMA, tidak perlu diubah) ...
     const useEventSourceNotifications = useCallback(() => {
         const storedUserData = localStorage.getItem("user_data");
         if (!storedUserData) return;
@@ -125,6 +158,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     setNotifications(mappedNotifications);
                     setUnreadNotificationCount(data.unread_count || 0);
                     
+                    // Logic browser notification pop-up (sama seperti kode Anda)
                     const newUnreadNotifications = mappedNotifications.filter(n => !n.read);
                     if (newUnreadNotifications.length > 0) {
                         if ("Notification" in window && Notification.permission === "granted") {
@@ -132,16 +166,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             new Notification(latestNotification.title, {
                                 body: latestNotification.message,
                                 icon: "/favicon.ico",
-                            });
-                        } else if ("Notification" in window && Notification.permission !== "denied") {
-                            Notification.requestPermission().then(permission => {
-                                if (permission === "granted") {
-                                    const latestNotification = newUnreadNotifications[0];
-                                    new Notification(latestNotification.title, {
-                                        body: latestNotification.message,
-                                        icon: "/favicon.ico",
-                                    });
-                                }
                             });
                         }
                     }
@@ -165,7 +189,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         };
     }, []);
 
-
+    // ... (Kode fetchAndSetAllNotifications SAMA, tidak perlu diubah) ...
     const fetchAndSetAllNotifications = useCallback(async () => {
         const storedUserData = localStorage.getItem("user_data");
         if (!storedUserData) return;
@@ -174,7 +198,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const npp = userData.npp;
         
         if (!npp || npp === '-') {
-            console.error("NPP tidak ditemukan, membatalkan fetch all.");
             return;
         }
         
@@ -195,7 +218,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             if (!response.ok) throw new Error("Gagal fetch API lokal");
             
             const data = await response.json();
-            
             const rawData = Array.isArray(data) ? data : (data.data || []); 
 
             if (Array.isArray(rawData)) {
@@ -244,6 +266,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }
     }, []); 
 
+    // --- FUNGSI UPDATE: MENAMBAHKAN TOAST DISINI ---
     const markAllNotificationsAsRead = useCallback(async () => { 
         const token = getToken(); 
         if (!token) return;
@@ -265,12 +288,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             setNotifications(prev => prev.map(n => ({ ...n, read: true })));
             setAllNotifications(prev => prev.map(n => ({ ...n, read: true })));
             setUnreadNotificationCount(0);
+            
+            // Tampilkan notifikasi sukses
+            showToast("Semua notifikasi telah ditandai sebagai dibaca", "success");
+
         } catch (err) { 
             console.error("Error marking all notifications as read:", err); 
+            showToast("Gagal memperbarui status notifikasi", "error");
         }
-    }, [notifications, allNotifications, showingAllNotifications, userData.npp]);
+    }, [notifications, allNotifications, showingAllNotifications, userData.npp, showToast]);
 
 
+    // --- FUNGSI UPDATE: MENAMBAHKAN TOAST DISINI (Utama) ---
     const markAllNotificationsAsReadAll = useCallback(async () => { 
         const token = getToken(); 
         if (!token) return;
@@ -278,7 +307,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const npp = userData.npp; 
         if (!npp || npp === '-') return;
 
-        setMarkingAllAsRead(true);
+        setMarkingAllAsRead(true); // Mulai loading
 
         try {
             const res = await fetch(`/api/notifications/update/all/${npp}`, {
@@ -291,16 +320,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             
             if (!res.ok) throw new Error("Gagal update"); 
             
+            // Update UI State
             setNotifications(prev => prev.map(n => ({ ...n, read: true })));
             setAllNotifications(prev => prev.map(n => ({ ...n, read: true })));
             setUnreadNotificationCount(0);
 
+            // Tampilkan Notifikasi Sukses
+            showToast("Semua notifikasi berhasil ditandai sebagai dibaca", "success");
+
         } catch (err) { 
             console.error("Error marking all notifications as read:", err); 
+            showToast("Gagal melakukan aksi", "error");
         } finally {
-            setMarkingAllAsRead(false);
+            // Beri sedikit delay agar user sempat melihat spinner loadingnya
+            setTimeout(() => {
+                setMarkingAllAsRead(false);
+            }, 500);
         }
-    }, [userData.npp]); 
+    }, [userData.npp, showToast]); 
 
     const handleLoadMoreNotifications = useCallback(() => {
         if (!showingAllNotifications) {
@@ -404,25 +441,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         };
     }, [router, useEventSourceNotifications, fetchAndSetAllNotifications]);
 
-    // --- MENU CONFIGURATION ---
+    // --- MENU CONFIGURATION (Sama) ---
     const allMenuItems = [ 
         { href: "/dashboard", 
             label: "Dashboard", 
             icon: require('lucide-react').LayoutDashboard, 
             description: "Ringkasan & Statistik",
-            requiredPermission: "Workorder.view.dashboard"
+            requiredPermission: "workorder-pti.view.dashboard"
             }, 
         { href: "/dashboard/admin", 
             label: "Admin", icon: require('lucide-react').Users, 
             description: "Kelola Pengguna", 
-            requiredPermission: "Workorder.Admin"
+            requiredPermission: "workorder-pti.Admin"
         }, 
 
         { 
             label: "Data Pengajuan", 
             icon: require('lucide-react').ClipboardList, 
             description: "Dokumen Lampiran", 
-            requiredPermission: "Workorder.pengajuan.views",
+            requiredPermission: "workorder-pti.pengajuan.views",
             subItems: [
                 { href: "/dashboard/lampiran/riwayat", label: "Riwayat Data Pengajuan", icon: require('lucide-react').History },
                 { href: "/dashboard/lampiran", label: "Persetujuan Pengajuan", icon: require('lucide-react').CheckCircle },
@@ -436,21 +473,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 { href: "/dashboard/spk/riwayat", label: "Riwayat SPK", icon: require('lucide-react').History },
                 { href: "/dashboard/spk", label: "Daftar Spk", icon: require('lucide-react').List },
             ], 
-            requiredPermission: "Workorder.spk.views" 
+            requiredPermission: "workorder-pti.spk.views" 
         },
         { 
             href: "/dashboard/laporan", 
             label: "Laporan", 
             icon: require('lucide-react').FileBarChart, 
             description: "Cetak Laporan & Statistik",
-            requiredPermission: "Workorder.view.laporan" 
+            requiredPermission: "workorder-pti.view.laporan" 
         },
         { 
             href: "/dashboard/pengaturan", 
             label: "Pengaturan", 
             icon: require('lucide-react').Settings, 
             description: "Pengaturan Sistem",
-            requiredPermission: "Workorder.view.pengaturan", 
+            requiredPermission: "workorder-pti.view.pengaturan", 
         },
     ];
     
@@ -473,6 +510,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // --- RENDER ---
     return (
         <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-blue-50 relative overflow-hidden text-sm">
+            {/* TAMPILKAN TOAST BOX */}
+            <ToastBox toast={toast} onClose={() => setToast(prev => ({ ...prev, show: false }))} />
+
             <Sidebar 
                 collapsed={collapsed} 
                 setCollapsed={setCollapsed} 
@@ -509,6 +549,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     markNotificationAsRead={markNotificationAsRead}
                     markAllNotificationsAsRead={markAllNotificationsAsRead}
                     markAllNotificationsAsReadAll={markAllNotificationsAsReadAll}
+                    markingAllAsRead={markingAllAsRead} // State loading dikirim ke header -> portal -> dropdown
                     onLoadMoreNotifications={handleLoadMoreNotifications}
                 />
 

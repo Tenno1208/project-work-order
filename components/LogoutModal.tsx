@@ -1,3 +1,4 @@
+//components/LogoutModal.tsx
 "use client";
 
 import React from 'react';

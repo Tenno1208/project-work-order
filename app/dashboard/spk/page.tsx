@@ -17,12 +17,14 @@ import {
     CheckCircle,
     Copy,     
     MapPin,   
+    Lock, 
+    Home
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 const GET_API_SPK_URL_LOCAL = "/api/spk/list";
 const DELETE_API_SPK_URL_LOCAL = "/api/spk/delete/";
-const PERMISSION_ASSIGN = 'Workorder.spk.menugaskan';
+const PERMISSION_ASSIGN = 'workorder-pti.spk.menugaskan';
 
 const MAX_RETRIES = 3;
 
@@ -57,6 +59,63 @@ type CurrentUser = {
     name?: string;
 };
 
+// --- HELPER FUNCTIONS ---
+
+const getStatusColor = (status: string, isForCard = false) => {
+    const lowerStatus = (status || "").toLowerCase();
+
+    if (isForCard) {
+        if (lowerStatus === "selesai") return "bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-900"; 
+        if (lowerStatus.includes("proses") || lowerStatus === "assigned") return "bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200 text-yellow-900";
+        if (lowerStatus === "menunggu" || lowerStatus === "pending") return "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 text-blue-900";
+        if (lowerStatus === "tidak selesai") return "bg-gradient-to-br from-red-50 to-red-100 border-red-200 text-red-900";
+        if (lowerStatus === "belum selesai") return "bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200 text-orange-900";
+        if (lowerStatus === "total") return "bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 text-purple-900";
+        return "bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200 text-black";
+    }
+
+    // Untuk Label di Tabel
+    if (lowerStatus === "selesai") return "bg-green-100 text-green-800 border-green-200";
+    if (lowerStatus.includes("proses")) return "bg-yellow-100 text-yellow-800 border-yellow-200";
+    if (lowerStatus === "menunggu" || lowerStatus === "pending") return "bg-blue-100 text-blue-800 border-blue-200";
+    if (lowerStatus === "tidak selesai") return "bg-red-100 text-red-800 border-red-200";
+    if (lowerStatus === "belum selesai") return "bg-orange-100 text-orange-800 border-orange-200";
+    
+    return "bg-gray-100 text-black border-gray-200";
+};
+
+// --- KOMPONEN: ACCESS DENIED UI ---
+const AccessDeniedUI = ({ missingPermission }: { missingPermission: string }) => {
+    const router = useRouter();
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 md:p-10 text-center transform transition-all">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-6">
+                    <Lock className="text-red-600" size={32} />
+                </div>
+                <h1 className="text-3xl font-bold text-black mb-3">Akses Ditolak</h1>
+                <p className="text-black mb-6 leading-relaxed">
+                    Maaf, Anda tidak memiliki izin yang cukup untuk mengakses halaman ini.
+                </p>
+                <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                    <p className="text-sm font-semibold text-black mb-1">Izin yang Diperlukan:</p>
+                    <code className="block bg-white px-3 py-2 rounded border border-red-200 text-red-600 font-mono text-sm">
+                        {missingPermission}
+                    </code>
+                </div>
+                <button
+                    onClick={() => router.push('/dashboard')} 
+                    className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors shadow-md"
+                >
+                    <Home size={18} />
+                    Kembali ke Dashboard
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// --- COMPONENTS ---
 
 const ToastBox = ({ toast, onClose }: { toast: ToastMessage, onClose: () => void }) =>
     toast.show && (
@@ -71,6 +130,20 @@ const ToastBox = ({ toast, onClose }: { toast: ToastMessage, onClose: () => void
             </button>
         </div>
     );
+
+const StatsCard = ({ title, count, color, icon }: { title: string, count: number, color: string, icon: React.ReactNode }) => (
+    <div className={`${color} rounded-xl p-4 border shadow-sm`}>
+        <div className="flex items-center justify-between">
+            <div>
+                <p className="text-xs font-bold text-black opacity-90">{title}</p>
+                <p className="text-2xl font-bold mt-1 text-black">{count}</p>
+            </div>
+            <div className="p-2 rounded-md bg-white/50">
+                {icon}
+            </div>
+        </div>
+    </div>
+);
 
 export default function DaftarSPKPage() {
     const router = useRouter();
@@ -150,8 +223,8 @@ export default function DaftarSPKPage() {
 
 
     const handleView = (spk: SPKItem) => {
-        if (!hasPermission('Workorder.spk.view')) {
-            showToast("Akses Ditolak: Anda tidak memiliki izin (Workorder.spk.view) untuk melihat detail SPK.", "error");
+        if (!hasPermission('workorder-pti.spk.view')) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.spk.view) untuk melihat detail SPK.", "error");
             return;
         }
         router.push(`/dashboard/spk/view?uuid=${spk.uuid}`);
@@ -186,8 +259,8 @@ export default function DaftarSPKPage() {
             return;
         }
 
-        if (!hasPermission('Workorder.spk.update')) {
-            showToast("Akses Ditolak: Anda tidak memiliki izin (Workorder.spk.update) untuk mengedit SPK.", "error");
+        if (!hasPermission('workorder-pti.spk.update')) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.spk.update) untuk mengedit SPK.", "error");
             return;
         }
         router.push(`/dashboard/spk/format?uuid=${spk.uuid}`);
@@ -207,8 +280,8 @@ export default function DaftarSPKPage() {
     };
 
     const handleDelete = (spk: SPKItem) => {
-        if (!hasPermission('Workorder.spk.delete')) {
-            showToast("Akses Ditolak: Anda tidak memiliki izin (Workorder.spk.delete) untuk menghapus SPK.", "error");
+        if (!hasPermission('workorder-pti.spk.delete')) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.spk.delete) untuk menghapus SPK.", "error");
             return;
         }
         setModal({
@@ -230,7 +303,7 @@ export default function DaftarSPKPage() {
     };
 
     const confirmDeletion = async () => {
-        if (!modal.spkToDelete || !hasPermission('Workorder.spk.delete')) return;
+        if (!modal.spkToDelete || !hasPermission('workorder-pti.spk.delete')) return;
 
         setDeleting(true);
         const uuid = modal.spkToDelete.uuid;
@@ -274,9 +347,9 @@ export default function DaftarSPKPage() {
     const fetchData = useCallback(async () => {
         if (!permissionsLoaded) return;
 
-        if (!hasPermission('Workorder.spk.views')) {
-            setError("Akses Ditolak: Anda tidak memiliki izin (Workorder.spk.views) untuk melihat daftar SPK.");
-            showToast("Akses Ditolak: Anda tidak memiliki izin untuk melihat daftar SPK.", "error");
+        if (!hasPermission('workorder-pti.spk.views')) {
+            setError("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.spk.views) untuk melihat daftar SPK.");
+            // showToast("Akses Ditolak: Anda tidak memiliki izin untuk melihat daftar SPK.", "error"); // Optional: prevent toast spam on load
             setLoading(false);
             return;
         }
@@ -370,25 +443,6 @@ export default function DaftarSPKPage() {
         tidakSelesai: spks.filter((s) => s.status === "Tidak Selesai").length,
     };
 
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case "Selesai":
-                return "bg-gradient-to-r from-green-500 to-green-600";
-            case "Proses":
-                return "bg-gradient-to-r from-yellow-500 to-orange-500";
-            case "Menunggu":
-                return "bg-gradient-to-r from-blue-400 to-blue-500";
-            case "Belum Selesai":
-                return "bg-gradient-to-r from-gray-500 to-gray-600";
-            case "Tidak Selesai":
-                return "bg-gradient-to-r from-gray-500 to-gray-600";
-            case "Semua":
-                return "bg-gradient-to-r from-slate-500 to-slate-600";
-            default:
-                return "bg-gradient-to-r from-gray-400 to-gray-500";
-        }
-    };
-
 
     const CustomModal = () =>
         modal.isOpen ? (
@@ -443,11 +497,11 @@ export default function DaftarSPKPage() {
                 </div>
             </div>);
 
-    const canViewList = hasPermission('Workorder.spk.views');
-    const canViewDetail = hasPermission('Workorder.spk.view');
-    const canEdit = hasPermission('Workorder.spk.update');
-    const canDelete = hasPermission('Workorder.spk.delete');
-    const canCreate = hasPermission('Workorder.spk.create');
+    const canViewList = hasPermission('workorder-pti.spk.views');
+    const canViewDetail = hasPermission('workorder-pti.spk.view');
+    const canEdit = hasPermission('workorder-pti.spk.update');
+    const canDelete = hasPermission('workorder-pti.spk.delete');
+    const canCreate = hasPermission('workorder-pti.spk.create');
     const canAssign = hasPermission(PERMISSION_ASSIGN);
 
     if (!permissionsLoaded) {
@@ -459,15 +513,11 @@ export default function DaftarSPKPage() {
         );
     }
 
+    // --- REPLACED: New AccessDeniedUI ---
     if (!canViewList) {
-        return (
-            <div className="p-8 space-y-6 text-center bg-gray-50 min-h-screen">
-                <AlertTriangle className="inline-block text-red-500" size={48} />
-                <h2 className="text-3xl font-extrabold text-red-600">Akses Ditolak</h2>
-                <p className="text-gray-700 text-lg">Anda tidak memiliki izin (**Workorder.spk.views**) untuk melihat daftar SPK.</p>
-            </div>
-        );
+        return <AccessDeniedUI missingPermission="workorder-pti.spk.views" />;
     }
+    // ------------------------------------
 
     if (loading && canViewList) {
         return (
@@ -658,7 +708,7 @@ export default function DaftarSPKPage() {
                                                         <button
                                                             onClick={() => handleView(spk)}
                                                             disabled={deleting || !canViewDetail}
-                                                            title={!canViewDetail ? "Akses Ditolak: Tidak ada izin Workorder.spk.view" : "Lihat Detail"}
+                                                            title={!canViewDetail ? "Akses Ditolak: Tidak ada izin workorder-pti.spk.view" : "Lihat Detail"}
                                                             className={`p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg shadow-md hover:scale-105 transition ${!canViewDetail || deleting ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                         >
                                                             <Eye size={16} />
@@ -685,7 +735,7 @@ export default function DaftarSPKPage() {
                                                             disabled={deleting || isEditDisabled}
                                                             title={
                                                                 !canEdit
-                                                                    ? "Akses Ditolak: Tidak ada izin Workorder.spk.update"
+                                                                    ? "Akses Ditolak: Tidak ada izin workorder-pti.spk.update"
                                                                     : isSignedMengetahui
                                                                         ? "Tidak dapat diedit: Sudah ditandatangani (Mengetahui)"
                                                                         : isEditDisabled
@@ -703,7 +753,7 @@ export default function DaftarSPKPage() {
                                                         <button
                                                             onClick={() => handleDelete(spk)}
                                                             disabled={deleting || !canDelete}
-                                                            title={!canDelete ? "Akses Ditolak: Tidak ada izin Workorder.spk.delete" : "Hapus SPK"}
+                                                            title={!canDelete ? "Akses Ditolak: Tidak ada izin workorder-pti.spk.delete" : "Hapus SPK"}
                                                             className={`p-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg shadow-md hover:scale-105 transition ${!canDelete || deleting ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                         >
                                                             <Trash2 size={16} />

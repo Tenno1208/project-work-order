@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_BASE_URL = process.env.API_BASE_URL;
+const API_BASE_URL = process.env.API_BASE_URL_PORTAL_PEGAWAI;
 
 interface Params {
   npp: string;
@@ -8,9 +8,7 @@ interface Params {
 
 export async function GET(
   req: NextRequest,
-  context: { params: Params } 
 ) {
-  const npp = context.params.npp;
   const authorizationHeader = req.headers.get('authorization');
 
   if (!authorizationHeader || !API_BASE_URL) {
@@ -19,15 +17,8 @@ export async function GET(
       { status: 401 }
     );
   }
-
-  if (!npp) {
-      return NextResponse.json(
-          { message: 'NPP is required.' }, 
-          { status: 400 }
-      );
-  }
   
-  const permissionsApiUrl = `${API_BASE_URL}/api/workorder/permissions/${npp}`; 
+  const permissionsApiUrl = `${API_BASE_URL}/auth/permission-names`; 
   console.log("Proxying request to:", permissionsApiUrl);
 
   try {

@@ -8,7 +8,6 @@ const BACKEND_DASHBOARD_ENDPOINT = "/api/dashboard/data";
 export async function GET(request: NextRequest) {
     const token = request.headers.get('Authorization');
     
-    // Mengambil semua query parameter dari request lokal (e.g., ?start_date=X&end_date=Y)
     const { searchParams } = new URL(request.url);
     const filterQuery = searchParams.toString(); 
 

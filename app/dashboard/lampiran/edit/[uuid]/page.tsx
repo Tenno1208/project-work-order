@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { 
     Loader2, AlertTriangle, Home, Save, X, Printer, Droplet, Upload, 
     PlusCircle, Check, Ban, Maximize2, Zap, AlertCircle, FileText, 
-    History, Crop, Settings, Trash2, Pencil // Import Pencil
+    History, Crop, Settings, Trash2, Pencil, Lock
 } from "lucide-react";
 import Select from "react-select";
 import Draggable from "react-draggable";
@@ -753,6 +753,38 @@ const cleanFilePath = (path: string): string => {
     return cleaned;
 };
 
+// --- COMPONENT: ACCESS DENIED UI ---
+const AccessDeniedUI = () => {
+    const router = useRouter();
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 md:p-10 text-center transform transition-all">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-6">
+                    <Lock className="text-red-600" size={32} />
+                </div>
+                <h1 className="text-3xl font-bold text-black mb-3">Akses Ditolak</h1>
+                <p className="text-black mb-6 leading-relaxed">
+                    Maaf, Anda tidak memiliki izin untuk mengedit pengajuan ini.
+                </p>
+                <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                    <p className="text-sm font-semibold text-black mb-1">Membutuhkan salah satu izin:</p>
+                    <ul className="list-disc list-inside text-sm text-red-600 font-mono">
+                        <li>workorder-pti.pengajuan.edit</li>
+                        <li>workorder-pti.pengajuan.riwayat.edit</li>
+                    </ul>
+                </div>
+                <button
+                    onClick={() => router.push('/dashboard')} 
+                    className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors shadow-md"
+                >
+                    <Home size={18} />
+                    Kembali ke Dashboard
+                </button>
+            </div>
+        </div>
+    );
+};
+
 // --- START COMPONENT ---
 
 export default function EditPengajuanForm({ params }: any) {
@@ -760,6 +792,9 @@ export default function EditPengajuanForm({ params }: any) {
     const uuid = params.uuid;
     const didMountRef = useRef(false);
     const isEditMode = !!uuid;
+
+    const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+    const [hasAccess, setHasAccess] = useState(false);
 
     const [halOptions, setHalOptions] = useState<HalOption[]>([]);
     const [satkers, setSatkers] = useState<SatkerDef[]>([]);
@@ -828,6 +863,33 @@ export default function EditPengajuanForm({ params }: any) {
                     setCurrentUserNpp(userObj.npp || userObj.user_npp || null); 
                 } catch (e) { console.error("Gagal parse user data", e); }
             }
+        }
+    }, []);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const storedPermissions = localStorage.getItem('user_permissions');
+            let perms: string[] = [];
+            
+            if (storedPermissions) {
+                try {
+                    perms = JSON.parse(storedPermissions);
+                } catch (e) {
+                    console.error("Error parsing permissions", e);
+                }
+            }
+
+            // Logic: Jika punya SALAH SATU dari dua permission ini, maka akses diberikan.
+            const hasEditPermission = perms.includes('workorder-pti.pengajuan.edit');
+            const hasRiwayatEditPermission = perms.includes('workorder-pti.pengajuan.riwayat.edit');
+
+            if (hasEditPermission || hasRiwayatEditPermission) {
+                setHasAccess(true);
+            } else {
+                setHasAccess(false);
+            }
+            
+            setPermissionsLoaded(true);
         }
     }, []);
 
@@ -1568,18 +1630,39 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
     }, [uuid, fetchTtdMengetahuiHistory]);
 
     useEffect(() => {
-        fetchAllInitialData();
-    }, [fetchAllInitialData]);
+        if (permissionsLoaded && hasAccess) {
+            fetchAllInitialData();
+        } else if (permissionsLoaded && !hasAccess) {
+            setIsInitialLoading(false);
+            setLoading(false);
+        }
+    }, [permissionsLoaded, hasAccess, fetchAllInitialData]);
 
 
     // --- RENDER BLOCK ---
-    if (loading || isInitialLoading)
+    if (!permissionsLoaded) {
+        return (
+            <div className="flex justify-center items-center h-screen bg-gray-100">
+                <Loader2 className="animate-spin text-blue-600 mr-3" size={32} />
+                <span className="text-xl text-black">Memeriksa izin akses...</span>
+            </div>
+        );
+    }
+
+  
+    if (!hasAccess) {
+        return <AccessDeniedUI />;
+    }
+
+
+    if (loading || isInitialLoading) {
         return (
             <div className="flex justify-center items-center h-screen bg-gray-100">
                 <Loader2 className="animate-spin text-blue-600 mr-3" size={32} />
                 <span className="text-xl text-black">Memuat data formulir dan pendukung...</span>
             </div>
         );
+    }
 
     if (error)
         return (

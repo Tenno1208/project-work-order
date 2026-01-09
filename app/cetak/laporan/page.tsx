@@ -259,8 +259,8 @@ function LaporanContent() {
             <th className="border border-black p-2 w-10">No</th>
             {params.mode === 'spk' ? (
                 <>
-                    <th className="border border-black p-2">Jenis Pekerjaan</th>
                     <th className="border border-black p-2">No. Surat & Referensi</th>
+                    <th className="border border-black p-2">Jenis Pekerjaan</th>
                     <th className="border border-black p-2">Kode Barang</th>
                     <th className="border border-black p-2">Tanggal Pengerjaan</th>
                     <th className="border border-black p-2">Uraian</th>
@@ -273,6 +273,8 @@ function LaporanContent() {
                     <th className="border border-black p-2">Hal</th>
                     <th className="border border-black p-2">Kode Barang</th>
                     <th className="border border-black p-2">Keterangan</th>
+                    <th className="border border-black p-2">Satuan Kerja</th>
+                    <th className="border border-black p-2">Pelapor</th>
                     <th className="border border-black p-2 w-28">Status</th>
                 </>
             )}
@@ -281,156 +283,114 @@ function LaporanContent() {
     <tbody>
         {data.length > 0 ? (
             data.map((item, index) => (
-                <React.Fragment key={index}>
-                    {/* Baris Utama */}
-                    <tr className="break-inside-avoid">
-                        <td className="border border-black p-2 text-center align-top">{index + 1}</td>
-                        {params.mode === 'spk' ? (
-                            <>
-                                <td className="border border-black p-2 align-top">
-                                    {item.rl_master?.jenispekerjaan?.nama_pekerjaan || "-"}
-                                </td>
-                                <td className="border border-black p-2 align-top font-medium">
-                                    <div className="flex flex-col">
-                                        <span>{item.no_surat || "-"}</span>
-                                        {item.no_referensi && (
-                                            <span className="text-[10px] text-gray-500 italic mt-1">
-                                                Ref: {item.no_referensi}
-                                            </span>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className="border border-black p-2 align-top text-center">{item.kode_barang || "-"}</td>
-                                <td className="border border-black p-2 align-top">
-                                    {item.tanggal ? new Date(item.tanggal).toLocaleDateString('id-ID') : "-"}
-                                </td>
-                                <td className="border border-black p-2 align-top">
-                                    {item.uraian_pekerjaan || "-"}
-                                </td>
-                                <td className="border border-black p-2 align-top">
-                                    <div className="space-y-1">
-                                        {item.stafs ? (
-                                            (() => {
-                                                try {
-                                                    const staffList = JSON.parse(item.stafs);
-                                                    return staffList.map((staff: any, staffIndex: number) => (
-                                                        <div key={staffIndex} className="flex items-start gap-1">
-                                                            <span className={`text-[10px] font-medium ${
-                                                                staff.is_penanggung_jawab 
-                                                                    ? 'text-red-600' 
-                                                                    : 'text-blue-600'
-                                                            }`}>
-                                                                {staff.is_penanggung_jawab ? 'PJ:' : 'SF:'}
-                                                            </span>
-                                                            <div className="flex-1">
-                                                                <div className="text-[10px] text-black font-medium">
-                                                                    {staff.nama}
-                                                                </div>
-                                                                <div className="text-[9px] text-gray-500">
-                                                                    NPP: {staff.npp}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ));
-                                                } catch (e) {
-                                                    return <div className="text-[10px] text-gray-500">Format data staff tidak valid</div>;
-                                                }
-                                            })()
-                                        ) : (
-                                            <div className="text-[10px] text-gray-500 italic">-</div>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className="border border-black p-2 text-center align-top">
-                                    {getStatusBadge(item.rl_master?.status?.name || item.status)}
-                                </td>
-                            </>
-                        ) : (
-                            <>
-                                <td className="border border-black p-2 align-top font-medium">
-                                    <div className="flex flex-col">
-                                        <span>{item.no_surat || "-"}</span>
-                                        {item.no_referensi && (
-                                            <span className="text-[10px] text-gray-500 italic mt-1">
-                                                Ref: {item.no_referensi}
-                                            </span>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className="border border-black p-2 align-top">{item.rl_data?.masterhal?.nama_jenis || "-"}</td>
-                                <td className="border border-black p-2 align-top text-center">{item.kode_barang || "-"}</td>
-                                <td className="border border-black p-2 align-top">
-                                    <div dangerouslySetInnerHTML={{ __html: item.keterangan || "-" }} />
-                                </td>
-                                <td className="border border-black p-2 text-center align-top">
-                                    {getStatusBadge(item.status)}
-                                </td>
-                            </>
-                        )}
-                    </tr>
-                    
-                    {/* Baris Tambahan untuk Satker dan Pelapor (hanya mode PENGADUAN) */}
-                    {params.mode !== 'spk' && (
-                        <tr className="break-inside-avoid">
-                            <td colSpan={5} className="border border-black p-0">
-                                <div className="grid grid-cols-2 gap-4 p-3 bg-gray-50">
-                                    {/* Kolom Kiri - Informasi Satker */}
-                                    <div className="space-y-2">
-                                        <div className="border-b border-gray-300 pb-1">
-                                            <span className="text-[10px] font-bold text-gray-700 uppercase">Informasi Satuan Kerja</span>
-                                        </div>
-                                        
-                                        {item.rl_data?.kd_parent?.parent_satker && (
-                                            <div className="flex justify-between">
-                                                <span className="text-[10px] text-gray-600 font-medium w-20">Parent:</span>
-                                                <span className="text-[10px] text-black font-medium flex-1 text-right">
-                                                    {item.rl_data.kd_parent.parent_satker}
-                                                </span>
-                                            </div>
-                                        )}
-                                        
-                                        {item.rl_data?.kd_satker?.satker_name && (
-                                            <div className="flex justify-between">
-                                                <span className="text-[10px] text-gray-600 font-medium w-20">Satker:</span>
-                                                <span className="text-[10px] text-black font-medium flex-1 text-right">
-                                                    {item.rl_data.kd_satker.satker_name}
-                                                </span>
-                                            </div>
-                                        )}
-                                        
-                                    </div>
-                                    
-                                    {/* Kolom Kanan - Informasi Pelapor */}
-                                    <div className="space-y-2">
-                                        <div className="border-b border-gray-300 pb-1">
-                                            <span className="text-[10px] font-bold text-gray-700 uppercase">Informasi Pelapor</span>
-                                        </div>
-                                        
-                                        <div className="flex justify-between">
-                                            <span className="text-[10px] text-gray-600 font-medium w-20">Nama:</span>
-                                            <span className="text-[10px] text-black font-medium flex-1 text-right">
-                                                {item.name_pelapor || "-"}
-                                            </span>
-                                        </div>
-                                        
-                                        {item.npp_pelapor && (
-                                            <div className="flex justify-between">
-                                                <span className="text-[10px] text-gray-600 font-medium w-20">NPP:</span>
-                                                <span className="text-[10px] text-black font-medium flex-1 text-right">
-                                                    {item.npp_pelapor}
-                                                </span>
-                                            </div>
-                                        )}
-                                    
-                                    </div>
+                <tr key={index} className="break-inside-avoid">
+                    <td className="border border-black p-2 text-center align-top">{index + 1}</td>
+                    {params.mode === 'spk' ? (
+                        <>
+                            <td className="border border-black p-2 align-top font-medium">
+                                <div className="flex flex-col">
+                                    <span>{item.no_surat || "-"}</span>
+                                    {item.no_referensi && (
+                                        <span className="text-[10px] text-gray-500 italic mt-1">
+                                            Ref: {item.no_referensi}
+                                        </span>
+                                    )}
                                 </div>
                             </td>
-                        </tr>
+                            <td className="border border-black p-2 align-top">
+                                {item.rl_master?.jenispekerjaan?.nama_pekerjaan || "-"}
+                            </td>
+                            <td className="border border-black p-2 align-top text-center">{item.kode_barang || "-"}</td>
+                            <td className="border border-black p-2 align-top">
+                                {item.tanggal ? new Date(item.tanggal).toLocaleDateString('id-ID') : "-"}
+                            </td>
+                            <td className="border border-black p-2 align-top">
+                                {item.uraian_pekerjaan || "-"}
+                            </td>
+                            <td className="border border-black p-2 align-top">
+                                <div className="space-y-1">
+                                    {item.stafs ? (
+                                        (() => {
+                                            try {
+                                                const staffList = JSON.parse(item.stafs);
+                                                return staffList.map((staff: any, staffIndex: number) => (
+                                                    <div key={staffIndex} className="flex items-start gap-1">
+                                                        <span className={`text-[10px] font-medium ${
+                                                            staff.is_penanggung_jawab 
+                                                                ? 'text-red-600' 
+                                                                : 'text-black'
+                                                        }`}>
+                                                            {staff.is_penanggung_jawab ? 'PJ:' : '•'}
+                                                        </span>
+                                                        <div className="flex-1">
+                                                            <div className="text-[10px] text-black font-medium">
+                                                                {staff.nama}
+                                                            </div>
+                                                            <div className="text-[9px] text-gray-500">
+                                                                NPP: {staff.npp}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ));
+                                            } catch (e) {
+                                                return <div className="text-[10px] text-gray-500">Format data staff tidak valid</div>;
+                                            }
+                                        })()
+                                    ) : (
+                                        <div className="text-[10px] text-gray-500 italic">-</div>
+                                    )}
+                                </div>
+                            </td>
+                            <td className="border border-black p-2 text-center align-top">
+                                {getStatusBadge(item.rl_master?.status?.name || item.status)}
+                            </td>
+                        </>
+                    ) : (
+                        <>
+                            <td className="border border-black p-2 align-top font-medium">
+                                <div className="flex flex-col">
+                                    <span>{item.no_surat || "-"}</span>
+                                    {item.no_referensi && (
+                                        <span className="text-[10px] text-gray-500 italic mt-1">
+                                            Ref: {item.no_referensi}
+                                        </span>
+                                    )}
+                                </div>
+                            </td>
+                            <td className="border border-black p-2 align-top">{item.rl_data?.masterhal?.nama_jenis || "-"}</td>
+                            <td className="border border-black p-2 align-top text-center">{item.kode_barang || "-"}</td>
+                            <td className="border border-black p-2 align-top">
+                                <div dangerouslySetInnerHTML={{ __html: item.keterangan || "-" }} />
+                            </td>
+                            <td className="border border-black p-2 align-top">
+                                <div className="text-[10px]">
+                                    {item.rl_data?.kd_satker?.satker_name || "-"}
+                                    {item.rl_data?.kd_parent?.parent_satker && (
+                                        <div className="text-gray-500 text-[9px] italic mt-1">
+                                            Parent: {item.rl_data.kd_parent.parent_satker}
+                                        </div>
+                                    )}
+                                </div>
+                            </td>
+                            <td className="border border-black p-2 align-top">
+                                <div className="text-[10px]">
+                                    <div>{item.name_pelapor || "-"}</div>
+                                    {item.npp_pelapor && (
+                                        <div className="text-gray-500 text-[9px]">
+                                            NPP: {item.npp_pelapor}
+                                        </div>
+                                    )}
+                                </div>
+                            </td>
+                            <td className="border border-black p-2 text-center align-top">
+                                {getStatusBadge(item.status)}
+                            </td>
+                        </>
                     )}
-                </React.Fragment>
+                </tr>
             ))
         ) : (
-            <tr><td colSpan={params.mode === 'spk' ? 8 : 6} className="border border-black p-8 text-center italic">Data tidak ditemukan.</td></tr>
+            <tr><td colSpan={params.mode === 'spk' ? 8 : 7} className="border border-black p-8 text-center italic">Data tidak ditemukan.</td></tr>
         )}
     </tbody>
 </table>

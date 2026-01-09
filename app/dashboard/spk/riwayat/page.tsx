@@ -26,11 +26,10 @@ const DELETE_API_SPK_URL_LOCAL = "/api/spk/delete/";
 const RIWAYAT_SPK_STAFF_BASE_URL = "/api/spk/riwayat-staff"; 
 const MAX_RETRIES = 1;
 
-const RIWAYAT_PERMISSION = 'Workorder.spk.riwayat.views';
-const VIEW_DETAIL_PERMISSION = 'Workorder.spk.riwayat.view';
-const EDIT_PERMISSION = 'Workorder.spk.riwayat.edit';
-const DELETE_PERMISSION = 'Workorder.spk.riwayat.delete';
-
+const RIWAYAT_PERMISSION = 'workorder-pti.spk.riwayat.views';
+const VIEW_DETAIL_PERMISSION = 'workorder-pti.spk.riwayat.view';
+const EDIT_PERMISSION = 'workorder-pti.spk.riwayat.edit';
+const DELETE_PERMISSION = 'workorder-pti.spk.riwayat.delete';
 
 // --- TYPES & INTERFACES ---
 type SPKItem = {

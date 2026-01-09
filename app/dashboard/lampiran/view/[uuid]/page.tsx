@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from "next/navigation";
-import { Loader2, AlertTriangle, Eye, Printer, FileText, X } from 'lucide-react';
+import { Loader2, AlertTriangle, Eye, Printer, FileText, X, Lock, Home } from 'lucide-react';
 
 const IMAGE_PROXY_PATH = '/api/image-proxy';
 const FALLBACK_IMAGE_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
@@ -253,15 +253,48 @@ const MediaViewerModal = ({ viewer, onClose }: { viewer: ModalViewer, onClose: (
     );
 };
 
+// --- COMPONENT: ACCESS DENIED UI ---
+const AccessDeniedUI = () => {
+    const router = useRouter();
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 md:p-10 text-center transform transition-all">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-6">
+                    <Lock className="text-red-600" size={32} />
+                </div>
+                <h1 className="text-3xl font-bold text-black mb-3">Akses Ditolak</h1>
+                <p className="text-black mb-6 leading-relaxed">
+                    Maaf, Anda tidak memiliki izin untuk melihat detail pengajuan ini.
+                </p>
+                <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                    <p className="text-sm font-semibold text-black mb-1">Membutuhkan salah satu izin:</p>
+                    <ul className="list-disc list-inside text-sm text-red-600 font-mono">
+                        <li>workorder-pti.pengajuan.view</li>
+                        <li>workorder-pti.pengajuan.riwayat.view</li>
+                    </ul>
+                </div>
+                <button
+                    onClick={() => router.push('/dashboard')} 
+                    className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors shadow-md"
+                >
+                    <Home size={18} />
+                    Kembali ke Dashboard
+                </button>
+            </div>
+        </div>
+    );
+};
+
 // --- KOMPONEN UTAMA (LOGIKA FETCH TIDAK DIUBAH) ---
 export default function DetailPengajuanPage({ params }: { params: { uuid: string } }) {
     const { uuid } = params;
     const router = useRouter();
+    const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+    const [hasAccess, setHasAccess] = useState(false);
     const [data, setData] = useState<DetailData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [isPrintMode, setIsPrintMode] = useState(false);
     const [ttdPelaporPreview, setTtdPelaporPreview] = useState<string | null>(null);
     const [ttdMengetahuiPreview, setTtdMengetahuiPreview] = useState<string | null>(null); 
@@ -283,6 +316,33 @@ export default function DetailPengajuanPage({ params }: { params: { uuid: string
     const handleCloseMediaViewer = () => {
         setViewerModal({ isOpen: false, src: null, isPdf: false, title: '' });
     };
+
+    // --- 1. CEK PERMISSION ---
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const storedPermissions = localStorage.getItem('user_permissions');
+            let perms: string[] = [];
+            
+            if (storedPermissions) {
+                try {
+                    perms = JSON.parse(storedPermissions);
+                } catch (e) {
+                    console.error("Error parsing permissions", e);
+                }
+            }
+
+            const hasViewPermission = perms.includes('workorder-pti.pengajuan.view');
+            const hasRiwayatViewPermission = perms.includes('workorder-pti.pengajuan.riwayat.view');
+
+            if (hasViewPermission || hasRiwayatViewPermission) {
+                setHasAccess(true);
+            } else {
+                setHasAccess(false);
+            }
+            
+            setPermissionsLoaded(true);
+        }
+    }, []);
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -367,8 +427,12 @@ export default function DetailPengajuanPage({ params }: { params: { uuid: string
             }
         };
 
-        fetchDetail();
-    }, [uuid]);
+        if (permissionsLoaded && hasAccess) {
+            fetchDetail();
+        } else if (permissionsLoaded && !hasAccess) {
+            setLoading(false); 
+        }
+    }, [uuid, permissionsLoaded, hasAccess]);
     
     const handlePrint = () => {
         setIsPrintMode(true);
@@ -377,6 +441,20 @@ export default function DetailPengajuanPage({ params }: { params: { uuid: string
             setIsPrintMode(false);
         }, 300);
     };
+
+    // --- RENDER BLOCK ---
+    if (!permissionsLoaded) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-gray-50">
+                <Loader2 className="animate-spin text-blue-600 mr-2" size={32}/>
+                <span className="text-xl text-gray-700">Memeriksa izin akses...</span>
+            </div>
+        );
+    }
+
+    if (!hasAccess) {
+        return <AccessDeniedUI />;
+    }
     
     if (loading) {
         return (

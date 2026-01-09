@@ -110,8 +110,8 @@ export default function LoginPage() {
       }
   };
 
-  const fetchAndStorePermissions = async (token: string, npp: string): Promise<string[]> => { 
-      const finalPermissionsApiUrl = `${PERMISSIONS_API_LOCAL_PROXY}/${npp}`;
+  const fetchAndStorePermissions = async (token: string,): Promise<string[]> => { 
+      const finalPermissionsApiUrl = `${PERMISSIONS_API_LOCAL_PROXY}`;
       try {
           const res = await fetch(finalPermissionsApiUrl, { 
               method: "GET", 

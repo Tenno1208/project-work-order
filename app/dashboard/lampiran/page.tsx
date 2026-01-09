@@ -958,8 +958,8 @@ export default function DataPengajuanPage() {
     // --- ACTION HANDLERS ---
 
     const handleBuatPengajuan = () => {
-        if (!hasPermission('Workorder.pengajuan.create')) {
-            showToast("Akses Ditolak: Anda tidak memiliki izin (Workorder.pengajuan.create) untuk membuat pengajuan baru.", 'error');
+        if (!hasPermission('workorder-pti.pengajuan.create')) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.pengajuan.create) untuk membuat pengajuan baru.", 'error');
             return;
         }
 
@@ -969,24 +969,24 @@ export default function DataPengajuanPage() {
     };
 
     const handleView = (uuid: string) => {
-        if (!hasPermission('Workorder.pengajuan.view')) {
-            showToast("Akses Ditolak: Anda tidak memiliki izin (Workorder.pengajuan.view) untuk melihat detail.", 'error');
+        if (!hasPermission('workorder-pti.pengajuan.view')) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.pengajuan.view) untuk melihat detail.", 'error');
             return;
         }
         router.push(`/dashboard/lampiran/view/${uuid}`);
     };
 
     const handleEdit = (uuid: string) => {
-        if (!hasPermission('Workorder.pengajuan.edit')) {
-            showToast("Akses Ditolak: Anda tidak memiliki izin (Workorder.pengajuan.edit) untuk mengedit pengajuan.", 'error');
+        if (!hasPermission('workorder-pti.pengajuan.edit')) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.pengajuan.edit) untuk mengedit pengajuan.", 'error');
             return;
         }
         router.push(`/dashboard/lampiran/edit/${uuid}`);
     };
 
     const handleStatusModalOpen = (id: number, uuid: string, hal: string, no_surat: string) => { 
-        if (!hasPermission('Workorder.pengajuan.approval')) {
-            showToast("Akses Ditolak: Anda tidak memiliki izin (Workorder.pengajuan.approval) untuk menyetujui/menolak.", 'error');
+        if (!hasPermission('workorder-pti.pengajuan.approval')) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.pengajuan.approval) untuk menyetujui/menolak.", 'error');
             return;
         }
         if (statusModal.isSubmitting) return;
@@ -1006,8 +1006,8 @@ export default function DataPengajuanPage() {
     };
 
     const handleDeleteClick = (id: number, uuid: string, hal: string, name_pelapor?: string, no_surat?: string, tanggal?: string) => {
-        if (!hasPermission('Workorder.pengajuan.delete')) {
-            showToast("Akses Ditolak: Anda tidak memiliki izin (Workorder.pengajuan.delete) untuk menghapus pengajuan.", 'error');
+        if (!hasPermission('workorder-pti.pengajuan.delete')) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.pengajuan.delete) untuk menghapus pengajuan.", 'error');
             return;
         }
         if (isDeleting) return;
@@ -1503,12 +1503,12 @@ export default function DataPengajuanPage() {
 
     // --- RENDER PERMISSION CHECKS & LOADING ---
 
-    const canCreate = hasPermission('Workorder.pengajuan.create');
-    const canViews = hasPermission('Workorder.pengajuan.views'); 
-    const canView = hasPermission('Workorder.pengajuan.view'); 
-    const canEdit = hasPermission('Workorder.pengajuan.edit');
-    const canDelete = hasPermission('Workorder.pengajuan.delete');
-    const canApprove = hasPermission('Workorder.pengajuan.approval');
+    const canCreate = hasPermission('workorder-pti.pengajuan.create');
+    const canViews = hasPermission('workorder-pti.pengajuan.views'); 
+    const canView = hasPermission('workorder-pti.pengajuan.view'); 
+    const canEdit = hasPermission('workorder-pti.pengajuan.edit');
+    const canDelete = hasPermission('workorder-pti.pengajuan.delete');
+    const canApprove = hasPermission('workorder-pti.pengajuan.approval');
 
     const isActionInProgress = isDeleting || statusModal.isSubmitting;
 
@@ -1541,7 +1541,7 @@ export default function DataPengajuanPage() {
                         <div className="bg-gray-100 rounded-lg p-4 mb-4">
                             <p className="text-sm font-semibold text-gray-600 mb-2">Izin yang diperlukan:</p>
                             <code className="bg-red-100 text-red-700 px-2 py-1 rounded text-sm font-mono">
-                                Workorder.pengajuan.views
+                                workorder-pti.pengajuan.views
                             </code>
                         </div>
                         
@@ -1719,7 +1719,7 @@ export default function DataPengajuanPage() {
                                                 <div className="flex justify-center space-x-1.5">
                                                     <button
                                                         onClick={() => handleStatusModalOpen(p.id, p.uuid, p.hal, p.no_surat)}
-                                                        title={!canApprove ? "Akses Ditolak: Tidak ada izin Workorder.pengajuan.approval" : "Setujui/Tolak Pengajuan"}
+                                                        title={!canApprove ? "Akses Ditolak: Tidak ada izin workorder-pti.pengajuan.approval" : "Setujui/Tolak Pengajuan"}
                                                         disabled={isActionInProgress || !p.uuid || p.status.toLowerCase() === 'approved' || p.status.toLowerCase() === 'rejected' || !canApprove}
                                                         className={`p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-full transition-colors ${
                                                             isActionInProgress || p.status.toLowerCase() === 'approved' || p.status.toLowerCase() === 'rejected' || !canApprove ? 'opacity-50 cursor-not-allowed' : ''
@@ -1730,7 +1730,7 @@ export default function DataPengajuanPage() {
 
                                                     <button
                                                         onClick={() => handleView(p.uuid)}
-                                                        title={!canView ? "Akses Ditolak: Tidak ada izin Workorder.pengajuan.view" : "Lihat Detail"}
+                                                        title={!canView ? "Akses Ditolak: Tidak ada izin workorder-pti.pengajuan.view" : "Lihat Detail"}
                                                         disabled={isActionInProgress || !canView}
                                                         className={`p-2 ${(!canView || isActionInProgress) ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:text-blue-800 hover:bg-blue-100'} rounded-full transition-colors disabled:opacity-50`}
                                                     >
@@ -1748,7 +1748,7 @@ export default function DataPengajuanPage() {
 
                                                     <button
                                                         onClick={() => handleDeleteClick(p.id, p.uuid, p.hal, p.name_pelapor, p.no_surat, p.tanggal)}
-                                                        title={!canDelete ? "Akses Ditolak: Tidak ada izin Workorder.pengajuan.delete" : "Hapus Data"}
+                                                        title={!canDelete ? "Akses Ditolak: Tidak ada izin workorder-pti.pengajuan.delete" : "Hapus Data"}
                                                         disabled={isActionInProgress || !p.uuid || !canDelete}
                                                         className={`p-2 ${(!canDelete || !p.uuid) ? 'text-gray-400 cursor-not-allowed' : 'text-gray-600 hover:text-red-800 hover:bg-red-100'} rounded-full transition-colors disabled:opacity-50`}
                                                     >

@@ -12,7 +12,6 @@ export async function PUT(request: Request, { params }: { params: { npp: string 
     }
     const token = authHeader.substring(7);
 
-    // 2. Ambil URL dari ENV
     let apiUrl = process.env.UPDATE_ALL_NOTIFIKASI_READ;
 
     if (!apiUrl) {

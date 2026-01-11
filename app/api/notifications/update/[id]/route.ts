@@ -1,34 +1,39 @@
-// app/api/notifications/update/[id]/route.ts
+import { NextRequest, NextResponse } from "next/server";
 
-import { NextResponse } from "next/server";
-
-// PERUBAHAN: Ganti nama fungsi dari POST ke PUT
 export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: { params: { id: string } }
 ) {
-  const id = params.id;
-  const token = request.headers.get("Authorization");
+  const { id } = await context.params; 
+  const token = request.headers.get("authorization");
 
   if (!token) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { message: "Unauthorized" },
+      { status: 401 }
+    );
   }
 
-  // Backend URL dari .env
-  const backendUrl = `${process.env.API_BASE_URL}/api/notifications/update/${id}`;
+  const backendUrl =
+    `${process.env.API_BASE_URL}/api/notifications/update/${id}`;
 
   try {
     const res = await fetch(backendUrl, {
-      method: "PUT", // PERUBAHAN: Gunakan PUT ke Backend
+      method: "PUT",
       headers: {
-        "Authorization": token,
+        Authorization: token,
         "Content-Type": "application/json",
       },
+      cache: "no-store",
     });
 
     if (!res.ok) {
+      const errorText = await res.text();
       return NextResponse.json(
-        { message: "Gagal update status notifikasi di backend" },
+        {
+          message: "Gagal update status notifikasi di backend",
+          detail: errorText,
+        },
         { status: res.status }
       );
     }

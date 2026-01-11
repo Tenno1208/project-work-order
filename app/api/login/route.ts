@@ -1,4 +1,3 @@
-//app/api/login/route.ts
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -11,6 +10,9 @@ export async function POST(req: Request) {
     );
   }
 
+  
+  const baseUrl = process.env.API_BASE_URL_PORTAL_PEGAWAI || "https://gateway.pdamkotasmg.co.id/api-gw-balanced/portal-pegawai/api";
+
   try {
     const formBody = new URLSearchParams({
       npp: body.npp,
@@ -18,8 +20,9 @@ export async function POST(req: Request) {
       hwid: body.hwid || "prod",
     });
 
+    // Menggunakan URL dinamis dari ENV
     const res = await fetch(
-      "https://gateway.pdamkotasmg.co.id/api-gw-balanced/portal-pegawai/api/auth/login",
+      `${baseUrl}/auth/login`, 
       {
         method: "POST",
         headers: {

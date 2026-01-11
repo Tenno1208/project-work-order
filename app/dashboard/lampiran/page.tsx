@@ -292,6 +292,8 @@ const TtdCropModal = React.memo(({
     const [rotation, setRotation] = useState(0);
     const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    
+    // Setting default tanpa slider (Threshold disembunyikan/dihapus dari UI)
     const [transparencySettings, setTransparencySettings] = useState({
         whiteThreshold: 235,
         blackThreshold: 35,
@@ -332,7 +334,7 @@ const TtdCropModal = React.memo(({
                     </h3>
                     <button
                         onClick={() => setShowSettings(!showSettings)}
-                        className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200 transition flex items-center gap-1"
+                        className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200 transition flex items-center gap-1 font-medium text-black"
                     >
                         <Settings size={16} />
                         Pengaturan
@@ -340,56 +342,30 @@ const TtdCropModal = React.memo(({
                 </div>
 
                 {showSettings && (
-                    <div className="mb-4 p-3 bg-gray-50 rounded-lg border">
-                        <h4 className="font-medium text-sm mb-2">Pengaturan Transparansi</h4>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="flex items-center gap-2 text-sm">
-                                    <input
-                                        type="checkbox"
-                                        checked={transparencySettings.useAdvanced}
-                                        onChange={(e) => setTransparencySettings(prev => ({
-                                            ...prev,
-                                            useAdvanced: e.target.checked
-                                        }))}
-                                    />
-                                    Gunakan Mode Transparansi Lanjutan
-                                </label>
-                                <p className="text-xs text-gray-500 mt-1">Mode lanjutan lebih baik untuk tanda tangan dengan berbagai warna</p>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Threshold Putih: {transparencySettings.whiteThreshold}</label>
+                    <div className="mb-4 p-3 bg-gray-100 rounded-lg border border-gray-300">
+                        <h4 className="font-bold text-sm mb-2 text-black">Pengaturan Transparansi</h4>
+                        <div>
+                            {/* Slider Threshold DIHAPUS, hanya sisa Checkbox */}
+                            <label className="flex items-center gap-2 text-sm font-bold text-black cursor-pointer">
                                 <input
-                                    type="range"
-                                    min="200"
-                                    max="255"
-                                    value={transparencySettings.whiteThreshold}
+                                    type="checkbox"
+                                    checked={transparencySettings.useAdvanced}
                                     onChange={(e) => setTransparencySettings(prev => ({
                                         ...prev,
-                                        whiteThreshold: parseInt(e.target.value)
+                                        useAdvanced: e.target.checked
                                     }))}
-                                    className="w-full"
+                                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                                 />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Threshold Hitam: {transparencySettings.blackThreshold}</label>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="50"
-                                    value={transparencySettings.blackThreshold}
-                                    onChange={(e) => setTransparencySettings(prev => ({
-                                        ...prev,
-                                        blackThreshold: parseInt(e.target.value)
-                                    }))}
-                                    className="w-full"
-                                />
-                            </div>
+                                Gunakan Mode Transparansi Lanjutan
+                            </label>
+                            <p className="text-xs text-black mt-1 font-medium">
+                                Mode lanjutan lebih baik untuk tanda tangan dengan pencahayaan tidak merata.
+                            </p>
                         </div>
                     </div>
                 )}
 
-                <div className="relative flex-1 bg-gray-100 rounded-lg overflow-hidden">
+                <div className="relative flex-1 bg-gray-100 rounded-lg overflow-hidden border border-gray-300">
                     <Cropper
                         image={imageSrc}
                         crop={crop}
@@ -403,9 +379,9 @@ const TtdCropModal = React.memo(({
                     />
                 </div>
 
-                <div className="mt-4 space-y-2">
+                <div className="mt-4 space-y-3">
                     <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium w-20">Zoom:</span>
+                        <span className="text-sm font-bold text-black w-20">Zoom:</span>
                         <input
                             type="range"
                             value={zoom}
@@ -414,11 +390,11 @@ const TtdCropModal = React.memo(({
                             step={0.1}
                             aria-labelledby="Zoom"
                             onChange={(e) => setZoom(Number(e.target.value))}
-                            className="flex-1"
+                            className="flex-1 accent-blue-600"
                         />
                     </div>
                     <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium w-20">Rotasi:</span>
+                        <span className="text-sm font-bold text-black w-20">Rotasi:</span>
                         <input
                             type="range"
                             value={rotation}
@@ -427,7 +403,7 @@ const TtdCropModal = React.memo(({
                             step={1}
                             aria-labelledby="Rotation"
                             onChange={(e) => setRotation(Number(e.target.value))}
-                            className="flex-1"
+                            className="flex-1 accent-blue-600"
                         />
                     </div>
                 </div>
@@ -435,14 +411,14 @@ const TtdCropModal = React.memo(({
                 <div className="flex justify-end gap-3 mt-4">
                     <button
                         onClick={onCancel}
-                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 transition"
+                        className="px-4 py-2 text-sm font-bold text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 transition"
                     >
                         Batal
                     </button>
                     <button
                         onClick={showCroppedImage}
                         disabled={isProcessing}
-                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition disabled:bg-blue-400"
+                        className="px-4 py-2 text-sm font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 transition disabled:bg-blue-400"
                     >
                         {isProcessing ? (
                             <>
@@ -914,7 +890,6 @@ export default function DataPengajuanPage() {
 
             const activeData = apiDataArray.filter(item => item.is_deleted !== 1);
 
-            // Update Pagination state based on API response just in case
             setTotalPages(paginationInfo.last_page || 1);
             setTotalData(paginationInfo.total || 0);
             setFromData(paginationInfo.from || 0);
@@ -1107,7 +1082,7 @@ export default function DataPengajuanPage() {
             const transparentImage = await processImageTransparency(croppedImage, settings);
              
             const timestamp = Date.now();
-            const finalFile = await dataURLtoFile(transparentImage, `ttd-${currentUser.npp}-${timestamp}-cropped.png`);
+            const finalFile = await dataURLtoFile(transparentImage, `ttd-mengetahui-${currentUser.npp}-${timestamp}.png`);
 
             const formData = new FormData();
             formData.append('ttd_file', finalFile);
@@ -1260,9 +1235,9 @@ export default function DataPengajuanPage() {
         
         if (ttdPaths[nppMengetahui]) {
             ttdPathMengetahui = ttdPaths[nppMengetahui];
-            showToast(`Menggunakan tanda tangan yang tersimpan untuk NPP ${nppMengetahui}`, 'success');
+            // showToast(`Menggunakan tanda tangan yang tersimpan untuk NPP ${nppMengetahui}`, 'success');
         } else {
-            showToast(`Mengambil tanda tangan untuk NPP ${nppMengetahui}...`, 'info');
+            // showToast(`Mengambil tanda tangan untuk NPP ${nppMengetahui}...`, 'info');
             try {
                 const ttdRes = await fetch(`${TTD_PROXY_PATH}/${nppMengetahui}`, {
                     headers: { 'Authorization': `Bearer ${token}` },
@@ -1510,7 +1485,7 @@ export default function DataPengajuanPage() {
     const canDelete = hasPermission('workorder-pti.pengajuan.delete');
     const canApprove = hasPermission('workorder-pti.pengajuan.approval');
 
-    const isActionInProgress = isDeleting || statusModal.isSubmitting;
+    const isActionInProgress = isDeleting || statusModal.isSubmitting || ttdUploading;
 
     if (!permissionsLoaded) {    
         return (
@@ -1615,17 +1590,20 @@ export default function DataPengajuanPage() {
             <Toast toast={toast} setToast={setToast} />
 
             {isActionInProgress && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-60">
-                    <div className="bg-white p-6 rounded-xl shadow-2xl flex items-center">
-                        <Loader2 className={`animate-spin ${isDeleting ? 'text-red-600' : 'text-blue-600'} mr-3`} size={24} />
-                        <span className="text-lg font-semibold text-gray-800">
-                            {isDeleting 
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-60">
+                <div className="bg-white p-6 rounded-xl shadow-2xl flex items-center">
+                    <Loader2 className={`animate-spin ${isDeleting ? 'text-red-600' : 'text-blue-600'} mr-3`} size={24} />
+                    <span className="text-lg font-semibold text-gray-800">
+                        {ttdUploading 
+                            ? "Sedang mengupload & memproses TTD..." 
+                            : isDeleting 
                                 ? `Menghapus data ${itemToDelete.no_surat && itemToDelete.no_surat !== '-' ? 'No. Surat ' + itemToDelete.no_surat : 'ID ' + itemToDelete.id}...` 
-                                : `Memproses ${currentStatusAction === 'approve' ? 'Persetujuan' : 'Penolakan'} ID ${statusModal.id}...`}
-                        </span>
-                    </div>
+                                : `Memproses ${currentStatusAction === 'approve' ? 'Persetujuan' : 'Penolakan'} ${statusModal.no_surat && statusModal.no_surat !== '-' ? 'No. Surat ' + statusModal.no_surat : 'ID ' + statusModal.id}...`
+                        }
+                    </span>
                 </div>
-            )}
+            </div>
+        )}
 
             <div className="flex flex-col">
                 <h2 className="text-3xl font-extrabold text-gray-900">Daftar Data Pengajuan</h2>

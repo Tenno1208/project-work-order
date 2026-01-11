@@ -86,8 +86,7 @@ function LaporanContent() {
 
                 // Hal ID
                 if (currentParams.hal_id) {
-                    proxyUrl.searchParams.append('hal_id', currentParams.hal_id);
-                    proxyUrl.searchParams.append('hal', currentParams.hal_id); 
+                    proxyUrl.searchParams.append('nama_hal', currentParams.hal_id);
                 }
                 
                 // Jenis Pekerjaan ID
@@ -160,15 +159,37 @@ function LaporanContent() {
         return <span className={classes}>{label}</span>;
     };
 
-    // --- HELPER TANDA TANGAN ---
-    const renderSignatureColumn = (judul: string, jabatan: string, nama: string, npp: string, tanggal: string) => {
+    // --- HELPER TANDA TANGAN (PERBAIKAN ALIGNMENT) ---
+    const renderSignatureColumn = (
+        judul: string, 
+        jabatan: string, 
+        nama: string, 
+        npp: string, 
+        tanggal: string, 
+        hideDate: boolean
+    ) => {
         if (!nama) return <div></div>;
+
+        const kota = params.kota || "Semarang"; 
+        
+        // Format tanggal display
+        const displayDate = `${kota}, ${tanggal || printDate.split(' ')[0]}`;
+
         return (
             <div className="flex flex-col items-center justify-start text-center">
-                {tanggal && <p className="text-[11px] mb-1">{tanggal}</p>}
+                {/* LOGIKA PERBAIKAN: 
+                    Gunakan visibility: hidden jika hideDate=true agar tempatnya tetap terjaga 
+                    sehingga sejajar dengan kolom lain.
+                */}
+                <p className={`text-[11px] mb-1 ${hideDate ? 'invisible' : ''}`}>
+                    {displayDate}
+                </p>
+                
                 <p className="font-bold text-[11px] uppercase">{judul || "Mengetahui"}</p>
                 {jabatan && <p className="font-bold text-[11px]">{jabatan}</p>}
+                
                 <div className="h-20"></div> 
+                
                 <p className="font-bold underline uppercase text-[11px]">{nama}</p>
                 {npp && <p className="text-[11px] font-medium">NPP. {npp}</p>}
             </div>
@@ -395,9 +416,18 @@ function LaporanContent() {
     </tbody>
 </table>
                         <div className="grid grid-cols-3 gap-4 mt-8 break-inside-avoid px-4 text-black">
-                            {renderSignatureColumn(params.ttd_kiri_judul, params.ttd_kiri_jabatan, params.ttd_kiri_nama, params.ttd_kiri_npp, params.ttd_kiri_tanggal)}
-                            {renderSignatureColumn(params.ttd_tengah_judul, params.ttd_tengah_jabatan, params.ttd_tengah_nama, params.ttd_tengah_npp, params.ttd_tengah_tanggal)}
-                            {renderSignatureColumn(params.ttd_kanan_judul, params.ttd_kanan_jabatan, params.ttd_kanan_nama, params.ttd_kanan_npp, params.ttd_kanan_tanggal)}
+                            {renderSignatureColumn(
+                                params.ttd_kiri_judul, params.ttd_kiri_jabatan, params.ttd_kiri_nama, params.ttd_kiri_npp, params.ttd_kiri_tanggal, 
+                                params.ttd_kiri_hide_date // Pass hide flag
+                            )}
+                            {renderSignatureColumn(
+                                params.ttd_tengah_judul, params.ttd_tengah_jabatan, params.ttd_tengah_nama, params.ttd_tengah_npp, params.ttd_tengah_tanggal, 
+                                params.ttd_tengah_hide_date // Pass hide flag
+                            )}
+                            {renderSignatureColumn(
+                                params.ttd_kanan_judul, params.ttd_kanan_jabatan, params.ttd_kanan_nama, params.ttd_kanan_npp, params.ttd_kanan_tanggal, 
+                                params.ttd_kanan_hide_date // Pass hide flag
+                            )}
                         </div>
 
                     </div>

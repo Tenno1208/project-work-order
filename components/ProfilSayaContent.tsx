@@ -1,16 +1,16 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; // 1. Import useRef
 import { 
-  User, 
-  Phone, 
-  Building, 
-  MapPin, 
-  Loader2, 
-  AlertCircle, 
-  Droplets, 
-  Briefcase,
-  BadgeCheck
+    User, 
+    Phone, 
+    Building, 
+    MapPin, 
+    Loader2, 
+    AlertCircle, 
+    Droplets, 
+    Briefcase,
+    BadgeCheck
 } from 'lucide-react';
 
 interface UserProfile {
@@ -27,9 +27,16 @@ export default function ProfilSayaContent() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // 2. Buat Ref untuk melacak apakah komponen sudah mount
+    const didMountRef = useRef(false);
+
     const getToken = () => localStorage.getItem("token");
 
     useEffect(() => {
+        // 3. Cek jika sudah mount sebelumnya, hentikan eksekusi
+        if (didMountRef.current) return; 
+        didMountRef.current = true; // Tandai sudah mount
+
         const fetchProfile = async () => {
             setLoading(true);
             setError(null);
@@ -97,11 +104,6 @@ export default function ProfilSayaContent() {
     // --- Tampilan Data Profil (BERSIH - Tanpa Wrapper Card Sendiri) ---
     return (
         <div className="w-full">
-            {/* PERUBAHAN UTAMA: 
-               Saya menghapus background waves, padding top (pt-24), dan wrapper card putih.
-               Sekarang komponen ini pas masuk ke dalam layout induknya.
-            */}
-
             {/* Header Profile Section */}
             <div className="flex flex-col md:flex-row items-center md:items-start p-8 pb-6 gap-6">
                 {/* Avatar */}

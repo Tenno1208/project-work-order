@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from 'react';
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Loader2, AlertTriangle, Eye, Printer, FileText, X, Lock, Home } from 'lucide-react';
 
 const IMAGE_PROXY_PATH = '/api/image-proxy';
@@ -286,8 +286,9 @@ const AccessDeniedUI = () => {
 };
 
 // --- KOMPONEN UTAMA (LOGIKA FETCH TIDAK DIUBAH) ---
-export default function DetailPengajuanPage({ params }: { params: { uuid: string } }) {
-    const { uuid } = params;
+export default function DetailPengajuanPage() {
+    const params = useParams();
+    const uuid = params?.uuid;
     const router = useRouter();
     const [permissionsLoaded, setPermissionsLoaded] = useState(false);
     const [hasAccess, setHasAccess] = useState(false);
@@ -415,7 +416,7 @@ export default function DetailPengajuanPage({ params }: { params: { uuid: string
                 }
                 
                 const fullFileUrls = rawFiles.map(path => {
-                    return `${IMAGE_PROXY_PATH}?path=${path}`; 
+                    return `${IMAGE_PROXY_PATH}?path=${encodeURIComponent(path)}`; 
                 });
                 
                 setFilePreviews(fullFileUrls);
@@ -634,10 +635,19 @@ export default function DetailPengajuanPage({ params }: { params: { uuid: string
                                                 </div>
                                             ) : (
                                                 <img
-                                                    src={src}
-                                                    alt={`Lampiran ${i + 1}`}
-                                                    className="w-full h-24 object-cover rounded border border-gray-300 hover:border-blue-500 transition-colors"
-                                                />
+                                                src={src}
+                                                alt={`Lampiran ${i + 1}`}
+                                                className="w-full h-24 object-cover rounded border border-gray-300 hover:border-blue-500 transition-colors"
+                                                onError={(e) => {
+                                                    // 1. Mencegah loop infinite jika gambar fallback juga error
+                                                    e.currentTarget.onerror = null; 
+                                                    
+                                                    e.currentTarget.src = "https://placehold.co/400x300?text=File+Tidak+Ditemukan&font=roboto";
+                                                    
+                                                    // Opsional: Tambahkan border merah biar ketahuan kalau error
+                                                    e.currentTarget.style.border = "2px solid red";
+                                                }}
+                                            />
                                             )}
                                             
                                             <span className="text-xs text-gray-600 mt-1 block truncate">File {i + 1}</span>

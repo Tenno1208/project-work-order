@@ -1,41 +1,52 @@
 // app/api/notifications/all/[npp]/route.ts
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(request, { params }) {
+export async function GET(
+  request: NextRequest,
+  context: { params: { npp: string } }
+) {
   try {
-    const { npp } = params;
-    
+    const { npp } = await context.params; 
+
     // Ambil token dari header
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
-    
+
     const token = authHeader.substring(7);
-    
-    // URL API eksternal dari env
-    const notificationsApiUrl = `${process.env.GET_ALL_API_NOTIFIKASI}/${npp}`;
-    
-    console.log('Fetching all notifications from:', notificationsApiUrl);
-    
-    // Kirim request ke API eksternal
+
+    // URL API eksternal
+    const notificationsApiUrl =
+      `${process.env.GET_ALL_API_NOTIFIKASI}/${npp}`;
+
     const response = await fetch(notificationsApiUrl, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
+      cache: 'no-store',
     });
-    
+
     if (!response.ok) {
-      throw new Error(`Failed to fetch notifications: ${response.statusText}`);
+      const errorText = await response.text();
+      return NextResponse.json(
+        {
+          error: 'Failed to fetch notifications',
+          detail: errorText,
+        },
+        { status: response.status }
+      );
     }
-    
+
     const data = await response.json();
-    console.log('All notifications data received:', data);
-    
     return NextResponse.json(data);
-  } catch (error) {
+
+  } catch (error: any) {
     console.error('Error fetching all notifications:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to fetch notifications' },

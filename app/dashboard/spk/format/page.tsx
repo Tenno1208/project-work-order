@@ -1,3 +1,4 @@
+// app/dashboard/spk/format/page.tsx
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
@@ -102,9 +103,15 @@ async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
     return new File([blob], filename, { type: 'image/png' });
 }
 
-async function loadImageWithProxy(imgUrl: string, token: string): Promise<string> {
+// app/dashboard/spk/format/page.tsx
+
+// Tambahkan fungsi baru untuk memuat gambar dengan retry
+async function loadImageWithProxyRetry(imgUrl: string, token: string, maxRetries: number = 5): Promise<string> {
     if (imgUrl.startsWith('data:')) return imgUrl;
-    return new Promise(async (resolve) => {
+    
+    let retryCount = 0;
+    
+    const attemptLoad = async (): Promise<string> => {
         try {
             let targetUrl = imgUrl;
             if (!imgUrl.startsWith('http')) {
@@ -118,20 +125,36 @@ async function loadImageWithProxy(imgUrl: string, token: string): Promise<string
                     'Accept': 'image/png, image/jpeg, image/gif',
                 },
             });
+            
             if (!res.ok) {
-                console.error("Gagal load image via proxy:", res.status);
-                return resolve(imgUrl);
+                throw new Error(`Gagal load image via proxy: ${res.status}`);
             }
+            
             const blob = await res.blob();
             const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = () => resolve(imgUrl);
-            reader.readAsDataURL(blob);
+            
+            return new Promise<string>((resolve, reject) => {
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = () => reject(new Error('Failed to read file'));
+                reader.readAsDataURL(blob);
+            });
         } catch (error) {
-            console.error("Error loading image with proxy:", error);
-            resolve(imgUrl);
+            console.error(`Error loading image (attempt ${retryCount + 1}):`, error);
+            retryCount++;
+            
+            if (retryCount >= maxRetries) {
+                console.error(`Max retries (${maxRetries}) reached for image: ${imgUrl}`);
+                return imgUrl; // Kembalikan URL asli jika gagal setelah max retries
+            }
+            
+            // Tunggu sebelum mencoba lagi (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount - 1)));
+            
+            return attemptLoad();
         }
-    });
+    };
+    
+    return attemptLoad();
 }
 
 async function resizeAndMakeTransparent(
@@ -389,68 +412,122 @@ const EditableBox = ({ value, onChange, disabled = false }: { value: string | un
 // --- COLLAPSIBLE COMPONENTS -----------------------------------------
 // ====================================================================
 
-const PengajuanDetailView = ({ detail, onImageClick }: { detail: PengajuanDetail; onImageClick: (url: string) => void; }) => (
-    <div className="space-y-1 text-sm pb-4 mb-4 border-b border-gray-200 print:border-none">
-        <h4 className="font-bold underline mb-2 mt-2 text-md print:text-sm print:font-bold">DETAIL PENGAJUAN</h4>
-        <div className="grid grid-cols-2 gap-4 text-xs print:text-[12px] mb-2">
-            <div className="flex"><div className="w-[120px] text-gray-700">No. Pengajuan</div><div className="flex-1">:{detail.no_surat || '-'}</div></div>
-            <div className="flex"><div className="w-[80px] text-gray-700">Tanggal</div><div className="flex-1">:{detail.tanggal || '-'}</div></div>
-        </div>
-        <div className="grid grid-cols-2 gap-4 text-xs print:text-[12px] mb-2">
-            <div className="flex"><div className="w-[120px] text-gray-700">Pelapor</div><div className="flex-1">:{detail.name_pelapor} (NPP :{detail.npp_pelapor})</div></div>
-            <div className="flex"><div className="w-[80px] text-gray-700">Satker Asal</div><div className="flex-1">:{detail.satker || '-'}</div></div>
-        </div>
-        <div className="flex text-xs mb-2 print:text-[12px]"><div className="w-[120px] text-gray-700">Perihal</div><div className="flex-1">:{detail.nama_jenis} ({detail.hal_id})</div></div>
-        <div className="text-xs mb-2 p-2 border border-gray-200 rounded print:border-none print:p-0"><div className="text-gray-700 mb-1">Uraian Detail:</div><p className="whitespace-pre-wrap print:text-[12px]">{detail.keterangan || 'Tidak ada uraian detail.'}</p></div>
-
-        {/* TTD Pengajuan View Only - DIUPDATE: Ukuran diperbesar ke h-28 (112px) */}
-        <div className="grid grid-cols-2 gap-4 pt-4 print:grid-cols-2">
-            <div className="border border-gray-200 rounded-lg p-3 print:p-1 print:border-dashed">
-                <div className="text-black text-xs mb-2">Tanda Tangan Mengetahui:</div>
-                <div className="text-center min-h-[120px] flex flex-col justify-end items-center">
-                    {detail.ttd_mengetahui_path ? <img src={getProxyFileUrl(detail.ttd_mengetahui_path) || ""} alt="TTD Mengetahui" className="h-28 w-auto object-contain mb-1" /> : <span className="text-gray-500 italic text-xs h-28 flex items-center justify-center">TTD tidak tersedia.</span>}
-                    <p className="text-xs mt-1 text-gray-700">{detail.mengetahui_name || '-'}</p>
-                </div>
+const PengajuanDetailView = ({ detail, onImageClick }: { detail: PengajuanDetail; onImageClick: (url: string) => void; }) => {
+    const [imageLoadErrors, setImageLoadErrors] = useState<Set<string>>(new Set());
+    
+    const handleImageError = (path: string) => {
+        setImageLoadErrors(prev => new Set(prev).add(path));
+    };
+    
+    return (
+        <div className="space-y-1 text-sm pb-4 mb-4 border-b border-gray-200 print:border-none">
+            <h4 className="font-bold underline mb-2 mt-2 text-md print:text-sm print:font-bold">DETAIL PENGAJUAN</h4>
+            <div className="grid grid-cols-2 gap-4 text-xs print:text-[12px] mb-2">
+                <div className="flex"><div className="w-[120px] text-gray-700">No. Pengajuan</div><div className="flex-1">:{detail.no_surat || '-'}</div></div>
+                <div className="flex"><div className="w-[80px] text-gray-700">Tanggal</div><div className="flex-1">:{detail.tanggal || '-'}</div></div>
             </div>
-            <div className="border border-gray-200 rounded-lg p-3 print:p-1 print:border-dashed">
-                <div className="text-black text-xs mb-2">Tanda Tangan Pelapor:</div>
-                <div className="text-center min-h-[120px] flex flex-col justify-end items-center">
-                    {detail.ttd_pelapor_path ? <img src={getProxyFileUrl(detail.ttd_pelapor_path) || ""} alt="TTD Pelapor" className="h-28 w-auto object-contain mb-1 cursor-pointer" onClick={() => onImageClick(getProxyFileUrl(detail.ttd_pelapor_path) || '')} /> : <span className="text-gray-500 italic text-xs h-28 flex items-center justify-center">TTD tidak tersedia.</span>}
-                    <p className="text-xs mt-1 text-gray-700">{detail.name_pelapor}</p>
-                </div>
+            <div className="grid grid-cols-2 gap-4 text-xs print:text-[12px] mb-2">
+                <div className="flex"><div className="w-[120px] text-gray-700">Pelapor</div><div className="flex-1">:{detail.name_pelapor} (NPP :{detail.npp_pelapor})</div></div>
+                <div className="flex"><div className="w-[80px] text-gray-700">Satker Asal</div><div className="flex-1">:{detail.satker || '-'}</div></div>
             </div>
-        </div>
+            <div className="flex text-xs mb-2 print:text-[12px]"><div className="w-[120px] text-gray-700">Perihal</div><div className="flex-1">:{detail.nama_jenis} ({detail.hal_id})</div></div>
+            <div className="text-xs mb-2 p-2 border border-gray-200 rounded print:border-none print:p-0"><div className="text-gray-700 mb-1">Uraian Detail:</div><p className="whitespace-pre-wrap print:text-[12px]">{detail.keterangan || 'Tidak ada uraian detail.'}</p></div>
 
-        {/* Lampiran */}
-        {detail.file_paths.length > 0 && (
-            <div className="pt-4 border-t mt-4 border-gray-100 print:border-none">
-                <div className="text-cyan-700 text-sm mb-2 flex items-center gap-1"><FileIcon size={16}/> Lampiran File ({detail.file_paths.length} file):</div>
-                <div className="grid grid-cols-3 gap-3 print:grid-cols-3">
-                    {detail.file_paths.map((path, index) => {
-                        const fileUrl = getProxyFileUrl(path);
-                        const isImage = /\.(jpe?g|png|gif|webp)$/i.test(path);
-                        return (
-                            <div key={index} className="block p-3 border border-gray-300 rounded-lg text-center hover:bg-gray-100 transition h-36 flex flex-col justify-between">
-                                {isImage ? (
-                                    <div onClick={(e) => { e.preventDefault(); onImageClick(fileUrl || ''); }} className="cursor-pointer">
-                                        <img src={fileUrl || ''} alt="Thumbnail" className="h-24 w-full object-contain mx-auto rounded" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = 'data:image/svg+xml;base64,...'; }} />
-                                        <span className="text-xs text-gray-700 block truncate mt-1">Lihat Gambar</span>
-                                    </div>
+            {/* TTD Pengajuan View Only */}
+            <div className="grid grid-cols-2 gap-4 pt-4 print:grid-cols-2">
+                <div className="border border-gray-200 rounded-lg p-3 print:p-1 print:border-dashed">
+                    <div className="text-black text-xs mb-2">Tanda Tangan Mengetahui:</div>
+                    <div className="text-center min-h-[120px] flex flex-col justify-end items-center">
+                        {/* CONTAINER TTD MENGETAHUI - UKURAN STANDAR */}
+                        {detail.ttd_mengetahui_path ? (
+                            <div className="h-28 w-full flex justify-center items-center">
+                                {imageLoadErrors.has(detail.ttd_mengetahui_path) ? (
+                                    <span className="text-gray-500 italic text-xs h-28 flex items-center justify-center">TTD tidak dapat dimuat.</span>
                                 ) : (
-                                    <a href={fileUrl || '#'} target="_blank" rel="noopener noreferrer" className="flex flex-col h-full justify-between">
-                                        <FileIcon size={36} className="mx-auto text-blue-500 flex-shrink-0"/>
-                                        <span className="text-xs text-gray-700 block truncate mt-1">Unduh File</span>
-                                        <Download size={12} className="inline ml-1 text-blue-500"/>
-                                    </a>
+                                    <img 
+                                        src={getProxyFileUrl(detail.ttd_mengetahui_path) || ""} 
+                                        alt="TTD Mengetahui" 
+                                        className="h-28 w-auto object-contain mb-1" 
+                                        onError={() => handleImageError(detail.ttd_mengetahui_path || '')}
+                                    />
                                 )}
                             </div>
-                        );
-                    })}
+                        ) : (
+                            <span className="text-gray-500 italic text-xs h-28 flex items-center justify-center">TTD tidak tersedia.</span>
+                        )}
+                        <p className="text-xs mt-1 text-gray-700">{detail.mengetahui_name || '-'}</p>
+                    </div>
+                </div>
+                <div className="border border-gray-200 rounded-lg p-3 print:p-1 print:border-dashed">
+                    <div className="text-black text-xs mb-2">Tanda Tangan Pelapor:</div>
+                    <div className="text-center min-h-[120px] flex flex-col justify-end items-center">
+                        {/* CONTAINER TTD PELAPOR - UKURAN STANDAR */}
+                        {detail.ttd_pelapor_path ? (
+                            <div className="h-28 w-full flex justify-center items-center">
+                                {imageLoadErrors.has(detail.ttd_pelapor_path) ? (
+                                    <span className="text-gray-500 italic text-xs h-28 flex items-center justify-center">TTD tidak dapat dimuat.</span>
+                                ) : (
+                                    <img 
+                                        src={getProxyFileUrl(detail.ttd_pelapor_path) || ""} 
+                                        alt="TTD Pelapor" 
+                                        className="h-28 w-auto object-contain mb-1 cursor-pointer" 
+                                        onClick={() => onImageClick(getProxyFileUrl(detail.ttd_pelapor_path) || '')}
+                                        onError={() => handleImageError(detail.ttd_pelapor_path || '')}
+                                    />
+                                )}
+                            </div>
+                        ) : (
+                            <span className="text-gray-500 italic text-xs h-28 flex items-center justify-center">TTD tidak tersedia.</span>
+                        )}
+                        <p className="text-xs mt-1 text-gray-700">{detail.name_pelapor}</p>
+                    </div>
                 </div>
             </div>
-        )}
-    </div>
-);
+
+            {/* Lampiran */}
+            {detail.file_paths.length > 0 && (
+                <div className="pt-4 border-t mt-4 border-gray-100 print:border-none">
+                    <div className="text-cyan-700 text-sm mb-2 flex items-center gap-1"><FileIcon size={16}/> Lampiran File ({detail.file_paths.length} file):</div>
+                    <div className="grid grid-cols-3 gap-3 print:grid-cols-3">
+                        {detail.file_paths.map((path, index) => {
+                            const fileUrl = getProxyFileUrl(path);
+                            const isImage = /\.(jpe?g|png|gif|webp)$/i.test(path);
+                            const hasError = imageLoadErrors.has(path);
+                            
+                            return (
+                                <div key={index} className="block p-3 border border-gray-300 rounded-lg text-center hover:bg-gray-100 transition h-36 flex flex-col justify-between">
+                                    {isImage ? (
+                                        <div onClick={(e) => { e.preventDefault(); if (!hasError) onImageClick(fileUrl || ''); }} className="cursor-pointer">
+                                            {hasError ? (
+                                                <div className="h-24 w-full flex items-center justify-center bg-gray-100 rounded">
+                                                    <span className="text-xs text-gray-500">Gambar tidak dapat dimuat</span>
+                                                </div>
+                                            ) : (
+                                                <img 
+                                                    src={fileUrl || ''} 
+                                                    alt="Thumbnail" 
+                                                    className="h-24 w-full object-contain mx-auto rounded" 
+                                                    onError={() => handleImageError(path)}
+                                                />
+                                            )}
+                                            <span className="text-xs text-gray-700 block truncate mt-1">Lihat Gambar</span>
+                                        </div>
+                                    ) : (
+                                        <a href={fileUrl || '#'} target="_blank" rel="noopener noreferrer" className="flex flex-col h-full justify-between">
+                                            <FileIcon size={36} className="mx-auto text-blue-500 flex-shrink-0"/>
+                                            <span className="text-xs text-gray-700 block truncate mt-1">Unduh File</span>
+                                            <Download size={12} className="inline ml-1 text-blue-500"/>
+                                        </a>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 const SPKSettingsForm = ({ spkData, jenisPekerjaanOptions, updateField, canEdit, isUpdating, handleUpdateSPK, fotoPekerjaan, setFotoPekerjaan, handleFotoUpload, handleRemoveFoto, onImageClick, statusOptions, canEditSignature }: any) => (
     <div className="mt-6 text-black border-t-2 border-gray-300 pt-4 rounded-lg bg-white p-5 shadow-inner space-y-4">
@@ -626,6 +703,47 @@ const RequestDetailCollapse = ({ nomorSpk, showToast, spkData, jenisPekerjaanOpt
                 tanggal: data.tanggal || '-', 
                 kode_barang: data.kode_barang || null,
             };
+
+             const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
+            if (token) {
+                // Preload TTD images
+                if (detailData.ttd_mengetahui_path) {
+                    const ttdUrl = getProxyFileUrl(detailData.ttd_mengetahui_path);
+                    if (ttdUrl) {
+                        try {
+                            await loadImageWithProxyRetry(ttdUrl, token);
+                        } catch (error) {
+                            console.error("Error preloading mengetahui TTD:", error);
+                        }
+                    }
+                }
+                
+                if (detailData.ttd_pelapor_path) {
+                    const ttdUrl = getProxyFileUrl(detailData.ttd_pelapor_path);
+                    if (ttdUrl) {
+                        try {
+                            await loadImageWithProxyRetry(ttdUrl, token);
+                        } catch (error) {
+                            console.error("Error preloading pelapor TTD:", error);
+                        }
+                    }
+                }
+                
+                if (detailData.file_paths && detailData.file_paths.length > 0) {
+                    for (const path of detailData.file_paths) {
+                        if (/\.(jpe?g|png|gif|webp)$/i.test(path)) {
+                            const fileUrl = getProxyFileUrl(path);
+                            if (fileUrl) {
+                                try {
+                                    await loadImageWithProxyRetry(fileUrl, token);
+                                } catch (error) {
+                                    console.error(`Error preloading attachment image: ${path}`, error);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             
             pengajuanDetailCache.set(nomorSpk, detailData);
             setDetail(detailData);

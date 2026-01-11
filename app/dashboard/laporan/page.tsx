@@ -319,7 +319,6 @@ export default function LaporanPage() {
         const settings = savedSettings ? JSON.parse(savedSettings) : {};
 
         // Cari Nama Satker untuk Display
-        // Jika satker kosong, namaSatkerDisplay juga kosong agar di laporan hilang
         let namaSatkerDisplay = "";
         if (satker) {
             const selectedSatkerObj = listSatker.find(item => String(item.kd_parent) === satker);
@@ -337,21 +336,30 @@ export default function LaporanPage() {
             
             hal_id: halId,
             jenis_pekerjaan_id: jenisPekerjaanId,
+            
+            // --- DATA PENGATURAN CETAK (TERMASUK KOTA & HIDE DATE) ---
+            kota: settings.kota || "Semarang", // Tambahkan Kota
+            
             ttd_kiri_judul: settings.kiriJudul || "Dibuat Oleh",
             ttd_kiri_jabatan: settings.kiriJabatan || "",
             ttd_kiri_nama: settings.kiriNama || "",
             ttd_kiri_npp: settings.kiriNpp || "",
             ttd_kiri_tanggal: settings.kiriTanggal || "", 
+            ttd_kiri_hide_date: settings.kiriHideDate || false, // Tambahkan Flag Hide
+
             ttd_tengah_judul: settings.tengahJudul || "Diperiksa Oleh",
             ttd_tengah_jabatan: settings.tengahJabatan || "",
             ttd_tengah_nama: settings.tengahNama || "",
             ttd_tengah_npp: settings.tengahNpp || "",
             ttd_tengah_tanggal: settings.tengahTanggal || "",
+            ttd_tengah_hide_date: settings.tengahHideDate || false, // Tambahkan Flag Hide
+
             ttd_kanan_judul: settings.kananJudul || "Mengetahui",
             ttd_kanan_jabatan: settings.kananJabatan || "",
             ttd_kanan_nama: settings.kananNama || "",
             ttd_kanan_npp: settings.kananNpp || "",
-            ttd_kanan_tanggal: settings.kananTanggal || "" 
+            ttd_kanan_tanggal: settings.kananTanggal || "",
+            ttd_kanan_hide_date: settings.kananHideDate || false // Tambahkan Flag Hide
         };
 
         localStorage.setItem("temp_print_data", JSON.stringify(printPayload));

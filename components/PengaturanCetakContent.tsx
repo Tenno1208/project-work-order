@@ -2,14 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-    UserCircle, 
-    Calendar, 
-    Save, 
-    CheckCircle,
-    Printer,
-    MapPin,
-    IdCard, 
-    Briefcase 
+    UserCircle, Calendar, Save, CheckCircle, Printer, MapPin,
+    IdCard, Briefcase, EyeOff // Icon mata tertutup
 } from "lucide-react";
 
 export default function PengaturanCetakContent() {
@@ -25,6 +19,7 @@ export default function PengaturanCetakContent() {
     const [kiriNama, setKiriNama] = useState("");
     const [kiriNpp, setKiriNpp] = useState("");
     const [kiriTanggal, setKiriTanggal] = useState("");
+    const [kiriHideDate, setKiriHideDate] = useState(false); // New Checkbox State
     
     // Tengah
     const [tengahJudul, setTengahJudul] = useState("Diperiksa Oleh");
@@ -32,6 +27,7 @@ export default function PengaturanCetakContent() {
     const [tengahNama, setTengahNama] = useState("");
     const [tengahNpp, setTengahNpp] = useState("");
     const [tengahTanggal, setTengahTanggal] = useState("");
+    const [tengahHideDate, setTengahHideDate] = useState(false); // New Checkbox State
 
     // Kanan
     const [kananJudul, setKananJudul] = useState("Mengetahui");
@@ -39,6 +35,7 @@ export default function PengaturanCetakContent() {
     const [kananNama, setKananNama] = useState("");
     const [kananNpp, setKananNpp] = useState("");
     const [kananTanggal, setKananTanggal] = useState("");
+    const [kananHideDate, setKananHideDate] = useState(false); // New Checkbox State
 
     const getTodayDate = () => {
         const today = new Date();
@@ -67,18 +64,21 @@ export default function PengaturanCetakContent() {
                 setKiriNama(parsed.kiriNama || "");
                 setKiriNpp(parsed.kiriNpp || "");
                 setKiriTanggal(parsed.kiriTanggal || "");
+                setKiriHideDate(parsed.kiriHideDate || false);
 
                 setTengahJudul(parsed.tengahJudul || "Diperiksa Oleh");
                 setTengahJabatan(parsed.tengahJabatan || "");
                 setTengahNama(parsed.tengahNama || "");
                 setTengahNpp(parsed.tengahNpp || "");
                 setTengahTanggal(parsed.tengahTanggal || "");
+                setTengahHideDate(parsed.tengahHideDate || false);
 
                 setKananJudul(parsed.kananJudul || "Mengetahui");
                 setKananJabatan(parsed.kananJabatan || "");
                 setKananNama(parsed.kananNama || "");
                 setKananNpp(parsed.kananNpp || "");
                 setKananTanggal(parsed.kananTanggal || "");
+                setKananHideDate(parsed.kananHideDate || false);
             } catch (e) {
                 console.error("Gagal load settings", e);
             }
@@ -92,9 +92,9 @@ export default function PengaturanCetakContent() {
 
         const settings = {
             kota,
-            kiriJudul, kiriJabatan, kiriNama, kiriNpp, kiriTanggal,
-            tengahJudul, tengahJabatan, tengahNama, tengahNpp, tengahTanggal,
-            kananJudul, kananJabatan, kananNama, kananNpp, kananTanggal
+            kiriJudul, kiriJabatan, kiriNama, kiriNpp, kiriTanggal, kiriHideDate,
+            tengahJudul, tengahJabatan, tengahNama, tengahNpp, tengahTanggal, tengahHideDate,
+            kananJudul, kananJabatan, kananNama, kananNpp, kananTanggal, kananHideDate
         };
 
         localStorage.setItem("print_settings", JSON.stringify(settings));
@@ -139,6 +139,7 @@ export default function PengaturanCetakContent() {
                         placeholder="Contoh: Semarang"
                         className="w-full md:w-1/2 px-4 py-2 bg-white border border-slate-400 rounded-xl text-black focus:ring-2 focus:ring-black outline-none text-sm font-bold"
                     />
+                    <p className="text-xs text-gray-500 mt-2">*Akan muncul sebelum tanggal di tanda tangan (Contoh: Semarang, 20 Januari 2025)</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
@@ -149,8 +150,8 @@ export default function PengaturanCetakContent() {
                         title="Posisi Kiri" 
                         colorClass="bg-white text-black border-black"
                         borderClass="border-gray-400 bg-gray-50"
-                        data={{ judul: kiriJudul, jabatan: kiriJabatan, nama: kiriNama, npp: kiriNpp, tanggal: kiriTanggal }}
-                        handlers={{ setJudul: setKiriJudul, setJabatan: setKiriJabatan, setNama: setKiriNama, setNpp: setKiriNpp, setTanggal: setKiriTanggal }}
+                        data={{ judul: kiriJudul, jabatan: kiriJabatan, nama: kiriNama, npp: kiriNpp, tanggal: kiriTanggal, hideDate: kiriHideDate }}
+                        handlers={{ setJudul: setKiriJudul, setJabatan: setKiriJabatan, setNama: setKiriNama, setNpp: setKiriNpp, setTanggal: setKiriTanggal, setHideDate: setKiriHideDate }}
                         formatDateDisplay={formatDateDisplay}
                         getTodayDate={getTodayDate}
                     />
@@ -161,8 +162,8 @@ export default function PengaturanCetakContent() {
                         title="Posisi Tengah" 
                         colorClass="bg-white text-black border-black"
                         borderClass="border-gray-400 bg-gray-50"
-                        data={{ judul: tengahJudul, jabatan: tengahJabatan, nama: tengahNama, npp: tengahNpp, tanggal: tengahTanggal }}
-                        handlers={{ setJudul: setTengahJudul, setJabatan: setTengahJabatan, setNama: setTengahNama, setNpp: setTengahNpp, setTanggal: setTengahTanggal }}
+                        data={{ judul: tengahJudul, jabatan: tengahJabatan, nama: tengahNama, npp: tengahNpp, tanggal: tengahTanggal, hideDate: tengahHideDate }}
+                        handlers={{ setJudul: setTengahJudul, setJabatan: setTengahJabatan, setNama: setTengahNama, setNpp: setTengahNpp, setTanggal: setTengahTanggal, setHideDate: setTengahHideDate }}
                         formatDateDisplay={formatDateDisplay}
                         getTodayDate={getTodayDate}
                     />
@@ -173,8 +174,8 @@ export default function PengaturanCetakContent() {
                         title="Posisi Kanan" 
                         colorClass="bg-white text-black border-black"
                         borderClass="border-gray-400 bg-gray-50"
-                        data={{ judul: kananJudul, jabatan: kananJabatan, nama: kananNama, npp: kananNpp, tanggal: kananTanggal }}
-                        handlers={{ setJudul: setKananJudul, setJabatan: setKananJabatan, setNama: setKananNama, setNpp: setKananNpp, setTanggal: setKananTanggal }}
+                        data={{ judul: kananJudul, jabatan: kananJabatan, nama: kananNama, npp: kananNpp, tanggal: kananTanggal, hideDate: kananHideDate }}
+                        handlers={{ setJudul: setKananJudul, setJabatan: setKananJabatan, setNama: setKananNama, setNpp: setKananNpp, setTanggal: setKananTanggal, setHideDate: setKananHideDate }}
                         formatDateDisplay={formatDateDisplay}
                         getTodayDate={getTodayDate}
                     />
@@ -195,7 +196,7 @@ export default function PengaturanCetakContent() {
     );
 }
 
-// --- PINDAHKAN INI KE LUAR (DI BAWAH) FUNGSI UTAMA ---
+// --- COMPONENT INPUT TANDA TANGAN (UPDATE DENGAN CHECKBOX) ---
 const SignatureInput = ({ title, colorClass, borderClass, num, data, handlers, formatDateDisplay, getTodayDate }: any) => (
     <div className="space-y-6">
         <div className="flex items-center gap-3 mb-2">
@@ -216,7 +217,7 @@ const SignatureInput = ({ title, colorClass, borderClass, num, data, handlers, f
                 />
             </div>
 
-            {/* Jabatan (BARU) */}
+            {/* Jabatan */}
             <div>
                 <label className="text-xs font-bold text-black uppercase mb-1 block">Jabatan (Opsional)</label>
                 <div className="relative">
@@ -261,21 +262,41 @@ const SignatureInput = ({ title, colorClass, borderClass, num, data, handlers, f
                 </div>
             </div>
 
-            {/* Tanggal */}
-            <div>
-                <label className="text-xs font-bold text-black uppercase mb-1 block">Custom Tanggal</label>
-                <div className="relative">
+            {/* Tanggal & Checkbox */}
+            <div className="pt-2 border-t border-gray-300">
+                <label className="text-xs font-bold text-black uppercase mb-1 block">Pengaturan Tanggal</label>
+                
+                {/* Input Tanggal */}
+                <div className="relative mb-2">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-black" size={18} />
                     <input 
                         type="date" 
                         value={data.tanggal}
                         onChange={(e) => handlers.setTanggal(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-white border border-slate-400 rounded-xl text-black focus:ring-2 focus:ring-black outline-none text-sm font-medium"
+                        disabled={data.hideDate} // Disable jika dicentang
+                        className={`w-full pl-10 pr-4 py-2 border border-slate-400 rounded-xl text-black focus:ring-2 focus:ring-black outline-none text-sm font-medium ${data.hideDate ? 'bg-gray-200 text-gray-500' : 'bg-white'}`}
                     />
                 </div>
-                <p className="text-[11px] text-black mt-1.5 font-bold ml-1">
-                    *Tgl: {data.tanggal ? formatDateDisplay(data.tanggal) : `Otomatis (${formatDateDisplay(getTodayDate())})`}
-                </p>
+
+                {/* Checkbox Sembunyikan */}
+                <div className="flex items-center gap-2 mt-2">
+                    <input 
+                        type="checkbox" 
+                        id={`hideDate-${num}`}
+                        checked={data.hideDate}
+                        onChange={(e) => handlers.setHideDate(e.target.checked)}
+                        className="w-4 h-4 text-black border-gray-300 rounded focus:ring-black cursor-pointer"
+                    />
+                    <label htmlFor={`hideDate-${num}`} className="text-sm font-bold text-black cursor-pointer select-none flex items-center gap-1">
+                         <EyeOff size={14} /> Jangan Tampilkan Tanggal
+                    </label>
+                </div>
+
+                {!data.hideDate && (
+                    <p className="text-[10px] text-gray-600 mt-1.5 ml-1">
+                        *Preview: {data.tanggal ? formatDateDisplay(data.tanggal) : `Otomatis (${formatDateDisplay(getTodayDate())})`}
+                    </p>
+                )}
             </div>
         </div>
     </div>

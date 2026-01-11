@@ -17,8 +17,8 @@ interface RouteParams {
  */
 export async function GET(request: Request, context: { params: RouteParams }) {
     
-    // 1. Ambil UUID dari parameter rute dinamis
-    const spk_uuid = context.params.uuid;
+    const { uuid: spk_uuid } = await context.params;
+
 
     if (!spk_uuid) {
         return NextResponse.json({ success: false, message: 'SPK UUID is missing in the path.' }, { status: 400 });

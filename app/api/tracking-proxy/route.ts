@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = "https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti";
+const BACKEND_URL = process.env.API_BASE_URL || "https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti";
 
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;

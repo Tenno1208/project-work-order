@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, use } from "react";
 import { 
     Loader2, AlertTriangle, Home, Save, X, Printer, Droplet, Upload, 
     PlusCircle, Check, Ban, Maximize2, Zap, AlertCircle, FileText, 
@@ -787,9 +787,10 @@ const AccessDeniedUI = () => {
 
 // --- START COMPONENT ---
 
-export default function EditPengajuanForm({ params }: any) {
+export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: string }> }) {
     const router = useRouter();
-    const uuid = params.uuid;
+    const unwrappedParams = use(params); 
+    const uuid = unwrappedParams.uuid;
     const didMountRef = useRef(false);
     const isEditMode = !!uuid;
 
@@ -894,7 +895,8 @@ export default function EditPengajuanForm({ params }: any) {
     }, []);
 
     // --- HANDLER LOGIC ---
-   const fetchTtdMengetahuiHistory = useCallback(async (token: string, npp: string) => {
+   // Tambahkan return Promise<TtdHistoryItem[]> di tipe return
+const fetchTtdMengetahuiHistory = useCallback(async (token: string, npp: string): Promise<TtdHistoryItem[]> => {
     try {
         const res = await fetch(`${TTD_PROXY_PATH}/${npp}`, {
             headers: { Authorization: `Bearer ${token}` },
@@ -907,28 +909,23 @@ export default function EditPengajuanForm({ params }: any) {
             const serverTtdList = json.ttd_list || [];
             
             const normalizeUrl = (path: string): string => {
-                if (path.startsWith('http')) {
-                    return path; 
-                }
+                if (path.startsWith('http')) return path; 
                 const base = "https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto/?path=";
                 const cleanPath = path.startsWith('/') ? path.slice(1) : path;
                 return `${base}${cleanPath}`;
             };
 
             let rawPaths: string[] = [];
-            if (serverTtdPath && typeof serverTtdPath === 'string') {
-                rawPaths.push(serverTtdPath);
-            }
-            if (Array.isArray(serverTtdList)) {
-                rawPaths.push(...serverTtdList);
-            }
+            if (serverTtdPath && typeof serverTtdPath === 'string') rawPaths.push(serverTtdPath);
+            if (Array.isArray(serverTtdList)) rawPaths.push(...serverTtdList);
 
             const uniqueNormalizedPaths = Array.from(new Set(rawPaths.map(normalizeUrl)));
             
             if (uniqueNormalizedPaths.length > 0) {
                 const historyItems: TtdHistoryItem[] = await Promise.all(
                     uniqueNormalizedPaths.map(async (finalUrl: string) => {
-                        const processedUrl = await fetchAndMakeTransparent(finalUrl, token, transparencySettings);
+                        // Gunakan setting default untuk processing background history
+                        const processedUrl = await fetchAndMakeTransparent(finalUrl, token, { whiteThreshold: 235, blackThreshold: 35, useAdvanced: true });
                         return {
                             originalUrl: finalUrl,
                             processedUrl: processedUrl,
@@ -937,13 +934,13 @@ export default function EditPengajuanForm({ params }: any) {
                 );
 
                 setTtdMengetahuiHistory(historyItems);
+                return historyItems; // <--- PENTING: Return data history
             }
-        } else {
-            console.warn("No TTD history found or API failed:", res.status);
         }
+        return []; 
     } catch (err) {
         console.error("Error fetching TTD history:", err);
-        setNotification({ type: 'error', message: 'Gagal memuat riwayat tanda tangan.' });
+        return [];
     }
 }, [transparencySettings]);
 
@@ -1155,41 +1152,41 @@ const handleRemoveFile = (index: number) => {
     };
 
 const handleUpdate = async () => {
-    if (!formData) return;
-    
-    setIsSaving(true);
-    setError(null);
-    
-    const token = localStorage.getItem('token');
-    if (!token) {
-        setNotification({ type: 'error', message: 'Token hilang. Login ulang.' });
-        setIsSaving(false);
-        return;
-    }
-    
-    try {
-        // 1. Upload File Baru Dulu
-        const uploadedFilePaths: string[] = [];
+        if (!formData) return;
         
-        if (newFiles.length > 0) {
-            setNotification({ type: 'warning', message: 'Mengupload lampiran baru...' });
-            
-            // Upload satu per satu
-            for (const file of newFiles) {
-                try {
-                    const path = await uploadLampiranToFileHandler(file, token);
-                    uploadedFilePaths.push(path);
-                } catch (err: any) {
-                    console.error("Gagal upload:", err);
-                    setNotification({ type: 'error', message: `Gagal upload file: ${file.name}` });
-                    setIsSaving(false);
-                    return; // Stop jika ada file gagal
-                }
-            }
+        setIsSaving(true);
+        setError(null);
+        
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setNotification({ type: 'error', message: 'Token hilang. Login ulang.' });
+            setIsSaving(false);
+            return;
         }
         
-        // 2. Gabungkan File Lama + File Baru
-        // Pastikan formData.file selalu array
+        try {
+            // --- BAGIAN INI DIUBAH ---
+            // 1. Upload File Baru (Multiple)
+            let uploadedFilePaths: string[] = [];
+            
+            if (newFiles.length > 0) {
+                setNotification({ type: 'warning', message: `Sedang mengupload ${newFiles.length} lampiran baru...` });
+                
+                try {
+                    // Panggil fungsi multiple upload sekali saja
+                    const paths = await uploadMultipleLampiran(newFiles, token);
+                    uploadedFilePaths = paths;
+                    
+                    console.log("Sukses upload multiple:", uploadedFilePaths);
+
+                } catch (uploadErr: any) {
+                    console.error("Gagal upload multiple:", uploadErr);
+                    setNotification({ type: 'error', message: `Gagal upload file: ${uploadErr.message}` });
+                    setIsSaving(false);
+                    return; // Stop jika upload gagal
+                }
+            }
+        
         const currentFiles = Array.isArray(formData.file) ? formData.file : [];
         const combinedFiles = [...currentFiles, ...uploadedFilePaths];
 
@@ -1209,9 +1206,7 @@ const handleUpdate = async () => {
             tlp_pelapor: formData.tlp_pelapor,
             kode_barang: formData.kode_barang,
             keterangan: formData.keterangan,
-            
-            file: combinedFiles, 
-            
+            file_paths: JSON.stringify(combinedFiles),
             mengetahui: formData.mengetahui,
             npp_mengetahui: formData.npp_mengetahui,
             no_surat: formData.no_surat,
@@ -1284,22 +1279,27 @@ const uploadSignatureToFileHandler = async (file: File, token: string): Promise<
     throw new Error("Respon upload tidak valid.");
 };
 
-const uploadLampiranToFileHandler = async (file: File, token: string): Promise<string> => {
-    const formData = new FormData();
-    formData.append('photo', file);
-    
-    const timestamp = new Date().getTime();
-    // PERBAIKAN: Tambah random string agar nama file unik & panjang
-    const randomStr = Math.random().toString(36).substring(2, 10);
-    // Backend otomatis mendeteksi ekstensi, jadi kita kirim nama dasarnya saja
-    formData.append('filename', `work-order-${timestamp}-${randomStr}`);
-    
-    const date = new Date();
-    // PERBAIKAN: Hapus slash '/' di akhir path untuk mencegah double slash '//'
-    const folderPath = `work-order/${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}`; 
-    formData.append('path', folderPath);
 
-    const res = await fetch('/api/file-handler/foto', {
+const uploadMultipleLampiran = async (files: File[], token: string): Promise<string[]> => {
+    const formData = new FormData();
+    
+    // 1. Set Jumlah Foto
+    formData.append('photo_count', files.length.toString());
+
+    // 2. Loop append file ke FormData sesuai format yang diminta API Route
+    files.forEach((file, index) => {
+        const i = index + 1; // Index dimulai dari 1 (photo_1, photo_2)
+        
+        formData.append(`photo_${i}`, file);
+        
+        // Generate nama dasar sementara (API Route akan menambahkan Unique ID & Timestamp)
+        const randomStr = Math.random().toString(36).substring(2, 8);
+        const filename = `work-order-lampiran-${randomStr}`; 
+        formData.append(`filename_${i}`, filename);
+    });
+
+    // 3. Tembak ke API Route Next.js yang baru dibuat
+    const res = await fetch('/api/file-handler/upload/multiple/foto', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -1307,17 +1307,17 @@ const uploadLampiranToFileHandler = async (file: File, token: string): Promise<s
 
     if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || "Gagal mengupload lampiran.");
+        throw new Error(err.message || "Gagal mengupload lampiran (Multiple).");
     }
 
     const json = await res.json();
-    
-    let rawPath = "";
-    if (json.data && json.data.filepath) rawPath = json.data.filepath;
-    else if (json.data && json.data.local_path) rawPath = json.data.local_path;
-    else throw new Error("Respon upload tidak valid.");
 
-    return cleanFilePath(rawPath);
+    // 4. Ambil array path bersih dari response API
+    if (json.success && Array.isArray(json.clean_filepaths)) {
+        return json.clean_filepaths;
+    } else {
+        throw new Error("Format respons upload tidak valid.");
+    }
 };
 
 const executeStatusUpdate = async (status: 'approved' | 'rejected') => {
@@ -1612,13 +1612,43 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                 kodeBarang: item.kode_barang || "",
                 referensiSurat: item.no_referensi || "",
                 mengetahui: item.mengetahui || "",
-                nppMengetahui: item.mengetahui_npp || item.npp_mengetahui || "",
+                npp_mengetahui: item.mengetahui_npp || item.npp_mengetahui || "",
                 mengetahui_name: item.mengetahui_name || "",
             });
 
-            if (item.mengetahui_npp || item.npp_mengetahui) {
-                await fetchTtdMengetahuiHistory(token, item.mengetahui_npp || item.npp_mengetahui);
+            const targetNpp = item.mengetahui_npp || item.npp_mengetahui;
+            
+            // Ambil NPP User yang sedang login dari localStorage (karena state mungkin belum update)
+            let loggedInNpp = null;
+            try {
+                const userData = localStorage.getItem("user_data");
+                if (userData) {
+                    const parsed = JSON.parse(userData);
+                    loggedInNpp = parsed.npp || parsed.user_npp;
+                }
+            } catch (e) {}
+
+            // Jika ada NPP Mengetahui
+            if (targetNpp) {
+                const historyItems = await fetchTtdMengetahuiHistory(token, targetNpp);
+
+                if (!item.ttd_mengetahui && String(loggedInNpp) === String(targetNpp) && historyItems.length > 0) {
+                    
+                    console.log("Auto-loading signature from history...");
+                    
+                    const latestTtd = historyItems[0]; 
+                    
+                    setTtdMengetahuiPreview(latestTtd.processedUrl);
+                    
+                    setFormData((prev: any) => ({ 
+                        ...prev, 
+                        ttd_mengetahui: latestTtd.originalUrl 
+                    }));
+                    
+                    setNotification({ type: 'success', message: 'Tanda tangan Anda dimuat otomatis dari riwayat.' });
+                }
             }
+            // ----------------------------------------
 
         } catch (err: any) {
             console.error("Error fetching initial data:", err);

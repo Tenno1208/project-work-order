@@ -248,7 +248,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         try {
             const res = await fetch(`/api/notifications/update/${notificationId}`, {
-                method: "POST",
+                method: "PUT",
                 headers: {
                     Authorization: `Bearer ${token}`,
                     "Content-Type": "application/json",
@@ -277,7 +277,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         try {
             const res = await fetch(`${NOTIFICATIONS_API_LOCAL_PROXY}/update/${npp}`, {
-                method: "POST", 
+                method: "PUT", 
                 headers: { 
                     Authorization: `Bearer ${token}`, 
                     "Content-Type": "application/json", 

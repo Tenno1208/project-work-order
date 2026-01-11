@@ -1,22 +1,22 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-const NGROK_API_URL = process.env.API_BASE_URL || "https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti/api/";
+const NGROK_API_URL = (process.env.API_BASE_URL || "https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti").replace(/\/$/, '');
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const npp = searchParams.get('npp');
   const token = searchParams.get('token');
-  
+
   if (!npp || !token) {
     return new Response('NPP dan token diperlukan', { status: 400 });
   }
 
+  let intervalId: NodeJS.Timer;
+
   const stream = new ReadableStream({
-    start(controller) {
-      // Kirim pesan koneksi awal
-      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ connected: true })}\n\n`));
-      
-      // Fungsi untuk mengambil dan mengirim notifikasi
+    async start(controller) {
+      const encoder = new TextEncoder();
+
       const fetchNotifications = async () => {
         try {
           const res = await fetch(`${NGROK_API_URL}/api/notifications/${npp}`, {
@@ -29,43 +29,36 @@ export async function GET(request: NextRequest) {
 
           if (res.ok) {
             const data = await res.json();
-            
-            // Kirim data sebagai SSE
-            const eventData = `data: ${JSON.stringify(data)}\n\n`;
-            controller.enqueue(new TextEncoder().encode(eventData));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
           } else {
-            // Kirim pesan error
-            const errorMessage = `data: ${JSON.stringify({ error: `HTTP error! status: ${res.status}` })}\n\n`;
-            controller.enqueue(new TextEncoder().encode(errorMessage));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: `HTTP ${res.status}` })}\n\n`));
           }
-        } catch (error) {
-          console.error('Error fetching notifications:', error);
-          // Kirim pesan error
-          const errorMessage = `data: ${JSON.stringify({ error: 'Gagal mengambil notifikasi' })}\n\n`;
-          controller.enqueue(new TextEncoder().encode(errorMessage));
+        } catch (err) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'Gagal mengambil notifikasi' })}\n\n`));
         }
       };
 
-      // Ambil data awal
-      fetchNotifications();
-      
-      const intervalId = setInterval(fetchNotifications, 5000);
-      
-      request.signal.addEventListener('abort', () => {
-        clearInterval(intervalId);
-        controller.close();
-      });
+      // Kirim data awal
+      await fetchNotifications();
+
+      // Interval untuk fetch setiap 5 detik
+      intervalId = setInterval(fetchNotifications, 5000);
+    },
+
+    cancel() {
+      // Bersihkan interval jika client disconnect
+      if (intervalId) clearInterval(intervalId);
+      console.log('[SSE] Client disconnected, interval cleared.');
     },
   });
 
-  // Return stream dengan headers yang tepat untuk SSE
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Cache-Control',
+      'Access-Control-Allow-Headers': 'Cache-Control, Authorization',
     },
   });
 }

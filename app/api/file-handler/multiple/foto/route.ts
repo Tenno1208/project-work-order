@@ -35,38 +35,52 @@ export async function POST(req: Request) {
         
         console.log(`[POST Multiple] Path: ${uploadPath}, Count: ${photoCount}`);
 
-        // 3. LOOP PROSES FILE (NAMING & SANITIZING)
+        // 3. LOOP PROSES FILE (UNIQUE NAMING)
         let processedCount = 0;
+        
+        // Buat timestamp sekali untuk batch ini (opsional, bisa juga per file)
+        const batchTimestamp = Date.now(); 
+
         for (let i = 1; i <= photoCount; i++) {
             const photo = formData.get(`photo_${i}`);
             let rawFilename = formData.get(`filename_${i}`) as string; // misal: spk-005/PK/12.jpg
 
             if (photo && photo instanceof File && photo.size > 0) {
-                // A. SANITASI NAMA FILE
-                // Ganti '/' jadi '-'
-                let cleanName = rawFilename ? rawFilename.replace(/\//g, '-') : `image-${i}.jpg`;
-                
-                // B. UBAH FORMAT AWALAN (REQUEST USER)
-                // Jika diawali "spk-", ubah jadi "spk-work-order-"
+                // --- LOGIKA UNIK (MODIFIKASI DISINI) ---
+
+                // A. Generator Unik (Timestamp + Random String 5 karakter)
+                const uniqueId = `${batchTimestamp}-${Math.random().toString(36).substring(2, 7)}`;
+
+                // B. Bersihkan Nama Dasar
+                // Jika tidak ada nama, pakai 'image'. Ganti slash '/' jadi '-'
+                let cleanName = rawFilename ? rawFilename.replace(/\//g, '-') : `image`;
+
+                // C. Hapus Ekstensi Lama (agar tidak double, misal .jpg.jpg)
+                cleanName = cleanName.replace(/(\.[\w\d]+)+$/, '');
+
+                // D. Atur Prefix (Sesuai Request)
                 if (cleanName.toLowerCase().startsWith('spk-')) {
-                     cleanName = cleanName.replace(/^spk-/i, 'spk-work-order-');
-                } else if (!cleanName.toLowerCase().startsWith('spk-work-order-')) {
-                     // Jika belum ada awalan sama sekali, tambahkan
-                     cleanName = `spk-work-order-${cleanName}`;
+                     cleanName = cleanName.replace(/^spk-/i, 'work-order-'); // Ubah spk- jadi work-order- (sesuaikan kebutuhan)
+                     // ATAU jika ingin tetap spk-work-order-:
+                     // cleanName = cleanName.replace(/^spk-/i, 'spk-work-order-');
+                } 
+                
+                // Pastikan awalan konsisten. Contoh di sini kita paksa pakai "work-order-"
+                if (!cleanName.toLowerCase().includes('work-order')) {
+                    cleanName = `work-order-${cleanName}`;
                 }
 
-                // C. HAPUS EKSTENSI GANDA (Mencegah .jpg.jpg)
-                // Kita hapus ekstensi .jpg/.png dari string nama, biarkan server/blob type yang menentukan
-                // atau pastikan hanya ada satu.
-                cleanName = cleanName.replace(/(\.[\w\d]+)+$/, ''); // Hapus ekstensi di ujung string
-                
-                // Tambahkan ekstensi asli dari file yang diupload (biar aman)
+                // E. Ambil Ekstensi Asli File
                 const originalExt = photo.name.split('.').pop() || 'jpg';
-                const finalFilename = `${cleanName}.${originalExt}`;
 
-                console.log(`[File ${i}] Final Name: ${finalFilename}`);
+                // F. GABUNGKAN MENJADI FINAL FILENAME YANG UNIK
+                // Format: [Nama]-[UniqueCode]-[IndexLoop].[Ext]
+                // Contoh: work-order-laporan-1767586015029-6aekr-1.jpg
+                const finalFilename = `${cleanName}-${uniqueId}-${i}.${originalExt}`;
 
-                // D. PROSES BUFFER
+                console.log(`[File ${i}] Original: ${photo.name} -> Final: ${finalFilename}`);
+
+                // G. Proses Buffer & Append
                 const buffer = await photo.arrayBuffer();
                 const fileBlob = new Blob([buffer], { type: photo.type });
 
@@ -102,24 +116,20 @@ export async function POST(req: Request) {
              return NextResponse.json({ success: false, message: "Gagal upload", data: responseJson.data }, { status: response.status });
         }
 
-        // 5. PARSING DATA AGAR MUDAH DIPAKAI FRONTEND
-        // API PDAM mengembalikan object {"1": {...}, "2": {...}}
-        // Kita ubah jadi Array filepath yang bersih
+        // 5. PARSING DATA
         let filepaths: string[] = [];
         
         if (responseJson.data && typeof responseJson.data === 'object') {
             filepaths = Object.values(responseJson.data).map((item: any) => {
-                // Ambil filepath dan bersihkan double slash //
                 return item.filepath ? item.filepath.replace(/\/\//g, '/') : null;
             }).filter(p => p !== null) as string[];
         }
 
-        // Return Data yang sudah rapi ke Frontend
         return NextResponse.json({
             success: true,
             message: "Upload berhasil",
-            data: responseJson.data, // Data asli (untuk debug)
-            clean_filepaths: filepaths // Data bersih untuk API selanjutnya
+            data: responseJson.data,
+            clean_filepaths: filepaths
         });
         
     } catch (error) {

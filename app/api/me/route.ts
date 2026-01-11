@@ -12,8 +12,12 @@ export async function GET(req: Request) {
       );
     }
 
+    // Mengambil URL dari Environment Variable
+    // Fallback ke hardcoded URL jika env tidak terbaca
+    const baseUrl = process.env.API_BASE_URL_PORTAL_PEGAWAI || "https://gateway.pdamkotasmg.co.id/api-gw-balanced/portal-pegawai/api";
+
     const res = await fetch(
-      "https://gateway.pdamkotasmg.co.id/api-gw-balanced/portal-pegawai/api/auth/me",
+      `${baseUrl}/auth/me`, 
       {
         method: "GET",
         headers: {
@@ -25,7 +29,7 @@ export async function GET(req: Request) {
     );
 
     const rawText = await res.text();
-    console.log("RESPON MENTAH:", rawText);
+    // console.log("RESPON MENTAH:", rawText); // Uncomment jika ingin debugging
 
     let json: any;
     try {
@@ -48,6 +52,9 @@ export async function GET(req: Request) {
     const alamat = pegawai?.alamat || "-";     
     const subsatker = pegawai?.subsatker || "-";  
     const kdparent = idsatker?.kd_parent || "-";
+    
+    // Tambahan: Jabatan seringkali penting untuk ditampilkan
+    const jabatan = pegawai?.jabatan || "-"; 
 
     if (res.ok) {
       return NextResponse.json({
@@ -57,7 +64,8 @@ export async function GET(req: Request) {
         satker,
         subsatker,
         alamat,
-        kdparent
+        kdparent,
+        jabatan // Mengirim jabatan juga (opsional, tapi berguna)
       });
     }
 

@@ -7,9 +7,9 @@ const DELETE_API_SPK_URL_TEMPLATE = `${API_BASE_URL}/api/spk/delete/`;
 
 export async function DELETE(
     req: Request, 
-    { params }: { params: { uuid: string } }
+    context: { params: { uuid: string } }
 ) {
-    const { uuid } = params; 
+    const { uuid } = await context.params;
     const authHeader = req.headers.get("authorization");
     const token = authHeader?.split(" ")[1];
 

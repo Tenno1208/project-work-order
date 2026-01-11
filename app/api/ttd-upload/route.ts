@@ -15,7 +15,7 @@ function generateDynamicPath(): string {
     const hour = now.getHours().toString().padStart(2, '0');
     const minute = now.getMinutes().toString().padStart(2, '0');
 
-    return `workorder-ttd/${year}/${month}/`; 
+    return `workorder/${year}/${month}/`; 
 }
 
 /**

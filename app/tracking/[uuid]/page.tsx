@@ -1,3 +1,5 @@
+// app/dashboard/tracking/page.tsx
+
 "use client";
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -35,6 +37,54 @@ const formatDateTime = (dateString: string) => {
     const date = dateObj.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
     const time = dateObj.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
     return { date, time };
+};
+
+// Fungsi untuk menerjemahkan status dan pesan
+const translateStatusAndMessage = (status: string, message: string, title: string) => {
+    let translatedStatus = status;
+    let translatedMessage = message;
+    let translatedTitle = title;
+    
+    // Terjemahan status
+    if (status === "pending") translatedStatus = "Menunggu";
+    else if (status === "approved") translatedStatus = "Disetujui";
+    else if (status === "rejected") translatedStatus = "Ditolak";
+    else if (status === "signed") translatedStatus = "Ditandatangani";
+    
+    // Terjemahan pesan khusus
+    if (message && message.includes("Status diupdate menjadi")) {
+        translatedMessage = message.replace("approved", "disetujui").replace("rejected", "ditolak").replace("pending", "menunggu");
+    }
+    
+    // Terjemahan judul khusus
+    if (title === "Status Pengajuan Diupdate") {
+        translatedTitle = "Status Diperbarui";
+    } else if (title === "Pengajuan Baru Dibuat") {
+        translatedTitle = "Pengajuan Baru";
+    } else if (title === "SPK Ditugaskan") {
+        translatedTitle = "SPK Ditugaskan";
+    } else if (title === "SPK Diperbarui") {
+        translatedTitle = "SPK Diperbarui";
+    } else if (title === "Persetujuan SPK") {
+        translatedTitle = "Persetujuan SPK";
+    } else if (title === "TTD SPK") {
+        translatedTitle = "Dokumen Ditandatangani";
+    } else if (title === "Pengajuan Diedit") {
+        translatedTitle = "Pengajuan Diedit";
+    }
+    
+    // Terjemahan pesan untuk tanda tangan
+    if (message && message.includes("telah disetujui oleh")) {
+        translatedMessage = message.replace("telah disetujui oleh", "telah disetujui oleh");
+    } else if (message && message.includes("telah ditandatangani oleh")) {
+        translatedMessage = message.replace("telah ditandatangani oleh", "telah ditandatangani oleh");
+    }
+    
+    return {
+        status: translatedStatus,
+        message: translatedMessage,
+        title: translatedTitle
+    };
 };
 
 // ====================================================================
@@ -327,6 +377,9 @@ export default function TrackingPage() {
     const noSurat = data.no_surat || "-";
     const statusTerakhir = sortedTimeline.length > 0 ? sortedTimeline[0].title : "Menunggu";
 
+    // Ambil parent_satker dari response API
+    const parentSatker = data.kd_parent?.parent_satker || data.pengajuan?.satker || "-";
+
     return (
         <div className="min-h-screen bg-slate-50 font-sans pb-10">
             <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-50">
@@ -364,7 +417,7 @@ export default function TrackingPage() {
                         <div className="flex justify-between items-start">
                             <span className="text-gray-500">Satker / Unit</span>
                             <span className="font-medium text-gray-800 text-right">
-                                {data.pengajuan?.satker || "-"}
+                                {parentSatker}
                             </span>
                         </div>
                     </div>
@@ -382,6 +435,9 @@ export default function TrackingPage() {
                         {sortedTimeline.map((item: any, index: number) => {
                             const isLatest = index === 0;
                             const { date, time } = formatDateTime(item.created_at);
+                            
+                            // Terjemahkan status dan pesan
+                            const translated = translateStatusAndMessage(item.status, item.message, item.title);
 
                             return (
                                 <div key={item.id || index} className="relative pl-8">
@@ -396,14 +452,14 @@ export default function TrackingPage() {
                                     <div className={`${isLatest ? "opacity-100" : "opacity-80"}`}>
                                         <div className="flex items-center gap-2 mb-1">
                                             <span className={`text-sm font-bold ${isLatest ? 'text-cyan-700' : 'text-slate-700'}`}>
-                                                {item.title}
+                                                {translated.title}
                                             </span>
                                         </div>
                                         
                                         <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-100 mb-1 leading-relaxed">
-                                            <p className="font-medium mb-0.5">{item.status}</p>
+                                            <p className="font-medium mb-0.5">{translated.status}</p>
                                             {item.message && item.message !== "-" && (
-                                                <p className="text-slate-500 italic">"{item.message}"</p>
+                                                <p className="text-slate-500 italic">"{translated.message}"</p>
                                             )}
                                         </div>
 

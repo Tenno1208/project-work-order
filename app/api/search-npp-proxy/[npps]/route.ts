@@ -8,9 +8,9 @@ const EXTERNAL_API_BASE_URL = "https://gateway.pdamkotasmg.co.id/api-gw/portal-p
  */
 export async function GET(
     request: NextRequest, 
-    { params }: { params: { npps: string } }
+    context: { params: { npps: string } }
 ) {
-    const npps = params.npps;
+    const { npps } = await context.params;
     
     const token = request.headers.get('Authorization');
 

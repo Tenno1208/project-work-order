@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function DELETE(
-    request: NextRequest,
-    { params }: { params: { uuid: string } }
+  request: NextRequest,
+  context: { params: { uuid: string } }
 ) {
+
     try {
-        const uuid = params.uuid; 
+        const { uuid } = await context.params;
         
         if (!uuid) {
             return NextResponse.json(

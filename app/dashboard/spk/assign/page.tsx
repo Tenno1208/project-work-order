@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+// 1. Tambahkan Suspense di sini
+import React, { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation"; 
 import { X, CheckCircle, Loader2, AlertTriangle, Users, Send, ArrowLeft, File, Image as ImageIcon, Download } from "lucide-react"; 
 
@@ -85,7 +86,7 @@ const ImageModal = ({ imageUrl, onClose }: { imageUrl: string | null, onClose: (
 };
 
 // --- UTILITY COMPONENTS (Dilewati) ---
-const Button = ({ onClick, children, className = "bg-blue-600 hover:bg-blue-700 text-white", disabled = false }) => (
+const Button = ({ onClick, children, className = "bg-blue-600 hover:bg-blue-700 text-white", disabled = false }: any) => (
     <button
         onClick={onClick}
         className={`px-4 py-2 font-semibold text-sm rounded-lg transition-colors ${className} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -250,8 +251,8 @@ const Chip = ({ person, onRemove, onTogglePic }: { person: AssignedPerson, onRem
     </div>
 );
 
-// --- MAIN COMPONENT ---
-export default function AssignSPKPage() {
+// 2. GANTI NAMA fungsi utama, HAPUS 'export default'
+function AssignSPKContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const spk_uuid = searchParams.get('uuid'); 
@@ -807,10 +808,10 @@ export default function AssignSPKPage() {
 
                                 {pengajuanDetail.file_paths.length > 0 && (
                                     <div className="pt-4 border-t mt-4 border-gray-100">
-                                        <dt className="font-medium block mb-2 flex items-center gap-1 text-cyan-700">
-                                            <File size={16}/> Lampiran File ({pengajuanDetail.file_paths.length} file):
-                                        </dt>
-                                        <dd className="grid grid-cols-3 gap-3">
+                                            <dt className="font-medium block mb-2 flex items-center gap-1 text-cyan-700">
+                                                <File size={16}/> Lampiran File ({pengajuanDetail.file_paths.length} file):
+                                            </dt>
+                                            <dd className="grid grid-cols-3 gap-3">
 
                                     {pengajuanDetail.file_paths.map((path, index) => {
                                         const fileUrl = getProxyFileUrl(path); 
@@ -867,7 +868,7 @@ export default function AssignSPKPage() {
                                         );
                                     })}
 
-                                        </dd>
+                                            </dd>
                                     </div>
                                 )}
                             </div>
@@ -963,5 +964,18 @@ export default function AssignSPKPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function AssignSPKPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <Loader2 className="animate-spin text-cyan-600 mr-3" size={32} />
+                <span className="text-xl font-medium text-gray-700">Memuat Halaman...</span>
+            </div>
+        }>
+            <AssignSPKContent />
+        </Suspense>
     );
 }

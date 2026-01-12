@@ -1,7 +1,7 @@
 // app/dashboard/spk/format/page.tsx
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Calendar, X, CheckCircle, Loader2, AlertTriangle, Users, ArrowLeft, ChevronDown, ChevronUp, File as FileIcon, Download, Crop, Settings, Upload, Image as ImageIcon } from "lucide-react";
 import Cropper, { Point, Area } from 'react-easy-crop';
@@ -797,7 +797,7 @@ const RequestDetailCollapse = ({ nomorSpk, showToast, spkData, jenisPekerjaanOpt
 // --- MAIN PAGE COMPONENT --------------------------------------------
 // ====================================================================
 
-export default function EditSPKPage() {
+function EditSPKContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
 
@@ -1972,5 +1972,18 @@ export default function EditSPKPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function EditSPKPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <Loader2 className="animate-spin text-cyan-600 mr-3" size={32} />
+                <span className="text-xl font-medium text-gray-700">Memuat Halaman...</span>
+            </div>
+        }>
+            <EditSPKContent />
+        </Suspense>
     );
 }

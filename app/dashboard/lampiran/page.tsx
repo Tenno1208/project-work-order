@@ -1,11 +1,11 @@
 "use client";
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, Suspense } from "react";
 import {
     PlusCircle, Search, Loader2, Eye, Pencil, Trash2, X, AlertTriangle,
     CheckCircle, ThumbsUp, ThumbsDown, Clock, Settings, Crop, 
-    ChevronLeft, ChevronRight, Copy // <--- Import Copy ditambahkan
+    ChevronLeft, ChevronRight, Copy 
 } from "lucide-react";
 import Cropper, { Point, Area } from 'react-easy-crop';
 
@@ -748,7 +748,7 @@ const DeleteConfirmationModal = React.memo(({
 });
 DeleteConfirmationModal.displayName = 'DeleteConfirmationModal';
 
-export default function DataPengajuanPage() {
+function DataPengajuanContent() {
     const router = useRouter();
     const searchParams = useSearchParams(); 
     const pathname = usePathname();
@@ -1770,5 +1770,18 @@ export default function DataPengajuanPage() {
                 )}
             </div>
         </div>
+    );
+}
+
+export default function DataPengajuanPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex h-screen w-full flex-col items-center justify-center bg-gray-50">
+                <Loader2 className="animate-spin text-blue-600 mb-4" size={48} />
+                <span className="text-xl font-medium text-gray-800">Memuat Halaman...</span>
+            </div>
+        }>
+            <DataPengajuanContent />
+        </Suspense>
     );
 }

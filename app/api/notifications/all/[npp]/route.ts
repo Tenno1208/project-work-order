@@ -3,10 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { npp: string } }
+  { params }: { params: Promise<{ npp: string }> }
 ) {
   try {
-    const { npp } = params; // ❌ jangan pakai await
+    const { npp } = await params; // ✅ WAJIB await di Next 15
 
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -26,24 +26,13 @@ export async function GET(
       cache: 'no-store',
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      return NextResponse.json(
-        {
-          error: 'Failed to fetch notifications',
-          detail: errorText,
-        },
-        { status: response.status }
-      );
-    }
-
     const data = await response.json();
     return NextResponse.json(data);
 
   } catch (error: any) {
-    console.error('Error fetching all notifications:', error);
+    console.error(error);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch notifications' },
+      { error: 'Failed to fetch notifications' },
       { status: 500 }
     );
   }

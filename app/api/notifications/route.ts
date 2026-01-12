@@ -6,9 +6,9 @@ const API_BASE_URL =
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { npp: string } }
+  { params }: { params: Promise<{ npp: string }> }
 ) {
-  const { npp } = params;
+  const { npp } = await params; 
   const token = request.headers.get('authorization');
 
   try {
@@ -32,9 +32,9 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { npp: string } }
+  { params }: { params: Promise<{ npp: string }> }
 ) {
-  const { npp } = params;
+  const { npp } = await params; 
   const token = request.headers.get('authorization');
   const body = await request.json().catch(() => ({}));
 

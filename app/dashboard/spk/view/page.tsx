@@ -1073,43 +1073,50 @@ function SPKDetailContent() {
                 {/* Tampilan Khusus untuk Cetak */}
                 <div className="print-only print-container">
                     <div className="print-layout">
-                        {/* Bagian Kiri: Detail Pengajuan */}
+                        {/* Bagian Kiri: Detail Pengajuan - Sesuai dengan gambar */}
                         <div className="print-section print-left">
                             <div className="print-header">
-                                <h2 className="text-center font-bold text-base mb-2">DETAIL PENGAJUAN</h2>
+                                <div className="text-center font-bold text-base mb-2">PERUMDA AIR MINUM TIRTA MOEDAL KOTA SEMARANG</div>
+                                <div className="text-center font-bold text-base mb-4 underline">Pemeliharaan/Perbaikan</div>
                             </div>
                             
                             {pengajuanDetail && (
                                 <div className="print-body">
-                                    <div className="print-field">
-                                        <span className="print-label">No. Pengajuan:</span>
-                                        <span className="print-value">{pengajuanDetail.no_surat || '-'}</span>
-                                    </div>
-                                    <div className="print-field">
-                                        <span className="print-label">Tanggal:</span>
-                                        <span className="print-value">{formatLongDate(pengajuanDetail.tanggal)}</span>
-                                    </div>
-                                    <div className="print-field">
-                                        <span className="print-label">Pelapor:</span>
-                                        <span className="print-value">{pengajuanDetail.name_pelapor} (NPP: {pengajuanDetail.npp_pelapor})</span>
-                                    </div>
-                                    <div className="print-field">
-                                        <span className="print-label">Satker Asal:</span>
-                                        <span className="print-value">{pengajuanDetail.satker || '-'}</span>
-                                    </div>
-                                    <div className="print-field">
-                                        <span className="print-label">Perihal:</span>
-                                        <span className="print-value">{pengajuanDetail.nama_jenis} ({pengajuanDetail.hal_id})</span>
+                                    <div className="print-form-container">
+                                        <div className="print-form-row">
+                                            <div className="print-form-label">Satker</div>
+                                            <div className="print-form-value">: {pengajuanDetail.satker || '-'}</div>
+                                        </div>
+                                        
+                                        <div className="print-form-row">
+                                            <div className="print-form-label">Seksi /Sub Bid/Sub Bag</div>
+                                            <div className="print-form-value">: {pengajuanDetail.kepada || '-'}</div>
+                                        </div>
+                                        
+                                        <div className="print-form-row">
+                                            <div className="print-form-label">Kode Barang : (wajib diisi)</div>
+                                            <div className="print-form-value">: {pengajuanDetail.kode_barang || '-'}</div>
+                                        </div>
+                                        
+                                        <div className="print-form-row">
+                                            <div className="print-form-label">Kerusakan</div>
+                                            <div className="print-form-value">: {pengajuanDetail.nama_jenis || '-'}</div>
+                                        </div>
+                                        
+                                        <div className="print-form-row">
+                                            <div className="print-form-label">Uraian</div>
+                                            <div className="print-form-value-block">: {pengajuanDetail.keterangan || '-'}</div>
+                                        </div>
+                                        
+                                        <div className="print-form-row">
+                                            <div className="print-form-label">Tanggal</div>
+                                            <div className="print-form-value">: {formatLongDate(pengajuanDetail.tanggal)}</div>
+                                        </div>
                                     </div>
                                     
-                                    <div className="print-field print-field-block">
-                                        <span className="print-label">Uraian Detail:</span>
-                                        <div className="print-text-block">{pengajuanDetail.keterangan || 'Tidak ada uraian detail.'}</div>
-                                    </div>
-
-                                    <div className="print-signatures-grid">
-                                        <div className="print-signature-item">
-                                            <div className="print-signature-title">Mengetahui:</div>
+                                    <div className="print-signatures-section">
+                                        <div className="print-signature-left">
+                                            <div className="print-signature-title">Mengetahui</div>
                                             <div className="print-signature-box">
                                                 {pengajuanDetail.ttd_mengetahui_path ? (
                                                     <img src={getProxyFileUrl(pengajuanDetail.ttd_mengetahui_path) || ""} alt="TTD Mengetahui" className="print-signature-img" />
@@ -1117,11 +1124,12 @@ function SPKDetailContent() {
                                                     <div className="print-signature-empty"></div>
                                                 )}
                                                 <div className="print-signature-name">{pengajuanDetail.mengetahui_name || '-'}</div>
+                                                <div className="print-signature-npp">NPP. {pengajuanDetail.mengetahui || '-'}</div>
                                             </div>
                                         </div>
                                         
-                                        <div className="print-signature-item">
-                                            <div className="print-signature-title">Pelapor:</div>
+                                        <div className="print-signature-right">
+                                            <div className="print-signature-title">Pelapor</div>
                                             <div className="print-signature-box">
                                                 {pengajuanDetail.ttd_pelapor_path ? (
                                                     <img src={getProxyFileUrl(pengajuanDetail.ttd_pelapor_path) || ""} alt="TTD Pelapor" className="print-signature-img" />
@@ -1129,6 +1137,7 @@ function SPKDetailContent() {
                                                     <div className="print-signature-empty"></div>
                                                 )}
                                                 <div className="print-signature-name">{pengajuanDetail.name_pelapor}</div>
+                                                <div className="print-signature-npp">NPP. {pengajuanDetail.npp_pelapor}</div>
                                             </div>
                                         </div>
                                     </div>
@@ -1396,6 +1405,42 @@ function SPKDetailContent() {
                     .print-signature-npp {
                         font-size: 8px;
                         margin-top: 2px;
+                    }
+                    
+                    /* Form styles untuk detail pengajuan */
+                    .print-form-container {
+                        margin-bottom: 20px;
+                    }
+                    
+                    .print-form-row {
+                        display: flex;
+                        margin-bottom: 8px;
+                        align-items: flex-start;
+                    }
+                    
+                    .print-form-label {
+                        font-weight: bold;
+                        min-width: 200px;
+                    }
+                    
+                    .print-form-value {
+                        flex: 1;
+                    }
+                    
+                    .print-form-value-block {
+                        flex: 1;
+                        white-space: pre-wrap;
+                    }
+                    
+                    .print-signatures-section {
+                        display: flex;
+                        justify-content: space-between;
+                        margin-top: 30px;
+                    }
+                    
+                    .print-signature-left, .print-signature-right {
+                        width: 45%;
+                        text-align: center;
                     }
                 }
                 

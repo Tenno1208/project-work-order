@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, Suspense } from "react";
 import {
     History,
     Search,
@@ -17,7 +17,8 @@ import {
     BarChart,
     Copy,
     MapPin,
-    CheckCircle
+    CheckCircle,
+    FileX // Icon untuk state data kosong
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -71,7 +72,7 @@ const getStatusColor = (status: string, isForCard = false) => {
     const lowerStatus = (status || "").toLowerCase();
 
     if (isForCard) {
-        if (lowerStatus === "selesai") return "bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-900"; // Text darkened
+        if (lowerStatus === "selesai") return "bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-900";
         if (lowerStatus.includes("proses") || lowerStatus === "assigned") return "bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200 text-yellow-900";
         if (lowerStatus === "menunggu" || lowerStatus === "pending") return "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 text-blue-900";
         if (lowerStatus === "tidak selesai") return "bg-gradient-to-br from-red-50 to-red-100 border-red-200 text-red-900";
@@ -153,8 +154,8 @@ const StatsCard = ({ title, count, color, icon }: { title: string, count: number
 );
 
 
-// --- MAIN COMPONENT ---
-export default function RiwayatSPKPage() {
+// --- MAIN CONTENT COMPONENT ---
+function RiwayatSPKContent() {
     const router = useRouter();
 
     // --- STATE MANAGEMENT ---
@@ -167,15 +168,7 @@ export default function RiwayatSPKPage() {
     const [error, setError] = useState<string | null>(null);
 
     const [deleting, setDeleting] = useState(false);
-    const isActionInProgress = deleting;
-
     const [toast, setToast] = useState<ToastMessage>({ show: false, message: "", type: "success" });
-
-    const showToast = useCallback((message: string, type: "success" | "error") => {
-        setToast({ show: true, message, type });
-        setTimeout(() => setToast(prev => ({...prev, show: false})), 4000);
-    }, []);
-
     const [modal, setModal] = useState<ModalState>({
         isOpen: false,
         message: "",
@@ -183,9 +176,12 @@ export default function RiwayatSPKPage() {
         spkToDelete: null,
     });
 
-    const closeModal = () => {
-        setModal({ isOpen: false, message: "", isDeletion: false, spkToDelete: null });
-    };
+    const closeModal = () => setModal({ isOpen: false, message: "", isDeletion: false, spkToDelete: null });
+    
+    const showToast = useCallback((message: string, type: "success" | "error") => {
+        setToast({ show: true, message, type });
+        setTimeout(() => setToast(prev => ({...prev, show: false})), 4000);
+    }, []);
     
     const hasPermission = useCallback((permissionName: string): boolean => {
         return userPermissions.includes(permissionName);
@@ -207,6 +203,7 @@ export default function RiwayatSPKPage() {
         }
     }, []);
 
+    // --- ACTIONS ---
     const handleView = (spk: SPKItem) => {
         if (!hasPermission(VIEW_DETAIL_PERMISSION)) {
             showToast(`Akses Ditolak: Anda tidak memiliki izin (${VIEW_DETAIL_PERMISSION})`, "error");
@@ -236,7 +233,6 @@ export default function RiwayatSPKPage() {
         });
     };
 
-    // --- FUNGSI COPY & TRACKING ---
     const handleCopy = (text: string) => {
         if (!text || text === "N/A") return;
         navigator.clipboard.writeText(text);
@@ -303,7 +299,6 @@ export default function RiwayatSPKPage() {
         setError(null);
 
         const token = localStorage.getItem("token"); 
-        
         if (!token) {
             setError("Token tidak ditemukan.");
             setLoading(false);
@@ -331,13 +326,20 @@ export default function RiwayatSPKPage() {
                 }
 
                 const result = await res.json();
+
+                // HANDLE KHUSUS: Jika sukses tapi data array kosong
+                if (result.success && (!result.data || result.data.length === 0)) {
+                    setSpks([]); // Set state ke array kosong
+                    setLoading(false);
+                    return; // Stop di sini, jangan lanjut mapping
+                }
+
                 const rawData = Array.isArray(result.data) ? result.data : [];
 
-                // --- MAPPING DATA ---
                 const mapped: SPKItem[] = rawData.map((item: any) => {
                     const statusName = (typeof item.status === 'object' && item.status !== null) 
-                                        ? item.status.name 
-                                        : item.status; 
+                                            ? item.status.name 
+                                            : item.status; 
                     
                     return {
                         id: item.id,
@@ -353,6 +355,7 @@ export default function RiwayatSPKPage() {
                 setSpks(mapped.filter((i) => i.uuid)); 
                 setLoading(false);
                 return;
+
             } catch (err: any) {
                 if (i === MAX_RETRIES - 1) {
                     setError(err.message); 
@@ -391,7 +394,6 @@ export default function RiwayatSPKPage() {
         return matchSearch && matchFilter;
     });
 
-    // --- COUNT STATS ---
     const statusCount: StatusCount = {
         total: spks.length,
         selesai: spks.filter((d) => d.status.toLowerCase() === "selesai").length,
@@ -401,7 +403,7 @@ export default function RiwayatSPKPage() {
         belumSelesai: spks.filter((d) => d.status.toLowerCase() === "belum selesai").length,
     };
     
-    // ---- CUSTOM MODAL ----
+    // Custom Modals & Overlays
     const CustomModal = () =>
         modal.isOpen && (
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -426,7 +428,6 @@ export default function RiwayatSPKPage() {
             </div>
         );
 
-    // Overlay untuk proses deleting
     const DeletingOverlay = () =>
         deleting && (
             <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
@@ -519,9 +520,23 @@ export default function RiwayatSPKPage() {
                     <div className="py-12 text-center bg-red-50/50">
                         <p className="text-red-700 font-medium">Error: {error}</p>
                     </div>
+                ) : spks.length === 0 ? (
+                    // --- KONDISI 1: MEMANG BELUM ADA DATA SAMA SEKALI (EMPTY STATE) ---
+                    <div className="py-16 text-center flex flex-col items-center justify-center">
+                        <div className="bg-gray-100 p-4 rounded-full mb-3">
+                            <FileX className="text-gray-400" size={48} />
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-800">Belum Ada Riwayat SPK</h3>
+                        <p className="text-gray-500 text-sm max-w-xs mt-1">
+                            Anda belum memiliki riwayat Surat Perintah Kerja yang tercatat di sistem.
+                        </p>
+                    </div>
                 ) : filteredData.length === 0 ? (
+                    // --- KONDISI 2: ADA DATA, TAPI TIDAK COCOK SEARCH/FILTER ---
                     <div className="py-12 text-center">
-                        <p className="text-black">Data tidak ditemukan.</p>
+                        <Search className="mx-auto text-gray-300 mb-2" size={40} />
+                        <p className="text-gray-600 font-medium">Data tidak ditemukan.</p>
+                        <p className="text-gray-400 text-xs">Coba ubah kata kunci pencarian atau filter status.</p>
                     </div>
                 ) : (
                     <>
@@ -586,5 +601,18 @@ export default function RiwayatSPKPage() {
                 )}
             </div>
         </div>
+    );
+}
+
+// --- DEFAULT EXPORT WRAPPER ---
+export default function RiwayatSPKPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <Loader2 className="animate-spin text-blue-600 mr-3" size={32} />
+            </div>
+        }>
+            <RiwayatSPKContent />
+        </Suspense>
     );
 }

@@ -28,6 +28,16 @@ import {
 } from 'lucide-react';
 
 // ====================================================================
+// --- CONFIGURATION --------------------------------------------------
+// ====================================================================
+
+const API_CONFIG = {
+  PORTAL_BASE_URL: "https://gateway.pdamkotasmg.co.id/api-gw-balanced/portal-pegawai/api",
+  
+  WORKORDER_BASE_URL: "https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti"
+};
+
+// ====================================================================
 // --- HELPER FUNCTIONS -----------------------------------------------
 // ====================================================================
 
@@ -174,10 +184,8 @@ export default function TrackingPage() {
         setLoading(true);
         setError(null);
 
-        // 1. Cek Token di LocalStorage
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
         
-        // Jika tidak ada token, langsung tampilkan modal login dan stop loading
         if (!token) {
             setShowLoginModal(true);
             setLoading(false);
@@ -185,13 +193,14 @@ export default function TrackingPage() {
         }
 
         try {
-            const res = await fetch(`/api/tracking-proxy?uuid=${uuid}`, {
+            const url = `${API_CONFIG.WORKORDER_BASE_URL}/tracking/uuid/${uuid}`;
+            
+            const res = await fetch(url, {
                 headers: {
                     'Authorization': `Bearer ${token}` 
                 }
             });
             
-            // 3. Handle Unauthorized (401)
             if (res.status === 401) {
                 localStorage.removeItem("token");
                 setShowLoginModal(true);
@@ -231,25 +240,39 @@ export default function TrackingPage() {
         setLoginError("");
 
         try {
-            const res = await fetch("/api/login", {
+            // DIRECT CALL KE PORTAL PEGAWAI
+            const loginUrl = `${API_CONFIG.PORTAL_BASE_URL}/login`;
+
+            const res = await fetch(loginUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ npp, password }),
+                body: JSON.stringify({ npp, password, hwid: "prod" }), // Tambahkan hwid sesuai request
             });
 
-            const result = await res.json();
+            // Parsing response lebih aman
+            const text = await res.text();
+            let result;
+            try {
+                result = text ? JSON.parse(text) : {};
+            } catch (e) {
+                result = {};
+            }
 
-            if (res.ok && result.success) {
+            if (res.ok && result.token) {
                 localStorage.setItem("token", result.token);
+                
+                // Optional: Ambil data user sederhana jika perlu disimpan
+                // Tapi untuk tracking cukup token saja dulu agar cepat
+                
                 setShowLoginModal(false);
                 setNpp("");
                 setPassword("");
-                fetchData();
+                fetchData(); // Retry fetch data tracking
             } else {
-                setLoginError(result.message || "Login gagal.");
+                setLoginError(result.message || "Login gagal. Periksa NPP/Password.");
             }
         } catch (err) {
-            setLoginError("Terjadi kesalahan koneksi.");
+            setLoginError("Terjadi kesalahan koneksi ke server.");
         } finally {
             setLoginLoading(false);
         }

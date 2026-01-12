@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { Droplets, User, Lock, Eye, EyeOff, Loader2, Zap, AlertCircle, Wifi, WifiOff } from "lucide-react";
 
-const PERMISSIONS_API_LOCAL_PROXY = "/api/permissions";
+// --- KONFIGURASI API (Berdasarkan ENV Anda) ---
+
+const API_CONFIG = {
+  PORTAL_BASE_URL: "https://gateway.pdamkotasmg.co.id/api-gw-dev/portal-pegawai/api",
+  
+  WORKORDER_BASE_URL: "https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti"
+};
 
 interface UserData { 
     nama?: string; 
@@ -30,9 +36,6 @@ export default function LoginPage() {
   const [errorType, setErrorType] = useState<ErrorType>(ErrorType.UNKNOWN);
   const [showPassword, setShowPassword] = useState(false);
   const [focusedInput, setFocusedInput] = useState("");
-  const [isOnline, setIsOnline] = useState(true);
-
-  const getToken = () => localStorage.getItem("token");
 
   const isNetworkError = (err: any) => {
     return err instanceof TypeError && err.message.includes('fetch');
@@ -43,7 +46,7 @@ export default function LoginPage() {
     
     if (isNetworkError(err)) {
       setErrorType(ErrorType.NETWORK);
-      return "Tidak dapat terhubung ke server. Periksa koneksi internet Anda dan coba lagi.";
+      return "Tidak dapat terhubung ke server. Periksa koneksi internet Anda (CORS/Network).";
     }
     
     if (err.status) {
@@ -72,9 +75,12 @@ export default function LoginPage() {
   };
 
   // --- API CALLS ---
-  const fetchAndStoreUserData = async (token: string): Promise<UserData> => {   
+  
+  const fetchAndStoreUserData = async (token: string): Promise<UserData> => {    
+      const url = `${API_CONFIG.PORTAL_BASE_URL}/me`; 
+
       try {
-          const res = await fetch("/api/me", { 
+          const res = await fetch(url, { 
               method: "GET", 
               headers: { 
                   Authorization: `Bearer ${token}`, 
@@ -87,7 +93,6 @@ export default function LoginPage() {
                   localStorage.removeItem("token"); 
                   localStorage.removeItem("user_data"); 
                   localStorage.removeItem("user_permissions"); 
-                  window.location.href = "/login"; 
               } 
               throw new Error(handleApiError({ status: res.status }, "Gagal mengambil data pengguna"));
           }
@@ -110,8 +115,9 @@ export default function LoginPage() {
       }
   };
 
-  const fetchAndStorePermissions = async (token: string,): Promise<string[]> => { 
-      const finalPermissionsApiUrl = `${PERMISSIONS_API_LOCAL_PROXY}`;
+  const fetchAndStorePermissions = async (token: string, userNpp: string): Promise<string[]> => { 
+      const finalPermissionsApiUrl = `${API_CONFIG.WORKORDER_BASE_URL}/api/workorder/permissions/${userNpp}`;
+      
       try {
           const res = await fetch(finalPermissionsApiUrl, { 
               method: "GET", 
@@ -122,24 +128,28 @@ export default function LoginPage() {
           });
           
           if (!res.ok) { 
+              // Jika 404 atau error lain, anggap permissions kosong tapi jangan throw error fatal login
+              console.warn("Gagal mengambil permissions, set ke empty.");
               localStorage.setItem("user_permissions", JSON.stringify([])); 
-              throw new Error(handleApiError({ status: res.status }, "Gagal mengambil izin akses"));
+              return []; 
           }
           
           const json = await res.json();
-          const rawPermissions = (json.data && Array.isArray(json.data.permissions)) ? json.data.permissions : [];
+          // Sesuaikan parsing dengan response backend Anda
+          const rawPermissions = (json.data && Array.isArray(json.data.permissions)) ? json.data.permissions : (Array.isArray(json.data) ? json.data : []);
           const permissions: string[] = rawPermissions.map((p: any) => typeof p === 'string' ? p : '').filter(Boolean);
+          
           localStorage.setItem("user_permissions", JSON.stringify(permissions));
           return permissions;
       } catch (err) { 
-          const errorMessage = handleApiError(err, "Gagal mengambil izin akses");
-          setError(errorMessage);
+          // Permissions gagal bukan fatal error untuk login, cuma user jadi limited
+          console.error("Permission Fetch Error:", err);
           localStorage.setItem("user_permissions", JSON.stringify([])); 
-          throw new Error(errorMessage);
+          return [];
       }
   };
 
-  const handleLogin = async (e) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault(); 
     setError("");
     setErrorType(ErrorType.UNKNOWN);
@@ -152,14 +162,21 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const response = await fetch("/api/login", {
+      const loginUrl = `${API_CONFIG.PORTAL_BASE_URL}/auth/login`;
+
+      const response = await fetch(loginUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ npp, password, hwid: "prod" }),
       });
 
       const text = await response.text();
-      const data = text ? JSON.parse(text) : {};
+      let data;
+      try {
+          data = text ? JSON.parse(text) : {};
+      } catch (e) {
+          data = {};
+      }
 
       if (!response.ok) {
         throw new Error(handleApiError({ status: response.status, message: data.message }, "Login gagal. Silakan coba lagi."));
@@ -171,19 +188,23 @@ export default function LoginPage() {
       localStorage.setItem("token", token);
       
       try {
+        // 1. Ambil Data User (Direct)
         const userData = await fetchAndStoreUserData(token);
+        
+        // 2. Ambil Permissions (Direct) jika NPP ada
         if (userData.npp && userData.npp !== '-') {
           await fetchAndStorePermissions(token, userData.npp);
         }
         
         setTimeout(() => window.location.href = "/dashboard", 800);
-      } catch (apiError) {
+      } catch (apiError: any) {
+        // Jika gagal ambil profil, batalkan login
         localStorage.removeItem("token");
         localStorage.removeItem("user_data");
         localStorage.removeItem("user_permissions");
         throw apiError;
       }
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message || "Terjadi kesalahan tak terduga.");
     } finally {
       setLoading(false);
@@ -245,6 +266,7 @@ export default function LoginPage() {
 
           {/* Header */}
           <div className="relative p-6 text-center">
+            {/* Pastikan path gambar ini benar di public folder Anda */}
             <img src="/pdam.png" alt="PDAM Logo" className="w-16 h-16 mx-auto mb-3 rounded-2xl shadow-lg shadow-blue-500/50" />
             
             <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-cyan-300 to-blue-400 bg-clip-text text-transparent mb-1 tracking-tight">
@@ -320,7 +342,7 @@ export default function LoginPage() {
                   onBlur={() => setFocusedInput('')}
                 />
                 <button
-                  type="button" // Tetap type="button" agar tidak memicu submit form
+                  type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-400 transition-colors z-10"
                 >
@@ -345,7 +367,6 @@ export default function LoginPage() {
                 <span className="relative z-10">Masuk ke Sistem</span>
               )}
             </button>
-          {/* PERUBAHAN 3: Menutup tag <form> */}
           </form>
 
           {/* Footer */}

@@ -1,44 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const NGROK_API_URL = process.env.API_BASE_URL || "https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti";
+const API_BASE_URL =
+  process.env.API_BASE_URL ||
+  'https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti';
 
-export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) {
-  const path = params.path.join('/'); 
-  const token = request.headers.get('Authorization');
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { npp: string } }
+) {
+  const { npp } = params;
+  const token = request.headers.get('authorization');
 
   try {
-    const res = await fetch(`${NGROK_API_URL}/api/notifications/${path}`, {
-      method: 'GET',
+    const res = await fetch(`${API_BASE_URL}/api/notifications/${npp}`, {
       headers: {
         'Content-Type': 'application/json',
-        ...(token && { 'Authorization': token }),
+        ...(token && { Authorization: token }),
       },
     });
 
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (error) {
-    console.error('Error in notifications proxy GET:', error);
-    return NextResponse.json({ success: false, message: 'Internal Server Error' }, { status: 500 });
+    console.error(error);
+    return NextResponse.json(
+      { success: false, message: 'Internal Server Error' },
+      { status: 500 }
+    );
   }
 }
 
-export async function POST(request: NextRequest, { params }: { params: { path: string[] } }) {
-  const path = params.path.join('/'); 
-  const token = request.headers.get('Authorization');
-  let body;
-  try {
-    body = await request.json();
-  } catch (e) {
-    body = {};
-  }
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { npp: string } }
+) {
+  const { npp } = params;
+  const token = request.headers.get('authorization');
+  const body = await request.json().catch(() => ({}));
 
   try {
-    const res = await fetch(`${NGROK_API_URL}/api/notifications/${path}`, {
+    const res = await fetch(`${API_BASE_URL}/api/notifications/${npp}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token && { 'Authorization': token }),
+        ...(token && { Authorization: token }),
       },
       body: JSON.stringify(body),
     });
@@ -46,7 +51,10 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (error) {
-    console.error('Error in notifications proxy POST:', error);
-    return NextResponse.json({ success: false, message: 'Internal Server Error' }, { status: 500 });
+    console.error(error);
+    return NextResponse.json(
+      { success: false, message: 'Internal Server Error' },
+      { status: 500 }
+    );
   }
 }

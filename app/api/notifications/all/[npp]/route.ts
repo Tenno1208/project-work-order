@@ -3,28 +3,22 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(
   request: NextRequest,
-  context: { params: { npp: string } }
+  { params }: { params: { npp: string } }
 ) {
   try {
-    const { npp } = await context.params; 
+    const { npp } = params; // ❌ jangan pakai await
 
-    // Ambil token dari header
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const token = authHeader.substring(7);
 
-    // URL API eksternal
     const notificationsApiUrl =
       `${process.env.GET_ALL_API_NOTIFIKASI}/${npp}`;
 
     const response = await fetch(notificationsApiUrl, {
-      method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',

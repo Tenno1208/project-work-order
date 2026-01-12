@@ -39,24 +39,20 @@ const formatDateTime = (dateString: string) => {
     return { date, time };
 };
 
-// Fungsi untuk menerjemahkan status dan pesan
 const translateStatusAndMessage = (status: string, message: string, title: string) => {
     let translatedStatus = status;
     let translatedMessage = message;
     let translatedTitle = title;
     
-    // Terjemahan status
     if (status === "pending") translatedStatus = "Menunggu";
     else if (status === "approved") translatedStatus = "Disetujui";
     else if (status === "rejected") translatedStatus = "Ditolak";
     else if (status === "signed") translatedStatus = "Ditandatangani";
     
-    // Terjemahan pesan khusus
     if (message && message.includes("Status diupdate menjadi")) {
         translatedMessage = message.replace("approved", "disetujui").replace("rejected", "ditolak").replace("pending", "menunggu");
     }
     
-    // Terjemahan judul khusus
     if (title === "Status Pengajuan Diupdate") {
         translatedTitle = "Status Diperbarui";
     } else if (title === "Pengajuan Baru Dibuat") {
@@ -68,12 +64,11 @@ const translateStatusAndMessage = (status: string, message: string, title: strin
     } else if (title === "Persetujuan SPK") {
         translatedTitle = "Persetujuan SPK";
     } else if (title === "TTD SPK") {
-        translatedTitle = "Dokumen Ditandatangani";
+        translatedTitle = "SPK Ditandatangani";
     } else if (title === "Pengajuan Diedit") {
         translatedTitle = "Pengajuan Diedit";
     }
     
-    // Terjemahan pesan untuk tanda tangan
     if (message && message.includes("telah disetujui oleh")) {
         translatedMessage = message.replace("telah disetujui oleh", "telah disetujui oleh");
     } else if (message && message.includes("telah ditandatangani oleh")) {

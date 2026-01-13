@@ -1,5 +1,3 @@
-// components/RiwayatTtdContent.tsx
-
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -10,13 +8,34 @@ import {
 } from 'lucide-react';
 import Cropper, { Point, Area } from 'react-easy-crop';
 
+// --- KONFIGURASI API DIRECT ---
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const IMAGE_STORAGE_BASE_URL = process.env.NEXT_PUBLIC_IMAGE_STORAGE_BASE_URL || 'https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto/?path=';
 
-// --- TIPE DATA DISESUAIKAN DENGAN JSON BARU ---
+// URL File Handler (Hardcoded sesuai proxy Anda atau bisa ditaruh di ENV)
+const FILE_HANDLER_UPLOAD_URL = "https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/api/upload/foto";
+
+const API_ENDPOINTS = {
+    GET_TTD: `${API_BASE_URL}/user/ttd`,
+    CREATE_TTD: `${API_BASE_URL}/user/create/ttd`,
+    DELETE_TTD: `${API_BASE_URL}/user/delete/ttd`
+};
+
+// --- HELPER UNTUK GENERATE PATH (Sama seperti di Proxy) ---
+function generateDynamicPath(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    // const day = now.getDate().toString().padStart(2, '0'); // Tidak dipakai di proxy Anda, tapi bisa jika perlu
+    return `workorder/${year}/${month}/`; 
+}
+
 interface TtdApiResponse {
     success: boolean;
-    ttd_path: string;        // Path TTD Aktif
-    ttd_list: string[];      // Array of strings (path TTD history)
+    data: { 
+        ttd_path: string;
+        ttd_list: string[];
+    } | any; 
 }
 
 // --- UTILITY FUNCTIONS ---
@@ -245,7 +264,6 @@ const TtdCropModal = ({ isOpen, imageSrc, onCropComplete, onCancel }: { isOpen: 
 
 // --- KOMPONEN UTAMA ---
 export default function RiwayatTtdContent() {
-    // State Data: Menggunakan string[] karena API returning array of strings
     const [galleryItems, setGalleryItems] = useState<string[]>([]); 
     const [activeTtdPath, setActiveTtdPath] = useState<string | null>(null);
     
@@ -294,7 +312,8 @@ export default function RiwayatTtdContent() {
         }
 
         try {
-            const res = await fetch(`/api/ttd-proxy/${userData.npp}`, {
+            // DIRECT FETCH KE API ASLI
+            const res = await fetch(`${API_ENDPOINTS.GET_TTD}/${userData.npp}`, {
                 method: "GET",
                 headers: {
                     "Content-Type": "application/json",
@@ -307,25 +326,22 @@ export default function RiwayatTtdContent() {
             const apiResponse: TtdApiResponse = await res.json();
             
             if (apiResponse.success) {
-                const activePath = apiResponse.ttd_path;
+                const data = apiResponse.data || apiResponse;
+                const activePath = data.ttd_path;
                 setActiveTtdPath(activePath);
 
-                // Gabungkan ttd_path dan ttd_list menjadi satu array unik
                 const uniquePaths = new Set<string>();
-                
-                // Tambahkan active path jika ada
                 if (activePath) uniquePaths.add(activePath);
                 
-                // Tambahkan history list jika ada dan berupa array
-                if (Array.isArray(apiResponse.ttd_list)) {
-                    apiResponse.ttd_list.forEach(p => {
+                if (Array.isArray(data.ttd_list)) {
+                    data.ttd_list.forEach((p: string) => {
                         if (p) uniquePaths.add(p);
                     });
                 }
 
                 setGalleryItems(Array.from(uniquePaths));
             } else {
-                throw new Error("API melaporkan kegagalan.");
+                setGalleryItems([]);
             }
 
         } catch (err: any) {
@@ -350,8 +366,7 @@ export default function RiwayatTtdContent() {
         }
 
         try {
-            // Menggunakan endpoint delete dengan body JSON (npp & ttd_url)
-            const res = await fetch(`/api/user/delete/ttd`, {
+            const res = await fetch(API_ENDPOINTS.DELETE_TTD, {
                 method: "DELETE",
                 headers: {
                     "Content-Type": "application/json",
@@ -365,7 +380,6 @@ export default function RiwayatTtdContent() {
 
             if (!res.ok) throw new Error(`Gagal menghapus data: ${res.statusText}`);
 
-            // Update UI optimistically or refetch
             setGalleryItems(prev => prev.filter(p => p !== pathToDelete));
             if (pathToDelete === activeTtdPath) setActiveTtdPath(null);
 
@@ -388,7 +402,8 @@ export default function RiwayatTtdContent() {
         e.target.value = ''; 
     };
 
-    // 2. HANDLER CROP & UPLOAD
+    // --- 2. HANDLER CROP & UPLOAD DENGAN LOGIKA 2 STEP ---
+    // (Upload ke File Handler dulu -> Simpan Path ke DB)
     const handleCropAndUpload = async (
         croppedImageBase64: string,
         settings?: { whiteThreshold: number, blackThreshold: number, useAdvanced: boolean }
@@ -407,35 +422,72 @@ export default function RiwayatTtdContent() {
         }
 
         try {
+            // A. PROSES GAMBAR (Transparansi)
             const processedImage = await processImageTransparency(croppedImageBase64, settings);
-            const finalFile = await dataURLtoFile(processedImage, `ttd-upload-${Date.now()}.png`);
+            
+            // B. PERSIAPAN DATA UPLOAD FILE HANDLER
+            const timestamp = Date.now();
+            const uuidPart = crypto.randomUUID(); 
+            const fileName = `ttd-workorder-${uuidPart}-${timestamp}.png`;
+            const uploadPath = generateDynamicPath(); // workorder/YYYY/MM/
 
-            const formData = new FormData();
-            formData.append('ttd_file', finalFile); 
-            formData.append('npp', userData.npp);
+            const finalFile = await dataURLtoFile(processedImage, fileName);
 
-            const res = await fetch('/api/ttd-upload', {
+            const uploadFormData = new FormData();
+            uploadFormData.append('photo', finalFile, fileName);
+            uploadFormData.append('path', uploadPath);
+            uploadFormData.append('filename', fileName);
+
+            const fileHandlerRes = await fetch(FILE_HANDLER_UPLOAD_URL, {
                 method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData,
+                headers: { 
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: uploadFormData,
             });
 
-            if (!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.message || `Gagal mengunggah: ${res.statusText}`);
+            if (!fileHandlerRes.ok) {
+                throw new Error(`Gagal upload ke File Handler: ${fileHandlerRes.statusText}`);
             }
 
-            const result = await res.json();
+            const uploadResult = await fileHandlerRes.json();
             
-            if (result.success) {
-                await fetchTtdHistory(); // Refresh data
+            const uploadedFilePath = uploadResult?.data?.filepath;
+
+            if (!uploadedFilePath) {
+                throw new Error("File Handler tidak mengembalikan path file.");
+            }
+
+            const cleanPath = uploadedFilePath.replace(/\/\//g, '/');
+
+            const createRes = await fetch(API_ENDPOINTS.CREATE_TTD, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    npp: userData.npp,
+                    ttd_path: cleanPath
+                })
+            });
+
+            if (!createRes.ok) {
+                const errData = await createRes.json();
+                throw new Error(errData.message || `Gagal menyimpan TTD ke database: ${createRes.statusText}`);
+            }
+
+            const createResult = await createRes.json();
+
+            if (createResult.success) {
+                await fetchTtdHistory(); // Refresh data galeri
             } else {
-                throw new Error(result.message || "Upload gagal");
+                throw new Error(createResult.message || "Gagal menyimpan data TTD");
             }
 
         } catch (err: any) {
-            console.error("Upload error:", err);
-            alert(`Gagal mengunggah tanda tangan: ${err.message}`);
+            console.error("Upload process error:", err);
+            alert(`Gagal: ${err.message}`);
         } finally {
             setUploading(false);
         }
@@ -480,6 +532,7 @@ export default function RiwayatTtdContent() {
                     <div className="bg-white p-6 rounded-xl shadow-2xl flex flex-col items-center">
                         <Loader2 className="h-10 w-10 animate-spin text-cyan-600 mb-3" />
                         <span className="text-lg font-semibold text-gray-800">Sedang Mengupload & Memproses...</span>
+                        <span className="text-xs text-gray-500 mt-2">Menyimpan ke File Handler & Database</span>
                     </div>
                 </div>
             )}
@@ -526,10 +579,13 @@ export default function RiwayatTtdContent() {
                                 <div key={index} className="relative group">
                                     <div className={`border-2 rounded-lg p-2 bg-white hover:shadow-lg transition-all duration-300 transform hover:scale-105 cursor-pointer ${path === activeTtdPath ? 'border-cyan-500 ring-2 ring-cyan-100' : 'border-gray-200'}`}>
                                         <img 
-                                            src={`/api/file-proxy?url=${encodeURIComponent(IMAGE_STORAGE_BASE_URL + path)}`} 
+                                            src={`${IMAGE_STORAGE_BASE_URL}${path}`} 
                                             alt={`Tanda Tangan ${index + 1}`} 
                                             className="h-32 w-64 object-contain"
                                             onClick={() => setSelectedImage(path)}
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=Gambar+Tidak+Ditemukan';
+                                            }}
                                         />
                                     </div>
                                     
@@ -589,7 +645,7 @@ export default function RiwayatTtdContent() {
                         </div>
                         <div className="flex-1 flex justify-center items-center p-6 bg-gray-50 overflow-hidden">
                             <img 
-                                src={`/api/file-proxy?url=${encodeURIComponent(IMAGE_STORAGE_BASE_URL + selectedImage)}`} 
+                                src={`${IMAGE_STORAGE_BASE_URL}${selectedImage}`} 
                                 alt="Tanda Tangan Diperbesar" 
                                 className="max-h-[40vh] max-w-full object-contain drop-shadow-sm"
                             />

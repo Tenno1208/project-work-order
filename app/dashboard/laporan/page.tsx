@@ -5,8 +5,18 @@ import { useRouter } from "next/navigation";
 import { 
     FileBarChart, Filter, Building2, Printer, 
     Loader2, FileText, Briefcase, Hash, ChevronDown, Search, X,
-    Lock, Home // Tambahan Icon
+    Lock, Home
 } from "lucide-react";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+const API_BASE_URL_SATKER = process.env.NEXT_PUBLIC_API_BASE_URL_PORTAL_PEGAWAI;
+
+const API_ENDPOINTS = {
+    SATKER: `${API_BASE_URL_SATKER}/client/satker/all`, 
+    HAL: `${API_BASE_URL}/hal`, 
+    JENIS_PEKERJAAN: `${API_BASE_URL}/master-jenis-pekerjaan`, 
+    STATUS_SPK: `${API_BASE_URL}/master/status/spk` 
+};
 
 // --- KONSTANTA PERMISSION ---
 const VIEW_LAPORAN_PERMISSION = "workorder-pti.view.laporan";
@@ -25,7 +35,7 @@ interface OptionItem {
     [key: string]: any; 
 }
 
-// --- KOMPONEN: ACCESS DENIED UI (Sesuai Referensi) ---
+// --- KOMPONEN: ACCESS DENIED UI ---
 const AccessDeniedUI = ({ missingPermission }: { missingPermission: string }) => {
     const router = useRouter();
     return (
@@ -70,10 +80,8 @@ const SearchableDropdown = ({
     const [searchTerm, setSearchTerm] = useState("");
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Cari item yang sedang dipilih
     const selectedItem = options.find((opt: any) => String(opt[valueKey]) === String(value));
 
-    // Filter opsi berdasarkan ketikan
     const filteredOptions = options.filter((opt: any) => {
         const labelText = opt[labelKey] || ""; 
         return labelText.toLowerCase().includes(searchTerm.toLowerCase());
@@ -102,17 +110,16 @@ const SearchableDropdown = ({
                 className={`w-full px-4 py-3 bg-white border border-gray-300 rounded-xl cursor-pointer flex items-center justify-between transition-all hover:border-blue-400 ${isOpen ? 'ring-2 ring-blue-500 border-transparent' : ''}`}
             >
                 <span className={`text-sm font-medium ${selectedItem ? 'text-black' : 'text-gray-400'}`}>
-                    {/* TAMPILKAN NAMA, JIKA NULL TAMPILKAN STRIP */}
                     {selectedItem ? (selectedItem[labelKey] || "-") : placeholder}
                 </span>
                 
                 {value ? (
                      <div onClick={(e) => {
-                         e.stopPropagation(); 
-                         onChange(""); 
-                     }} className="p-1 hover:bg-gray-100 rounded-full transition-colors">
-                        <X size={16} className="text-gray-500" />
-                     </div>
+                          e.stopPropagation(); 
+                          onChange(""); 
+                      }} className="p-1 hover:bg-gray-100 rounded-full transition-colors">
+                         <X size={16} className="text-gray-500" />
+                      </div>
                 ) : (
                     <ChevronDown size={18} className={`text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 )}
@@ -120,7 +127,6 @@ const SearchableDropdown = ({
 
             {isOpen && (
                 <div className="absolute z-50 w-full mb-2 bottom-full left-0 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-                    
                     <div className="p-2 border-b border-gray-100 bg-gray-50 sticky top-0">
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -136,10 +142,9 @@ const SearchableDropdown = ({
                     </div>
 
                     <div className="max-h-60 overflow-y-auto">
-                        {/* --- OPSI RESET: SEMUA SATKER --- */}
                         <div 
                             onClick={() => {
-                                onChange(""); // Kosongkan value
+                                onChange(""); 
                                 setIsOpen(false);
                             }}
                             className="px-4 py-3 text-sm cursor-pointer hover:bg-blue-50 transition-colors border-b border-gray-50 font-bold text-blue-600 italic"
@@ -149,7 +154,6 @@ const SearchableDropdown = ({
 
                         {filteredOptions.length > 0 ? (
                             filteredOptions.map((item: any, index: number) => {
-                                // Fallback Label: Jika null, ganti "-"
                                 const labelText = item[labelKey] || "-";
                                 const itemValue = item[valueKey];
                                 
@@ -248,7 +252,7 @@ export default function LaporanPage() {
         }
     }, []);
 
-    // --- LOAD DATA (Hanya jika punya akses) ---
+    // --- LOAD DATA (Hanya jika punya akses) - DIRECT API ---
     useEffect(() => {
         if (!hasAccess) return;
 
@@ -256,15 +260,18 @@ export default function LaporanPage() {
             setLoadingOptions(true);
             try {
                 const token = localStorage.getItem('token');
+                
+                // HEADER DIRECT ACCESS
                 const headers: HeadersInit = {
                     'Content-Type': 'application/json',
-                    ...(token ? { 'Authorization': `Bearer ${token}` } : {}) 
+                    'Authorization': `Bearer ${token}`,
                 };
 
+                // Fetch Semua Data Dropdown secara Paralel
                 const [resSatker, resHal, resJenis] = await Promise.all([
-                    fetch('/api/satker', { headers }),
-                    fetch('/api/hal', { headers }),
-                    fetch('/api/jenis-pekerjaan', { headers })
+                    fetch(API_ENDPOINTS.SATKER, { headers }),
+                    fetch(API_ENDPOINTS.HAL, { headers }),
+                    fetch(API_ENDPOINTS.JENIS_PEKERJAAN, { headers })
                 ]);
 
                 if (resSatker.ok) {
@@ -289,14 +296,19 @@ export default function LaporanPage() {
         fetchOptions();
     }, [hasAccess]);
 
-    // Load Status SPK
+    // Load Status SPK - Direct API
     useEffect(() => {
         if (jenisLaporan === 'spk' && hasAccess) {
             const fetchStatus = async () => {
                 try {
                     const token = localStorage.getItem('token');
-                    const headers: HeadersInit = { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) };
-                    const res = await fetch('/api/spk/status', { headers });
+                    const headers: HeadersInit = { 
+                        'Content-Type': 'application/json', 
+                        'Authorization': `Bearer ${token}`,
+
+                    };
+                    
+                    const res = await fetch(API_ENDPOINTS.STATUS_SPK, { headers });
                     if (res.ok) {
                         const json = await res.json();
                         setListStatusSpk(Array.isArray(json.data) ? json.data : []);
@@ -307,7 +319,7 @@ export default function LaporanPage() {
         }
     }, [jenisLaporan, hasAccess]);
 
-    // Reset filter
+    // Reset filter saat ganti tab
     useEffect(() => {
         setStatus(""); setSatker(""); setHalId(""); setJenisPekerjaanId("");
     }, [jenisLaporan]);
@@ -338,28 +350,28 @@ export default function LaporanPage() {
             jenis_pekerjaan_id: jenisPekerjaanId,
             
             // --- DATA PENGATURAN CETAK (TERMASUK KOTA & HIDE DATE) ---
-            kota: settings.kota || "Semarang", // Tambahkan Kota
+            kota: settings.kota || "Semarang", 
             
             ttd_kiri_judul: settings.kiriJudul || "Dibuat Oleh",
             ttd_kiri_jabatan: settings.kiriJabatan || "",
             ttd_kiri_nama: settings.kiriNama || "",
             ttd_kiri_npp: settings.kiriNpp || "",
             ttd_kiri_tanggal: settings.kiriTanggal || "", 
-            ttd_kiri_hide_date: settings.kiriHideDate || false, // Tambahkan Flag Hide
+            ttd_kiri_hide_date: settings.kiriHideDate || false, 
 
             ttd_tengah_judul: settings.tengahJudul || "Diperiksa Oleh",
             ttd_tengah_jabatan: settings.tengahJabatan || "",
             ttd_tengah_nama: settings.tengahNama || "",
             ttd_tengah_npp: settings.tengahNpp || "",
             ttd_tengah_tanggal: settings.tengahTanggal || "",
-            ttd_tengah_hide_date: settings.tengahHideDate || false, // Tambahkan Flag Hide
+            ttd_tengah_hide_date: settings.tengahHideDate || false, 
 
             ttd_kanan_judul: settings.kananJudul || "Mengetahui",
             ttd_kanan_jabatan: settings.kananJabatan || "",
             ttd_kanan_nama: settings.kananNama || "",
             ttd_kanan_npp: settings.kananNpp || "",
             ttd_kanan_tanggal: settings.kananTanggal || "",
-            ttd_kanan_hide_date: settings.kananHideDate || false // Tambahkan Flag Hide
+            ttd_kanan_hide_date: settings.kananHideDate || false 
         };
 
         localStorage.setItem("temp_print_data", JSON.stringify(printPayload));

@@ -1,4 +1,3 @@
-// app/dashboard/spk/format/page.tsx
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback, useMemo, Suspense } from "react";
@@ -8,20 +7,22 @@ import Cropper, { Point, Area } from 'react-easy-crop';
 import Draggable from "react-draggable";
 import QRCode from "react-qr-code";
 
-
 // ====================================================================
 // --- TYPES & CONSTANTS ----------------------------------------------
 // ====================================================================
 
-const API_BASE_URL = "https://fermentable-nonarchitecturally-brittney.ngrok-free.dev";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "https://gateway.pdamkotasmg.co.id/api-gw-dev/workorder-pti/api";
+const API_BASE_URL_PORTAL_PEGAWAI = process.env.NEXT_PUBLIC_API_BASE_URL_PORTAL_PEGAWAI || "https://gateway.pdamkotasmg.co.id/api-gw-dev/portal-pegawai/api";
+const IMAGE_STORAGE_BASE_URL = process.env.NEXT_PUBLIC_IMAGE_STORAGE_BASE_URL || "https://gateway.pdamkotasmg.co.id/api-gw-dev/file-handler/foto/?path=";
 
-const GET_API_SPK_VIEW_TEMPLATE_PROXY = "/api/spk-proxy/view/{uuid}";
-const GET_API_PENGAJUAN_VIEW_PROXY = "/api/pengajuan/view/{uuid}";
-const GET_API_JENIS_PEKERJAAN = "/api/jenis-pekerjaan";
-const UPDATE_SPK_API_LOCAL = "/api/proxy-spk-update?uuid={uuid}";
-const TTD_PROXY_PATH = "/api/ttd-proxy";
-const SPK_STATUS_LOCAL = "/api/spk/status"; 
-const MULTIPLE_FILE_HANDLER_URL = "/api/file-handler/multiple/foto";    
+const GET_SPK_VIEW_URL = (uuid: string) => `${API_BASE_URL}/spk/view/${uuid}`;
+const GET_PENGAJUAN_VIEW_URL = (uuid: string) => `${API_BASE_URL}/pengajuan/view/${uuid}`;
+const GET_JENIS_PEKERJAAN_URL = `${API_BASE_URL}/master-jenis-pekerjaan`;
+const GET_STATUS_MASTER_URL = `${API_BASE_URL}/master/status/spk`;
+const UPDATE_SPK_URL = (uuid: string) => `${API_BASE_URL}/spk/${uuid}/update`;
+const SUPERVISOR_URL = `${API_BASE_URL_PORTAL_PEGAWAI}/auth/my-supervisor`;
+const USER_TTD_URL = (npp: string) => `${API_BASE_URL}/user/ttd/${npp}`;
+const FILE_HANDLER_MULTIPLE_URL = "https://gateway.pdamkotasmg.co.id/api-gw-dev/file-handler/api/upload/multiple/foto";
 
 const STATUS_PEKERJAAN = [
     { id: 1, name: "Belum Selesai", code: "BS" },
@@ -81,20 +82,14 @@ type PengajuanDetail = {
 };
 
 // ====================================================================
-// --- UTILITY FUNCTIONS (IMAGE PROCESSING & PROXY) -------------------
+// --- UTILITY FUNCTIONS (IMAGE PROCESSING & DIRECT URL) -------------------
 // ====================================================================
-
-const PDAM_GATEWAY_BASE_URL = "https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto/?path=";
-const FILE_PROXY_PATH = "/api/file-proxy";
 
 const getProxyFileUrl = (path: string | null | undefined): string | null => {
     if (!path || path.trim() === '') return null;
     const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-    let targetUrl = cleanPath;
-    if (!cleanPath.startsWith('http')) {
-        targetUrl = `${PDAM_GATEWAY_BASE_URL}${cleanPath}`;
-    }
-    return `${FILE_PROXY_PATH}?url=${encodeURIComponent(targetUrl)}`;
+    // Gunakan Base URL dari Env yang sudah menyertakan parameter ?path=
+    return `${IMAGE_STORAGE_BASE_URL}${cleanPath}`;
 };
 
 async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
@@ -103,23 +98,20 @@ async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
     return new File([blob], filename, { type: 'image/png' });
 }
 
-// app/dashboard/spk/format/page.tsx
-
-// Tambahkan fungsi baru untuk memuat gambar dengan retry
-async function loadImageWithProxyRetry(imgUrl: string, token: string, maxRetries: number = 5): Promise<string> {
+// Fungsi load gambar langsung ke Gateway tanpa proxy lokal
+async function loadImageWithDirectUrl(imgUrl: string, token: string, maxRetries: number = 5): Promise<string> {
     if (imgUrl.startsWith('data:')) return imgUrl;
     
     let retryCount = 0;
     
     const attemptLoad = async (): Promise<string> => {
         try {
-            let targetUrl = imgUrl;
-            if (!imgUrl.startsWith('http')) {
-                const cleanPath = imgUrl.startsWith('/') ? imgUrl.slice(1) : imgUrl;
-                targetUrl = `${PDAM_GATEWAY_BASE_URL}${cleanPath}`;
-            }
-            const proxyUrl = `${FILE_PROXY_PATH}?url=${encodeURIComponent(targetUrl)}`;
-            const res = await fetch(proxyUrl, {
+            // URL target adalah hasil dari getProxyFileUrl yang mengarah ke gateway
+            const targetUrl = imgUrl.startsWith('http') ? imgUrl : getProxyFileUrl(imgUrl);
+
+            if (!targetUrl) return imgUrl;
+
+            const res = await fetch(targetUrl, {
                 headers: {
                     'Authorization': `Bearer ${token.replace('Bearer ', '')}`,
                     'Accept': 'image/png, image/jpeg, image/gif',
@@ -127,7 +119,7 @@ async function loadImageWithProxyRetry(imgUrl: string, token: string, maxRetries
             });
             
             if (!res.ok) {
-                throw new Error(`Gagal load image via proxy: ${res.status}`);
+                throw new Error(`Gagal load image via gateway: ${res.status}`);
             }
             
             const blob = await res.blob();
@@ -144,10 +136,9 @@ async function loadImageWithProxyRetry(imgUrl: string, token: string, maxRetries
             
             if (retryCount >= maxRetries) {
                 console.error(`Max retries (${maxRetries}) reached for image: ${imgUrl}`);
-                return imgUrl; // Kembalikan URL asli jika gagal setelah max retries
+                return imgUrl; 
             }
             
-            // Tunggu sebelum mencoba lagi (exponential backoff)
             await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount - 1)));
             
             return attemptLoad();
@@ -274,8 +265,6 @@ const TtdCropModal = ({ isOpen, imageSrc, onCropComplete, onCancel }: { isOpen: 
     return (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center z-[2000] backdrop-blur-sm">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-                
-                {/* Header */}
                 <div className="px-5 py-4 border-b flex justify-between items-center bg-white">
                     <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
                         <Crop size={20} className="text-blue-600"/> 
@@ -286,7 +275,6 @@ const TtdCropModal = ({ isOpen, imageSrc, onCropComplete, onCancel }: { isOpen: 
                     </button>
                 </div>
 
-                {/* Settings Panel (Toggle) */}
                 {showSettings && (
                     <div className="px-5 py-3 bg-gray-50 text-sm border-b animate-in slide-in-from-top-2 duration-200">
                         <p className="font-semibold text-gray-700 mb-2 text-xs uppercase tracking-wider">Transparansi Lanjutan</p>
@@ -304,7 +292,6 @@ const TtdCropModal = ({ isOpen, imageSrc, onCropComplete, onCancel }: { isOpen: 
                     </div>
                 )}
 
-                {/* Crop Area */}
                 <div className="relative h-[300px] w-full bg-gray-900">
                     <Cropper 
                         image={imageSrc} 
@@ -319,53 +306,20 @@ const TtdCropModal = ({ isOpen, imageSrc, onCropComplete, onCancel }: { isOpen: 
                     />
                 </div>
 
-                {/* Slider Controls */}
                 <div className="px-6 py-5 bg-white space-y-4">
-                    {/* Zoom Slider */}
                     <div className="flex items-center gap-4">
                         <span className="text-sm font-semibold text-gray-400 w-16">Zoom:</span>
-                        <input
-                            type="range"
-                            value={zoom}
-                            min={1}
-                            max={3}
-                            step={0.1}
-                            aria-labelledby="Zoom"
-                            onChange={(e) => setZoom(Number(e.target.value))}
-                            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 hover:accent-blue-700"
-                        />
+                        <input type="range" value={zoom} min={1} max={3} step={0.1} onChange={(e) => setZoom(Number(e.target.value))} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 hover:accent-blue-700" />
                     </div>
-
-                    {/* Rotation Slider */}
                     <div className="flex items-center gap-4">
                         <span className="text-sm font-semibold text-gray-400 w-16">Rotasi:</span>
-                        <input
-                            type="range"
-                            value={rotation}
-                            min={0}
-                            max={360}
-                            step={1}
-                            aria-labelledby="Rotation"
-                            onChange={(e) => setRotation(Number(e.target.value))}
-                            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 hover:accent-blue-700"
-                        />
+                        <input type="range" value={rotation} min={0} max={360} step={1} onChange={(e) => setRotation(Number(e.target.value))} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 hover:accent-blue-700" />
                     </div>
                 </div>
 
-                {/* Footer Buttons */}
                 <div className="px-5 py-4 bg-gray-50 border-t flex justify-end gap-3">
-                    <button 
-                        onClick={onCancel} 
-                        className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                        Batal
-                    </button>
-                    <button 
-                        onClick={handleApply} 
-                        className="px-5 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
-                    >
-                        Terapkan
-                    </button>
+                    <button onClick={onCancel} className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Batal</button>
+                    <button onClick={handleApply} className="px-5 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors flex items-center gap-2">Terapkan</button>
                 </div>
             </div>
         </div>
@@ -433,12 +387,10 @@ const PengajuanDetailView = ({ detail, onImageClick }: { detail: PengajuanDetail
             <div className="flex text-xs mb-2 print:text-[12px]"><div className="w-[120px] text-gray-700">Perihal</div><div className="flex-1">:{detail.nama_jenis} ({detail.hal_id})</div></div>
             <div className="text-xs mb-2 p-2 border border-gray-200 rounded print:border-none print:p-0"><div className="text-gray-700 mb-1">Uraian Detail:</div><p className="whitespace-pre-wrap print:text-[12px]">{detail.keterangan || 'Tidak ada uraian detail.'}</p></div>
 
-            {/* TTD Pengajuan View Only */}
             <div className="grid grid-cols-2 gap-4 pt-4 print:grid-cols-2">
                 <div className="border border-gray-200 rounded-lg p-3 print:p-1 print:border-dashed">
                     <div className="text-black text-xs mb-2">Tanda Tangan Mengetahui:</div>
                     <div className="text-center min-h-[120px] flex flex-col justify-end items-center">
-                        {/* CONTAINER TTD MENGETAHUI - UKURAN STANDAR */}
                         {detail.ttd_mengetahui_path ? (
                             <div className="h-28 w-full flex justify-center items-center">
                                 {imageLoadErrors.has(detail.ttd_mengetahui_path) ? (
@@ -461,7 +413,6 @@ const PengajuanDetailView = ({ detail, onImageClick }: { detail: PengajuanDetail
                 <div className="border border-gray-200 rounded-lg p-3 print:p-1 print:border-dashed">
                     <div className="text-black text-xs mb-2">Tanda Tangan Pelapor:</div>
                     <div className="text-center min-h-[120px] flex flex-col justify-end items-center">
-                        {/* CONTAINER TTD PELAPOR - UKURAN STANDAR */}
                         {detail.ttd_pelapor_path ? (
                             <div className="h-28 w-full flex justify-center items-center">
                                 {imageLoadErrors.has(detail.ttd_pelapor_path) ? (
@@ -484,7 +435,6 @@ const PengajuanDetailView = ({ detail, onImageClick }: { detail: PengajuanDetail
                 </div>
             </div>
 
-            {/* Lampiran */}
             {detail.file_paths.length > 0 && (
                 <div className="pt-4 border-t mt-4 border-gray-100 print:border-none">
                     <div className="text-cyan-700 text-sm mb-2 flex items-center gap-1"><FileIcon size={16}/> Lampiran File ({detail.file_paths.length} file):</div>
@@ -537,7 +487,6 @@ const SPKSettingsForm = ({ spkData, jenisPekerjaanOptions, updateField, canEdit,
         <div className="flex items-center"><div className="w-[140px] font-medium">ID Barang</div><input type="text" value={spkData.id_barang || ""} onChange={(e) => updateField("id_barang", e.target.value)} placeholder="(Ketik ID barang...)" disabled={!canEdit} className={`border border-gray-400 rounded-lg outline-none px-3 py-1.5 text-sm flex-1 focus:ring-2 focus:ring-blue-500 transition-shadow ${!canEdit ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`} /></div>
         <div className="flex"><div className="w-[140px] pt-2 font-medium">Uraian Pekerjaan</div><div className="flex-1"><EditableBox value={spkData.pekerjaan_spk || ""} onChange={(v) => updateField("pekerjaan_spk", v)} disabled={!canEdit} /></div></div>
         
-        {/* Foto Pekerjaan */}
         <div className="flex">
             <div className="w-[140px] pt-2 font-medium">Foto Pekerjaan</div>
             <div className="flex-1">
@@ -641,7 +590,6 @@ const SPKSettingsForm = ({ spkData, jenisPekerjaanOptions, updateField, canEdit,
             </div>
         </div>
         <div className="mt-6 pt-4 border-t border-gray-300">
-            {/* PERUBAHAN: Tombol simpan muncul jika bisa edit form atau bisa edit tanda tangan */}
             {(canEdit || canEditSignature) && (
                 <Button onClick={handleUpdateSPK} className="bg-green-600 hover:bg-green-700 text-white shadow-md flex items-center" disabled={isUpdating}>
                     {isUpdating ? <><Loader2 className="animate-spin mr-2 w-4 h-4" /> Menyimpan...</> : "💾 Simpan Perubahan SPK"}
@@ -651,7 +599,6 @@ const SPKSettingsForm = ({ spkData, jenisPekerjaanOptions, updateField, canEdit,
     </div>
 );
 
-// Cache untuk menyimpan data detail pengajuan
 const pengajuanDetailCache = new Map<string, PengajuanDetail>();
 
 const RequestDetailCollapse = ({ nomorSpk, showToast, spkData, jenisPekerjaanOptions, statusOptions, updateField, isUpdating, handleUpdateSPK, canEdit, modalImageUrl, setModalImageUrl, fotoPekerjaan, setFotoPekerjaan, handleFotoUpload, handleRemoveFoto, canEditSignature }: any) => {
@@ -672,7 +619,7 @@ const RequestDetailCollapse = ({ nomorSpk, showToast, spkData, jenisPekerjaanOpt
         
         setLoading(true); 
         setLoadError(null);
-        const url = GET_API_PENGAJUAN_VIEW_PROXY.replace('{uuid}', nomorSpk);
+        const url = GET_PENGAJUAN_VIEW_URL(nomorSpk);
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
         try {
             if (!token) throw new Error("Otorisasi hilang. Mohon login ulang.");
@@ -706,12 +653,11 @@ const RequestDetailCollapse = ({ nomorSpk, showToast, spkData, jenisPekerjaanOpt
 
              const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
             if (token) {
-                // Preload TTD images
                 if (detailData.ttd_mengetahui_path) {
                     const ttdUrl = getProxyFileUrl(detailData.ttd_mengetahui_path);
                     if (ttdUrl) {
                         try {
-                            await loadImageWithProxyRetry(ttdUrl, token);
+                            await loadImageWithDirectUrl(ttdUrl, token);
                         } catch (error) {
                             console.error("Error preloading mengetahui TTD:", error);
                         }
@@ -722,7 +668,7 @@ const RequestDetailCollapse = ({ nomorSpk, showToast, spkData, jenisPekerjaanOpt
                     const ttdUrl = getProxyFileUrl(detailData.ttd_pelapor_path);
                     if (ttdUrl) {
                         try {
-                            await loadImageWithProxyRetry(ttdUrl, token);
+                            await loadImageWithDirectUrl(ttdUrl, token);
                         } catch (error) {
                             console.error("Error preloading pelapor TTD:", error);
                         }
@@ -735,7 +681,7 @@ const RequestDetailCollapse = ({ nomorSpk, showToast, spkData, jenisPekerjaanOpt
                             const fileUrl = getProxyFileUrl(path);
                             if (fileUrl) {
                                 try {
-                                    await loadImageWithProxyRetry(fileUrl, token);
+                                    await loadImageWithDirectUrl(fileUrl, token);
                                 } catch (error) {
                                     console.error(`Error preloading attachment image: ${path}`, error);
                                 }
@@ -819,23 +765,19 @@ function EditSPKContent() {
     const [canEditSignature, setCanEditSignature] = useState(false);
     const [currentUserNpp, setCurrentUserNpp] = useState<string | null>(null);
 
-    // Gunakan useRef sebagai 'tanda' untuk memastikan data supervisor hanya diambil sekali.
     const hasFetchedSupervisors = useRef(false);
 
-    // Supervisor Data (Read Only)
     const [supervisorMenyetujui, setSupervisorMenyetujui] = useState<SupervisorData | null>(null);
     const [supervisorMengetahui, setSupervisorMengetahui] = useState<SupervisorData | null>(null);
     const [isLoadingSupervisor, setIsLoadingSupervisor] = useState(true);
 
-    // TTD Logic for Pelaksana (Upload/Crop)
     const [ttdFile, setTtdFile] = useState<File | null>(null);
     const [ttdPreview, setTtdPreview] = useState<string | null>(null);
     const [isTtdCropModalOpen, setIsTtdCropModalOpen] = useState(false);
     const [ttdImageForCrop, setTtdImageForCrop] = useState<string | null>(null);
     const ttdFileInputRef = useRef<HTMLInputElement>(null);
-    const nodeRef = useRef(null); // Ref for Draggable
+    const nodeRef = useRef(null);
 
-    // TTD Logic for Menyetujui (Upload/Crop)
     const [ttdMenyetujuiFile, setTtdMenyetujuiFile] = useState<File | null>(null);
     const [ttdMenyetujuiPreview, setTtdMenyetujuiPreview] = useState<string | null>(null);
     const [isTtdMenyetujuiCropModalOpen, setIsTtdMenyetujuiCropModalOpen] = useState(false);
@@ -843,7 +785,6 @@ function EditSPKContent() {
     const ttdMenyetujuiFileInputRef = useRef<HTMLInputElement>(null);
     const ttdMenyetujuiNodeRef = useRef(null);
 
-    // TTD Logic for Mengetahui (Upload/Crop)
     const [ttdMengetahuiFile, setTtdMengetahuiFile] = useState<File | null>(null);
     const [ttdMengetahuiPreview, setTtdMengetahuiPreview] = useState<string | null>(null);
     const [isTtdMengetahuiCropModalOpen, setIsTtdMengetahuiCropModalOpen] = useState(false);
@@ -851,7 +792,6 @@ function EditSPKContent() {
     const ttdMengetahuiFileInputRef = useRef<HTMLInputElement>(null);
     const ttdMengetahuiNodeRef = useRef(null);
 
-    // State untuk foto pekerjaan
     const [fotoPekerjaan, setFotoPekerjaan] = useState<any[]>([
         { file: null, preview: null },
         { file: null, preview: null },
@@ -865,7 +805,6 @@ function EditSPKContent() {
         return assignedPeople.find(p => p.isPic);
     }, [assignedPeople]);
 
-    // --- Utility Functions ---
     const showToast = useCallback((message: string, type: "success" | "error" | "warning") => {
         setToast({ show: true, message, type });
         setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
@@ -882,27 +821,22 @@ function EditSPKContent() {
         window.print();
     };
 
-    // Fungsi untuk menangani upload foto
     const handleFotoUpload = (index: number, file?: File) => {
         if (!file) {
-            // Jika tidak ada file, buka dialog file
             document.getElementById(`foto-${index}`)?.click();
             return;
         }
 
-        // Validasi file
         if (!file.type.startsWith('image/')) {
             showToast('File harus berupa gambar', 'error');
             return;
         }
 
-        // Batasi ukuran file (misalnya 5MB)
         if (file.size > 5 * 1024 * 1024) {
             showToast('Ukuran file terlalu besar, maksimal 5MB', 'error');
             return;
         }
 
-        // Buat preview
         const reader = new FileReader();
         reader.onloadend = () => {
             const newFotoPekerjaan = [...fotoPekerjaan];
@@ -915,7 +849,6 @@ function EditSPKContent() {
         reader.readAsDataURL(file);
     };
 
-    // Fungsi untuk menghapus foto
     const handleRemoveFoto = (index: number) => {
         const newFotoPekerjaan = [...fotoPekerjaan];
         newFotoPekerjaan[index] = {
@@ -925,11 +858,9 @@ function EditSPKContent() {
         setFotoPekerjaan(newFotoPekerjaan);
     };
 
-    // Fungsi untuk mengunggah foto ke file handler
     const uploadPhotosToHandler = async (photos: any[], token: string): Promise<string[]> => {
         if (!photos || photos.length === 0) return [];
         
-        // Filter hanya foto yang memiliki file
         const validPhotos = photos.filter(photo => photo.file);
         
         if (validPhotos.length === 0) return [];
@@ -949,7 +880,7 @@ function EditSPKContent() {
         });
         
         try {
-            const response = await fetch(MULTIPLE_FILE_HANDLER_URL, {
+            const response = await fetch(FILE_HANDLER_MULTIPLE_URL, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -967,7 +898,6 @@ function EditSPKContent() {
                 throw new Error('Respon dari file handler tidak valid');
             }
             
-            // Ekstrak path dari respons
             const filePaths = Object.values(result.data)
                 .map((item: any) => item.filepath)
                 .filter((path: any) => path)
@@ -980,17 +910,18 @@ function EditSPKContent() {
         }
     };
 
-    // --- Fetch Data ---
+    // --- PERBAIKAN: fetchJenisPekerjaan ---
     const fetchJenisPekerjaan = useCallback(async () => {
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
         if (!token) return;
         try {
-            const res = await fetch(GET_API_JENIS_PEKERJAAN, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await fetch(GET_JENIS_PEKERJAAN_URL, { headers: { Authorization: `Bearer ${token}` } });
             if (!res.ok) throw new Error("Gagal mengambil data Jenis Pekerjaan.");
             const json = await res.json();
             const dataArray = json.data || json;
             if (Array.isArray(dataArray)) {
-                setJenisPekerjaanOptions(dataArray.map((item: any) => ({ id: item.id, nama: item.nama })));
+                // PERBAIKAN: Ambil item.nama jika ada, jika tidak ambil item.nama_pekerjaan
+                setJenisPekerjaanOptions(dataArray.map((item: any) => ({ id: item.id, nama: item.nama || item.nama_pekerjaan })));
             }
         } catch (err) { console.error(err); setJenisPekerjaanOptions([]); }
     }, []);
@@ -1001,7 +932,7 @@ function EditSPKContent() {
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
         if (!token) return;
         try {
-            const res = await fetch(SPK_STATUS_LOCAL, { 
+            const res = await fetch(GET_STATUS_MASTER_URL, { 
                 headers: { Authorization: `Bearer ${token}` } 
             });
             
@@ -1047,7 +978,7 @@ function EditSPKContent() {
         setIsLoading(true); 
         setError(null);
         
-        const url = GET_API_SPK_VIEW_TEMPLATE_PROXY.replace('{uuid}', spk_uuid);
+        const url = GET_SPK_VIEW_URL(spk_uuid);
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
         
         try {
@@ -1062,30 +993,22 @@ function EditSPKContent() {
             const item = result.data;
             const personnel = item.personel || item.stafs || [];
 
-            // --- PERBAIKAN 1: STATUS ---
-            // Cek apakah status berupa object atau string
             let currentStatusName = "";
             let currentStatusId = item.status_id;
 
             if (item.status && typeof item.status === 'object') {
-                currentStatusName = item.status.name; // Ambil "Proses" / "Selesai" dari object
+                currentStatusName = item.status.name; 
                 if (!currentStatusId) currentStatusId = item.status.id;
             } else {
                 currentStatusName = item.status;
             }
 
-            // Normalisasi nama status agar sesuai dengan opsi di UI (Belum Selesai, Selesai, Tidak Selesai)
             if (currentStatusName === "pending" || currentStatusName === "in_progress") currentStatusName = "Belum Selesai";
             if (currentStatusName === "completed") currentStatusName = "Selesai";
             if (currentStatusName === "incomplete") currentStatusName = "Tidak Selesai";
 
-            // --- PERBAIKAN 2: FILE / FOTO PEKERJAAN ---
-            // API mengembalikan "file", form butuh "foto_pekerjaan"
-            // Kita gabungkan keduanya untuk jaga-jaga
             const rawPhotos = item.foto_pekerjaan || item.file || [];
 
-            // --- PERUBAHAN 1: Gunakan data langsung dari API untuk mengetahui dan menyetujui ---
-            // Buat objek supervisor dari data API
             const mengetahuiData = item.mengetahui_npp ? {
                 name: item.mengetahui_name || '',
                 npp: item.mengetahui_npp || '',
@@ -1122,15 +1045,12 @@ function EditSPKContent() {
                     jabatan: p.jabatan || null,
                 })),
                 
-                // Masukkan array foto
                 foto_pekerjaan: rawPhotos,
                 
-                // Tambahkan path tanda tangan
                 ttd_pelaksana_path: item.penanggung_jawab_ttd || null,
                 ttd_menyetujui_path: item.menyetujui_ttd || null,
                 ttd_mengetahui_path: item.mengetahui_ttd || null,
                 
-                // Tambahkan data mengetahui dan menyetujui dari API
                 mengetahui_name: item.mengetahui_name || '',
                 mengetahui_npp: item.mengetahui_npp || '',
                 mengetahui_jabatan: item.mengetahui || '',
@@ -1142,7 +1062,6 @@ function EditSPKContent() {
             setSpkData(mappedData);
             setAssignedPeople(mappedData.personel_ditugaskan);
             
-            // Set supervisor data langsung dari API
             if (mengetahuiData) {
                 setSupervisorMengetahui(mengetahuiData);
             }
@@ -1150,15 +1069,13 @@ function EditSPKContent() {
                 setSupervisorMenyetujui(menyetujuiData);
             }
             
-            // --- LOAD PREVIEW FOTO ---
-            // Mengubah path string menjadi URL preview dengan token
             if (mappedData.foto_pekerjaan && mappedData.foto_pekerjaan.length > 0) {
                 const photoPromises = mappedData.foto_pekerjaan.map(async (path, index) => {
-                    if (index < 4) { // Limit 4 foto
+                    if (index < 4) { 
                         try {
                             const imageUrl = getProxyFileUrl(path);
                             if (imageUrl && token) {
-                                const previewUrl = await loadImageWithProxy(imageUrl, token);
+                                const previewUrl = await loadImageWithDirectUrl(imageUrl, token);
                                 return {
                                     file: null,
                                     preview: previewUrl,
@@ -1188,13 +1105,11 @@ function EditSPKContent() {
                 ]);
             }
 
-            // --- LOAD PREVIEW TTD ---
-            // Load tanda tangan Pelaksana
             if (mappedData.ttd_pelaksana_path && token) {
                 try {
                     const ttdUrl = getProxyFileUrl(mappedData.ttd_pelaksana_path);
                     if (ttdUrl) {
-                        const ttdPreviewUrl = await loadImageWithProxy(ttdUrl, token);
+                        const ttdPreviewUrl = await loadImageWithDirectUrl(ttdUrl, token);
                         setTtdPreview(ttdPreviewUrl);
                     }
                 } catch (error) {
@@ -1202,12 +1117,11 @@ function EditSPKContent() {
                 }
             }
 
-            // Load tanda tangan Menyetujui
             if (mappedData.ttd_menyetujui_path && token) {
                 try {
                     const ttdUrl = getProxyFileUrl(mappedData.ttd_menyetujui_path);
                     if (ttdUrl) {
-                        const ttdPreviewUrl = await loadImageWithProxy(ttdUrl, token);
+                        const ttdPreviewUrl = await loadImageWithDirectUrl(ttdUrl, token);
                         setTtdMenyetujuiPreview(ttdPreviewUrl);
                     }
                 } catch (error) {
@@ -1215,12 +1129,11 @@ function EditSPKContent() {
                 }
             }
 
-            // Load tanda tangan Mengetahui
             if (mappedData.ttd_mengetahui_path && token) {
                 try {
                     const ttdUrl = getProxyFileUrl(mappedData.ttd_mengetahui_path);
                     if (ttdUrl) {
-                        const ttdPreviewUrl = await loadImageWithProxy(ttdUrl, token);
+                        const ttdPreviewUrl = await loadImageWithDirectUrl(ttdUrl, token);
                         setTtdMengetahuiPreview(ttdPreviewUrl);
                     }
                 } catch (error) {
@@ -1235,12 +1148,14 @@ function EditSPKContent() {
         }
     }, [spk_uuid]);
 
+    // Updated fetchSupervisorData to use Direct URL
     const fetchSupervisorData = useCallback(async (npp: string) => {
         if (!npp) return null;
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
         if (!token) return null;
         try {
-            const response = await fetch(`/api/proxy-supervisor?npp=${npp}`, {
+            // Direct URL without Proxy
+            const response = await fetch(`${SUPERVISOR_URL}?npp=${npp}`, {
                 method: 'GET',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
             });
@@ -1253,33 +1168,31 @@ function EditSPKContent() {
         } catch (error: any) { console.error("Error fetching supervisor:", error); return null; }
     }, []);
 
+    // Updated fetchUserTtd to use Direct URL
     const fetchUserTtd = useCallback(async (npp: string) => {
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
         if (!token) return;
         try {
-            const res = await fetch(`${TTD_PROXY_PATH}/${npp}`, {
+            // Direct URL without Proxy
+            const res = await fetch(USER_TTD_URL(npp), {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.ok) {
                 const json = await res.json();
                 if (json.ttd_path) {
-                    const blobUrl = await loadImageWithProxy(json.ttd_path, token);
+                    const blobUrl = await loadImageWithDirectUrl(json.ttd_path, token);
                     setTtdPreview(blobUrl);
                 }
             }
         } catch (e) { console.error("Error fetching user TTD:", e); }
     }, []);
 
-    // --- Effects ---
-
     useEffect(() => {
-        
         if (hasFetchedSupervisors.current) {
             return;
         }
 
         if (!spkData || !spkData.personel_ditugaskan || spkData.personel_ditugaskan.length === 0 || !currentUserNpp) {
-        
             return;
         }
 
@@ -1292,7 +1205,6 @@ function EditSPKContent() {
                     await fetchUserTtd(picPerson.npp);
                 }
 
-                // Hanya fetch supervisor data jika belum ada dari API
                 if (!supervisorMenyetujui && !supervisorMengetahui) {
                     const menyetujuiData = await fetchSupervisorData(picPerson.npp);
                     if (menyetujuiData) {
@@ -1306,13 +1218,10 @@ function EditSPKContent() {
             }
 
             setIsLoadingSupervisor(false);
-            // 4. Setelah proses selesai (berhasil atau gagal), tandai bahwa proses sudah pernah dijalankan.
             hasFetchedSupervisors.current = true;
         };
 
         processSupervisorData();
-
-        // Tambahkan 'spkData' kembali ke dependency array.
     }, [currentUserNpp, spkData, fetchSupervisorData, fetchUserTtd]);
 
 
@@ -1333,28 +1242,15 @@ function EditSPKContent() {
             return; 
         }
         
-        // Cek apakah user adalah PIC (Pelaksana)
         const isUserPic = spkData.personel_ditugaskan.some(person => person.npp === currentUserNpp && person.isPic);
-        
-        // Cek apakah user adalah Menyetujui
         const isUserMenyetujui = supervisorMenyetujui && supervisorMenyetujui.npp === currentUserNpp;
-        
-        // Cek apakah user adalah Mengetahui
         const isUserMengetahui = supervisorMengetahui && supervisorMengetahui.npp === currentUserNpp;
         
-        // Cek urutan tanda tangan
         const pelaksanaSigned = !!spkData.ttd_pelaksana_path || !!ttdPreview;
         const menyetujuiSigned = !!spkData.ttd_menyetujui_path || !!ttdMenyetujuiPreview;
         
-        // --- PERUBAHAN 2: Pisahkan logika edit form dan edit tanda tangan ---
-        // Cek apakah status sudah final (selesai atau tidak selesai)
         const isStatusFinal = spkData.status === "Selesai" || spkData.status === "Tidak Selesai";
         
-        // User bisa edit form jika:
-        // 1. Status belum final (belum selesai atau tidak selesai)
-        // 2. User adalah PIC (Pelaksana)
-        // 3. User adalah Menyetujui dan Pelaksana sudah tanda tangan
-        // 4. User adalah Mengetahui dan Pelaksana serta Menyetujui sudah tanda tangan
         const canEditFormData = 
             !isStatusFinal && (
                 isUserPic || 
@@ -1362,10 +1258,6 @@ function EditSPKContent() {
                 (isUserMengetahui && pelaksanaSigned && menyetujuiSigned)
             );
         
-        // User bisa edit tanda tangan jika (tidak peduli status):
-        // 1. User adalah PIC (Pelaksana)
-        // 2. User adalah Menyetujui dan Pelaksana sudah tanda tangan
-        // 3. User adalah Mengetahui dan Pelaksana serta Menyetujui sudah tanda tangan
         const canEditSignatureData = 
             isUserPic || 
             (isUserMenyetujui && pelaksanaSigned) || 
@@ -1381,7 +1273,6 @@ function EditSPKContent() {
         fetchStatusMaster();
     }, [fetchDetailSPK, fetchJenisPekerjaan, fetchStatusMaster]);
 
-    // --- Handlers for TTD Upload ---
     const handleTtdFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files?.[0]) return;
         const file = e.target.files[0];
@@ -1401,7 +1292,6 @@ function EditSPKContent() {
         setTtdPreview(processedDataUrl);
     };
 
-    // --- Handlers for TTD Menyetujui Upload ---
     const handleTtdMenyetujuiFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files?.[0]) return;
         const file = e.target.files[0];
@@ -1442,9 +1332,7 @@ function EditSPKContent() {
 
     const filterPhoneNumbers = (phoneString: string | null): string[] => {
         if (!phoneString) return [];
-        
         const phoneNumbers = phoneString.split(',').map(phone => phone.trim());
-        
         return phoneNumbers.filter(phone => phone.startsWith('08'));
     };
 
@@ -1454,12 +1342,7 @@ function EditSPKContent() {
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
 
         try {
-            // ============================================================
-            // 1. LOGIKA FOTO PEKERJAAN (Pisahkan Baru & Lama)
-            // ============================================================
-            
             const newPhotosToUpload = fotoPekerjaan.filter(foto => foto.file instanceof File);
-            
             const existingPhotoPaths = fotoPekerjaan
                 .filter(foto => !foto.file && typeof foto.path === 'string' && foto.path.trim() !== '')
                 .map(foto => foto.path);
@@ -1469,7 +1352,6 @@ function EditSPKContent() {
             if (newPhotosToUpload.length > 0) {
                 try {
                     if (!token) throw new Error("Token tidak ditemukan");
-                    
                     uploadedNewPaths = await uploadPhotosToHandler(newPhotosToUpload, token);
                 } catch (error: any) {
                     showToast(`Gagal mengunggah foto pekerjaan: ${error.message}`, 'error');
@@ -1480,18 +1362,10 @@ function EditSPKContent() {
 
             const finalFilePaths = [...existingPhotoPaths, ...uploadedNewPaths];
 
-            console.log("Foto Lama:", existingPhotoPaths);
-            console.log("Foto Baru Uploaded:", uploadedNewPaths);
-            console.log("Final Paths to Send:", finalFilePaths);
-
-            // ============================================================
-            // 2. LOGIKA TANDA TANGAN (Cek Baru vs Lama)
-            // ============================================================
             let finalTtdPelaksanaPath = null;
             let finalTtdMenyetujuiPath = null;
             let finalTtdMengetahuiPath = null;
 
-            // Proses TTD Pelaksana
             if (ttdFile) {
                 try {
                     const ttdPayload = [{ file: ttdFile }];
@@ -1510,7 +1384,6 @@ function EditSPKContent() {
                 }
             }
 
-            // Proses TTD Menyetujui
             if (ttdMenyetujuiFile) {
                 try {
                     const ttdPayload = [{ file: ttdMenyetujuiFile }];
@@ -1547,10 +1420,6 @@ function EditSPKContent() {
                 }
             }
 
-            // ============================================================
-            // 3. PERSIAPAN DATA (URLSearchParams / x-www-form-urlencoded)
-            // ============================================================
-            
             const matchedStatus = statusOptions.find(opt => 
                 opt.name === spkData.status || opt.code === spkData.status
             );
@@ -1558,7 +1427,6 @@ function EditSPKContent() {
 
             const params = new URLSearchParams();
 
-            // Hanya kirim data form jika status belum final
             const isStatusFinal = spkData.status === "Selesai" || spkData.status === "Tidak Selesai";
             
             if (!isStatusFinal) {
@@ -1582,7 +1450,6 @@ function EditSPKContent() {
                 }
             }
 
-            // Kirim data tanda tangan tidak peduli status
             if (finalTtdPelaksanaPath) {
                 params.append('penanggung_jawab_ttd', finalTtdPelaksanaPath);
             }
@@ -1611,10 +1478,8 @@ function EditSPKContent() {
                 if (phones.length > 0) params.append('mengetahui_tlp', phones[0]);
             }
 
-            // ============================================================
-            // 4. KIRIM REQUEST (PUT)
-            // ============================================================
-            const url = UPDATE_SPK_API_LOCAL.replace('{uuid}', spkData.uuid);
+            // Direct URL to API Gateway
+            const url = UPDATE_SPK_URL(spkData.uuid);
             
             const res = await fetch(url, {
                 method: 'PUT',
@@ -1649,16 +1514,13 @@ function EditSPKContent() {
     const { nomor_spk, tanggal_spk } = spkData;
     const awalanJabatan = "Kepala";
 
-    // Cek apakah user bisa upload ttd di kolom tertentu
     const isUserMenyetujui = supervisorMenyetujui && supervisorMenyetujui.npp === currentUserNpp;
     const isUserMengetahui = supervisorMengetahui && supervisorMengetahui.npp === currentUserNpp;
     const isUserPic = pic && pic.npp === currentUserNpp;
     
-    // Cek urutan tanda tangan
     const pelaksanaSigned = !!spkData.ttd_pelaksana_path || !!ttdPreview;
     const menyetujuiSigned = !!spkData.ttd_menyetujui_path || !!ttdMenyetujuiPreview;
     
-    // Tentukan apakah user bisa upload ttd di setiap kolom
     const canUploadPelaksana = isUserPic;
     const canUploadMenyetujui = isUserMenyetujui && pelaksanaSigned;
     const canUploadMengetahui = isUserMengetahui && pelaksanaSigned && menyetujuiSigned;
@@ -1739,15 +1601,10 @@ function EditSPKContent() {
                                 statusOptions={statusOptions}
                             />
 
-                            {/* --- AREA TANDA TANGAN --- */}
                             <div className="mt-12 flex justify-between text-xs sm:text-sm min-h-[200px]">
 
-                                {/* ========================== */}
-                                {/* KIRI: QR CODE & MENGETAHUI */}
-                                {/* ========================== */}
                                 <div className="w-1/2 text-center flex flex-col justify-end items-center">
                                     
-                                    {/* 1. QR Code (Ditaruh Di Sini, Di Atas Mengetahui) */}
                                     <div className="mb-8 flex flex-col items-center justify-center">
                                         <div className="bg-white p-1 border border-gray-200 rounded">
                                             <QRCode
@@ -1760,7 +1617,6 @@ function EditSPKContent() {
                                         <div className="text-[9px] text-gray-500 mt-1 font-mono tracking-tighter">SCAN TRACKING</div>
                                     </div>
 
-                                    {/* 2. Mengetahui */}
                                     <div className="w-full">
                                         <div className="pb-1">Mengetahui</div>
                                         <div className="font-semibold flex items-end justify-center min-h-[10px] px-4">
@@ -1774,7 +1630,6 @@ function EditSPKContent() {
                                             <div className="flex justify-center items-center h-8"><Loader2 className="animate-spin mr-2" size={16} /> Memuat...</div>
                                         ) : (
                                             <>
-                                                {/* Container Tanda Tangan Mengetahui */}
                                                 <div className="flex justify-center items-center h-[80px] w-[150px] relative mb-1 mx-auto">
                                                     {ttdMengetahuiPreview ? (
                                                         <div className="relative group w-full h-full flex justify-center items-center">
@@ -1784,7 +1639,6 @@ function EditSPKContent() {
                                                                 </div>
                                                             </Draggable>
                                                             
-                                                            {/* Tombol edit TTD */}
                                                             {canUploadMengetahui && (
                                                                 <button
                                                                     onClick={() => ttdMengetahuiFileInputRef.current?.click()}
@@ -1829,16 +1683,11 @@ function EditSPKContent() {
                                     </div>
                                 </div>
 
-                                {/* ========================== */}
-                                {/* KANAN: PELAKSANA & MENYETUJUI */}
-                                {/* ========================== */}
                                 <div className="w-1/2 flex flex-col justify-between">
                                     
-                                    {/* 1. Pelaksana Section */}
                                     <div className="text-center">
                                         <div className="font-semibold mb-2">Pelaksana</div>
                                         
-                                        {/* Container Tanda Tangan */}
                                         <div className="flex flex-col items-center justify-center">
                                             <div className="flex justify-center items-center h-[80px] w-[150px] relative mb-1">
                                                 {ttdPreview ? (
@@ -1849,7 +1698,6 @@ function EditSPKContent() {
                                                             </div>
                                                         </Draggable>
                                                         
-                                                        {/* Tombol edit TTD */}
                                                         {canUploadPelaksana && (
                                                             <button
                                                                 onClick={() => ttdFileInputRef.current?.click()}
@@ -1876,7 +1724,6 @@ function EditSPKContent() {
                                                 <input type="file" ref={ttdFileInputRef} className="hidden" accept="image/*" onChange={handleTtdFileUpload} />
                                             </div>
 
-                                            {/* Nama Pelaksana */}
                                             {pic ? (
                                                 <>
                                                     <div className="font-bold border-t border-black inline-block mt-1 pt-1 text-black px-1 mx-auto text-xs whitespace-nowrap">
@@ -1895,7 +1742,6 @@ function EditSPKContent() {
                                         </div>
                                     </div>
 
-                                    {/* 2. Menyetujui Section */}
                                     <div className="mt-8 text-center">
                                         <div className="pb-1">Menyetujui</div>
                                         <div className="font-semibold flex items-end justify-center min-h-[10px] px-4">
@@ -1909,7 +1755,6 @@ function EditSPKContent() {
                                             <div className="flex justify-center items-center h-8"><Loader2 className="animate-spin mr-2" size={16} /> Memuat...</div>
                                         ) : (
                                             <>
-                                                {/* Container Tanda Tangan Menyetujui */}
                                                 <div className="flex justify-center items-center h-[80px] w-[150px] relative mb-1 mx-auto">
                                                     {ttdMenyetujuiPreview ? (
                                                         <div className="relative group w-full h-full flex justify-center items-center">
@@ -1919,7 +1764,6 @@ function EditSPKContent() {
                                                                 </div>
                                                             </Draggable>
                                                             
-                                                            {/* Tombol edit TTD */}
                                                             {canUploadMenyetujui && (
                                                                 <button
                                                                     onClick={() => ttdMenyetujuiFileInputRef.current?.click()}
@@ -1965,7 +1809,6 @@ function EditSPKContent() {
                                 </div>
 
                             </div>
-                            {/* --- AKHIR AREA TANDA TANGAN --- */}
 
                         </div>
                     </div>

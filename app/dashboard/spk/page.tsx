@@ -18,15 +18,20 @@ import {
     Copy,     
     MapPin,   
     Lock, 
-    Home
+    Home,
+    BarChart
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-const GET_API_SPK_URL_LOCAL = "/api/spk/list";
-const DELETE_API_SPK_URL_LOCAL = "/api/spk/delete/";
-const PERMISSION_ASSIGN = 'workorder-pti.spk.menugaskan';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-const MAX_RETRIES = 3;
+const API_ENDPOINTS = {
+    LIST: `${API_BASE_URL}/spk/views/data`, 
+    DELETE: `${API_BASE_URL}/spk/delete` 
+};
+
+const PERMISSION_ASSIGN = 'workorder-pti.spk.menugaskan';
+const MAX_RETRIES = 1;
 
 type SPKItem = {
     id: number;
@@ -131,20 +136,6 @@ const ToastBox = ({ toast, onClose }: { toast: ToastMessage, onClose: () => void
         </div>
     );
 
-const StatsCard = ({ title, count, color, icon }: { title: string, count: number, color: string, icon: React.ReactNode }) => (
-    <div className={`${color} rounded-xl p-4 border shadow-sm`}>
-        <div className="flex items-center justify-between">
-            <div>
-                <p className="text-xs font-bold text-black opacity-90">{title}</p>
-                <p className="text-2xl font-bold mt-1 text-black">{count}</p>
-            </div>
-            <div className="p-2 rounded-md bg-white/50">
-                {icon}
-            </div>
-        </div>
-    </div>
-);
-
 export default function DaftarSPKPage() {
     const router = useRouter();
     const [permissionsLoaded, setPermissionsLoaded] = useState(false);
@@ -247,7 +238,6 @@ export default function DaftarSPKPage() {
         const nonEditableStatuses = ["Menunggu", "Selesai", "Tidak Selesai"];
         const isApprover = isUserApprover(spk);
 
-        // --- LOGIKA BARU: Cek TTD Mengetahui ---
         // Jika mengetahui_ttd tidak null, berarti sudah ditandatangani -> TIDAK BISA EDIT
         if (spk.mengetahui_ttd) {
              showToast(`Tidak dapat mengedit SPK karena sudah ditandatangani (Mengetahui).`, "error");
@@ -316,8 +306,11 @@ export default function DaftarSPKPage() {
             return;
         }
 
+        // DIRECT API DELETE URL
+        const deleteUrl = `${API_ENDPOINTS.DELETE}/${uuid}`;
+
         try {
-            const res = await fetch(`${DELETE_API_SPK_URL_LOCAL}/${uuid}`, {
+            const res = await fetch(deleteUrl, {
                 method: "DELETE",
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -349,7 +342,6 @@ export default function DaftarSPKPage() {
 
         if (!hasPermission('workorder-pti.spk.views')) {
             setError("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.spk.views) untuk melihat daftar SPK.");
-            // showToast("Akses Ditolak: Anda tidak memiliki izin untuk melihat daftar SPK.", "error"); // Optional: prevent toast spam on load
             setLoading(false);
             return;
         }
@@ -364,12 +356,14 @@ export default function DaftarSPKPage() {
             return;
         }
 
+        const fetchUrl = API_ENDPOINTS.LIST;
+
         for (let i = 0; i < MAX_RETRIES; i++) {
             try {
-                const res = await fetch(GET_API_SPK_URL_LOCAL, {
+                const res = await fetch(fetchUrl, {
                     headers: {
                         Authorization: `Bearer ${token}`,
-                        "Cache-Control": "no-store",
+                        "Content-Type": "application/json",
                     },
                 });
 
@@ -379,9 +373,10 @@ export default function DaftarSPKPage() {
                     throw new Error(result.message || `Gagal memuat data`);
                 }
 
-                const mapped: SPKItem[] = result.data.map((item: any) => {
-                    const statusText = item.status?.name || "Tidak Diketahui";
+                const rawData = Array.isArray(result.data) ? result.data : [];
 
+                const mapped: SPKItem[] = rawData.map((item: any) => {
+                    const statusText = item.status?.name || "Tidak Diketahui";
                     const uuidIdentifier = item.uuid_pengajuan || item.id;
 
                     return {
@@ -392,10 +387,8 @@ export default function DaftarSPKPage() {
                         status: statusText,
                         uuid: uuidIdentifier.toString(),
                         namaPetugas: item.penanggung_jawab_name || "-",
-                        // Mapping data NPP Approver
                         menyetujui_npp: item.menyetujui_npp,
                         mengetahui_npp: item.mengetahui_npp,
-                        // Mapping Data TTD (Sesuai JSON API)
                         mengetahui_ttd: item.mengetahui_ttd, 
                     };
                 }).filter((i: SPKItem) => i.uuid && i.uuid !== 'N/A');
@@ -411,7 +404,7 @@ export default function DaftarSPKPage() {
                 await new Promise((r) => setTimeout(r, 500));
             }
         }
-    }, [permissionsLoaded, hasPermission, showToast]);
+    }, [permissionsLoaded, hasPermission]);
 
     useEffect(() => {
         if (permissionsLoaded) {
@@ -513,11 +506,9 @@ export default function DaftarSPKPage() {
         );
     }
 
-    // --- REPLACED: New AccessDeniedUI ---
     if (!canViewList) {
         return <AccessDeniedUI missingPermission="workorder-pti.spk.views" />;
     }
-    // ------------------------------------
 
     if (loading && canViewList) {
         return (

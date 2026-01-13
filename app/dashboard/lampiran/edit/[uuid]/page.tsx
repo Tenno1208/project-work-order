@@ -10,17 +10,28 @@ import Select from "react-select";
 import Draggable from "react-draggable";
 import Cropper, { Point, Area } from 'react-easy-crop';
 
-const IMAGE_PROXY_PATH = '/api/image-proxy';
-const LOCAL_UPDATE_API_STATUS_PATH = `/api/pengajuan/{uuid}/status`;
-const REFERENSI_SURAT_LOCAL_PATH = "/api/referensi-surat";
-const SUPERVISOR_PROXY_PATH = "/api/my-supervisor";
-const TTD_PROXY_PATH = "/api/ttd-proxy";
-const FALLBACK_IMAGE_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-const PENGAJUAN_MENGETAHUI_KEPALA = process.env.NEXT_PUBLIC_PENGAJUAN_MENGETAHUI_KEPALA || "Plt. Kepala";
-const MAX_FILES = 4;
-const DETAIL_API_PATH = `/api/pengajuan/view`;
-const EDIT_API_PENGAJUAN_PATH = process.env.EDIT_API_PENGAJUAN_URL || `/api/pengajuan/edit/{uuid}`;
+// --- KONFIGURASI URL DARI ENVIRONMENT ---
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+const API_BASE_URL_SATKER = process.env.NEXT_PUBLIC_API_BASE_URL_PORTAL_PEGAWAI || "";
+const IMAGE_STORAGE_BASE_URL = process.env.NEXT_PUBLIC_IMAGE_STORAGE_BASE_URL || "";
 
+const getEditApiUrl = (uuid: string) => `${API_BASE_URL}/pengajuan/edit/${uuid}`;
+const getDetailApiUrl = (uuid: string) => `${API_BASE_URL}/pengajuan/view/${uuid}`;
+const getUpdateStatusApiUrl = (uuid: string) => `${API_BASE_URL}/pengajuan/${uuid}/status`;
+const getRefSuratApiUrl = () => `${API_BASE_URL}/pengajuan/rferensi/surat`; 
+const getTtdApiUrl = (npp: string) => `${API_BASE_URL}/user/ttd/${npp}`;
+const getDeleteTtdApiUrl = () => `${API_BASE_URL}/user/delete/ttd`;
+const getUploadFileUrl = () => `https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto`;
+const getUploadMultipleUrl = () => `https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/upload/multiple/foto`;
+
+// URL Dropdowns
+const GET_HAL_URL = `${API_BASE_URL}/hal`;
+const GET_SATKER_URL = `${API_BASE_URL_SATKER}/client/satker/all`;
+
+const FALLBACK_IMAGE_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const MAX_FILES = 4;
+
+// --- TYPES ---
 type SatkerDef = { id: string; code: string; label: string; jabatan: string };
 type HalOption = { id: string | number; nama_jenis: string };
 type RefSuratOption = { uuid: string; nomor_surat: string };
@@ -30,13 +41,7 @@ type TtdHistoryItem = { originalUrl: string; processedUrl: string };
 type NoSurat = { id:string | number; no_surat:string };
 type NotificationType = 'success' | 'error' | 'warning';
 
-interface ModalContent {
-    title: string;
-    message: string;
-    onConfirm: () => void;
-    onCancel: () => void;
-}
-
+// --- HELPER FUNCTIONS ---
 async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
     const res = await fetch(dataUrl);
     const blob = await res.blob();
@@ -91,7 +96,8 @@ const Notification = ({ notification, setNotification }: {
     );
 };
 
-// MODAL RIWAYAT TTD
+// --- MODALS ---
+
 const TtdHistoryModal = ({
     isOpen,
     history,
@@ -228,7 +234,6 @@ const TtdHistoryModal = ({
     );
 };
 
-// MODAL CROP TTD (Updated Style)
 const TtdCropModal = ({
     isOpen,
     imageSrc,
@@ -347,10 +352,8 @@ const TtdCropModal = ({
 
                 {showSettings && (
                     <div className="mb-4 p-3 bg-gray-100 rounded-lg border border-gray-300">
-                        {/* Judul Hitam Bold */}
                         <h4 className="font-bold text-sm mb-2 text-black">Pengaturan Transparansi</h4>
                         <div>
-                            {/* Label Checkbox Hitam Bold */}
                             <label className="flex items-center gap-2 text-sm font-bold text-black cursor-pointer">
                                 <input
                                     type="checkbox"
@@ -363,7 +366,6 @@ const TtdCropModal = ({
                                 />
                                 Gunakan Mode Transparansi Lanjutan
                             </label>
-                            {/* Deskripsi Hitam */}
                             <p className="text-xs text-black mt-1 font-medium">
                                 Mode lanjutan lebih baik untuk tanda tangan dengan pencahayaan tidak merata.
                             </p>
@@ -387,7 +389,6 @@ const TtdCropModal = ({
 
                 <div className="mt-4 space-y-3">
                     <div className="flex items-center gap-2">
-                        {/* Label Hitam Bold */}
                         <span className="text-sm font-bold text-black w-20">Zoom:</span>
                         <input
                             type="range"
@@ -401,7 +402,6 @@ const TtdCropModal = ({
                         />
                     </div>
                     <div className="flex items-center gap-2">
-                        {/* Label Hitam Bold */}
                         <span className="text-sm font-bold text-black w-20">Rotasi:</span>
                         <input
                             type="range"
@@ -443,7 +443,6 @@ const TtdCropModal = ({
     );
 };
 
-// --- FUNGSI AUTO CROP & TRANSPARENCY ---
 async function processImageTransparency(dataUrl: string, settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }): Promise<string> {
     return new Promise((resolve) => {
         try {
@@ -559,21 +558,15 @@ async function resizeAndMakeTransparent(
     });
 }
 
-async function fetchAndMakeTransparent(proxyUrl: string, token: string, settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }): Promise<string> {
-    if (proxyUrl.startsWith('data:')) {
-        return processImageTransparency(proxyUrl, settings);
+// Fetch gambar langsung dari Gateway dengan Token
+async function fetchAndMakeTransparent(url: string, token: string, settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }): Promise<string> {
+    if (url.startsWith('data:')) {
+        return processImageTransparency(url, settings);
     }
 
     return new Promise(async (resolve) => {
         try {
-            let finalUrl = proxyUrl;
-            if (!proxyUrl.includes('/api/image-proxy')) {
-                const isUrl = proxyUrl.startsWith('http');
-                const paramKey = isUrl ? 'url' : 'path';
-                finalUrl = `${IMAGE_PROXY_PATH}?${paramKey}=${encodeURIComponent(proxyUrl)}`;
-            }
-            
-            const res = await fetch(finalUrl, {
+            const res = await fetch(url, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Accept': 'image/png, image/jpeg, image/gif',
@@ -606,7 +599,7 @@ const formatDate = (d: Date) =>
     `${d.getDate().toString().padStart(2, "0")}-${(d.getMonth() + 1)
         .toString()
         .padStart(2, "0")}-${d.getFullYear()}`;
-    
+
 const useRouter = () => {
     return {
         push: (path: string) => console.log(`[Route] -> ${path}`),
@@ -676,8 +669,8 @@ const ConfirmActionModal = ({
                         </button>
                         <button
                             onClick={onConfirm}
-                            className={`px-4 py-2 text-white rounded-lg transition flex items-center justify-center 
-                                ${buttonColor} 
+                            className={`px-4 py-2 text-white rounded-lg transition flex items-center justify-center   
+                                ${buttonColor}   
                                 ${!isApprove && rejectReason.trim() === '' ? 'opacity-50 cursor-not-allowed' : ''}
                             `}
                             disabled={isSaving || (!isApprove && rejectReason.trim() === '')}
@@ -746,14 +739,6 @@ const SaveConfirmModal = ({
     );
 };
 
-const cleanFilePath = (path: string): string => {
-    if (!path) return "";
-    let cleaned = path.replace(/\/\//g, '/');
-    cleaned = cleaned.replace(/(\.[\w\d]+)\1$/i, '$1');
-    return cleaned;
-};
-
-// --- COMPONENT: ACCESS DENIED UI ---
 const AccessDeniedUI = () => {
     const router = useRouter();
     return (
@@ -785,7 +770,7 @@ const AccessDeniedUI = () => {
     );
 };
 
-// --- START COMPONENT ---
+// --- MAIN COMPONENT ---
 
 export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: string }> }) {
     const router = useRouter();
@@ -853,14 +838,12 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
 
     const [currentUserNpp, setCurrentUserNpp] = useState<string | null>(null);
 
-    // 2. TAMBAHKAN USE EFFECT INI (Untuk ambil NPP user yang login)
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const userStr = localStorage.getItem("user_data");
             if (userStr) {
                 try {
                     const userObj = JSON.parse(userStr);
-                    // Pastikan key 'npp' sesuai dengan penyimpanan localstorage anda
                     setCurrentUserNpp(userObj.npp || userObj.user_npp || null); 
                 } catch (e) { console.error("Gagal parse user data", e); }
             }
@@ -880,7 +863,6 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
                 }
             }
 
-            // Logic: Jika punya SALAH SATU dari dua permission ini, maka akses diberikan.
             const hasEditPermission = perms.includes('workorder-pti.pengajuan.edit');
             const hasRiwayatEditPermission = perms.includes('workorder-pti.pengajuan.riwayat.edit');
 
@@ -894,55 +876,55 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
         }
     }, []);
 
-    // --- HANDLER LOGIC ---
-   // Tambahkan return Promise<TtdHistoryItem[]> di tipe return
-const fetchTtdMengetahuiHistory = useCallback(async (token: string, npp: string): Promise<TtdHistoryItem[]> => {
-    try {
-        const res = await fetch(`${TTD_PROXY_PATH}/${npp}`, {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-        });
+    // --- HANDLERS FETCHING ---
+    const fetchTtdMengetahuiHistory = useCallback(async (token: string, npp: string): Promise<TtdHistoryItem[]> => {
+        try {
+            const apiUrl = getTtdApiUrl(npp);
+            const res = await fetch(apiUrl, {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+            });
 
-        if (res.ok) {
-            const json = await res.json();
-            const serverTtdPath = json.ttd_path || null;
-            const serverTtdList = json.ttd_list || [];
-            
-            const normalizeUrl = (path: string): string => {
-                if (path.startsWith('http')) return path; 
-                const base = "https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto/?path=";
-                const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-                return `${base}${cleanPath}`;
-            };
+            if (res.ok) {
+                const json = await res.json();
+                const serverTtdPath = json.ttd_path || null;
+                const serverTtdList = json.ttd_list || [];
+                
+                const normalizeUrl = (path: string): string => {
+                    if (path.startsWith('http')) return path; 
+                    // Gunakan IMAGE_STORAGE_BASE_URL dari ENV
+                    const base = IMAGE_STORAGE_BASE_URL; 
+                    const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+                    return `${base}${cleanPath}`;
+                };
 
-            let rawPaths: string[] = [];
-            if (serverTtdPath && typeof serverTtdPath === 'string') rawPaths.push(serverTtdPath);
-            if (Array.isArray(serverTtdList)) rawPaths.push(...serverTtdList);
+                let rawPaths: string[] = [];
+                if (serverTtdPath && typeof serverTtdPath === 'string') rawPaths.push(serverTtdPath);
+                if (Array.isArray(serverTtdList)) rawPaths.push(...serverTtdList);
 
-            const uniqueNormalizedPaths = Array.from(new Set(rawPaths.map(normalizeUrl)));
-            
-            if (uniqueNormalizedPaths.length > 0) {
-                const historyItems: TtdHistoryItem[] = await Promise.all(
-                    uniqueNormalizedPaths.map(async (finalUrl: string) => {
-                        // Gunakan setting default untuk processing background history
-                        const processedUrl = await fetchAndMakeTransparent(finalUrl, token, { whiteThreshold: 235, blackThreshold: 35, useAdvanced: true });
-                        return {
-                            originalUrl: finalUrl,
-                            processedUrl: processedUrl,
-                        };
-                    })
-                );
+                const uniqueNormalizedPaths = Array.from(new Set(rawPaths.map(normalizeUrl)));
+                
+                if (uniqueNormalizedPaths.length > 0) {
+                    const historyItems: TtdHistoryItem[] = await Promise.all(
+                        uniqueNormalizedPaths.map(async (finalUrl: string) => {
+                            const processedUrl = await fetchAndMakeTransparent(finalUrl, token, { whiteThreshold: 235, blackThreshold: 35, useAdvanced: true });
+                            return {
+                                originalUrl: finalUrl,
+                                processedUrl: processedUrl,
+                            };
+                        })
+                    );
 
-                setTtdMengetahuiHistory(historyItems);
-                return historyItems; // <--- PENTING: Return data history
+                    setTtdMengetahuiHistory(historyItems);
+                    return historyItems;
+                }
             }
+            return []; 
+        } catch (err) {
+            console.error("Error fetching TTD history:", err);
+            return [];
         }
-        return []; 
-    } catch (err) {
-        console.error("Error fetching TTD history:", err);
-        return [];
-    }
-}, [transparencySettings]);
+    }, [transparencySettings]);
 
     const handleTtdUpload = (e: React.ChangeEvent<HTMLInputElement>, role: 'mengetahui' | 'pelapor') => {
         const file = e.target.files?.[0];
@@ -967,69 +949,69 @@ const fetchTtdMengetahuiHistory = useCallback(async (token: string, npp: string)
         e.target.value = '';
     };
 
-const handleAddFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0]) return;
-    
-    const file = e.target.files[0];
-    
-    if (filePreviews.length + newFiles.length >= MAX_FILES) {
-        setNotification({
-            type: 'warning',
-            message: `Maksimum upload adalah ${MAX_FILES} file.`
-        });
-        return;
-    }
-    
-    setNewFiles(prev => [...prev, file]);
-    
-    const previewUrl = URL.createObjectURL(file);
-    setFilePreviews(prev => [...prev, previewUrl]);
-    
-    e.target.value = '';
-};
+    const handleAddFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files?.[0]) return;
+        
+        const file = e.target.files[0];
+        
+        if (filePreviews.length + newFiles.length >= MAX_FILES) {
+            setNotification({
+                type: 'warning',
+                message: `Maksimum upload adalah ${MAX_FILES} file.`
+            });
+            return;
+        }
+        
+        setNewFiles(prev => [...prev, file]);
+        
+        const previewUrl = URL.createObjectURL(file);
+        setFilePreviews(prev => [...prev, previewUrl]);
+        
+        e.target.value = '';
+    };
 
-const handleRemoveFile = (index: number) => {
-    const removedPreview = filePreviews[index];
-    setFilePreviews(prev => prev.filter((_, i) => i !== index));
-    
-    if (index >= filePreviews.length - newFiles.length) {
-        const newFileIndex = index - (filePreviews.length - newFiles.length);
-        setNewFiles(prev => prev.filter((_, i) => i !== newFileIndex));
-    }
-    
-    if (!removedPreview.startsWith('http')) {
-        URL.revokeObjectURL(removedPreview);
-    }
-};
+    const handleRemoveFile = (index: number) => {
+        const removedPreview = filePreviews[index];
+        setFilePreviews(prev => prev.filter((_, i) => i !== index));
+        
+        if (index >= filePreviews.length - newFiles.length) {
+            const newFileIndex = index - (filePreviews.length - newFiles.length);
+            setNewFiles(prev => prev.filter((_, i) => i !== newFileIndex));
+        }
+        
+        if (!removedPreview.startsWith('http')) {
+            URL.revokeObjectURL(removedPreview);
+        }
+    };
 
     const handleTtdMengetahuiCropComplete = async (
-    croppedImage: string, 
-    settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }
-) => {
-    setIsTtdMengetahuiCropModalOpen(false);
-    setTtdMengetahuiImageForCrop(null);
+        croppedImage: string, 
+        settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }
+    ) => {
+        setIsTtdMengetahuiCropModalOpen(false);
+        setTtdMengetahuiImageForCrop(null);
 
-    const defaultSettings = {
-        whiteThreshold: 235,
-        blackThreshold: 35,
-        useAdvanced: true
+        const defaultSettings = {
+            whiteThreshold: 235,
+            blackThreshold: 35,
+            useAdvanced: true
+        };
+        
+        const finalSettings = settings || defaultSettings;
+        
+        if (settings) {
+            setTransparencySettings(settings);
+        }
+
+        const transparentAndResizedUrl = await resizeAndMakeTransparent(
+            croppedImage, 
+            finalSettings, 
+            600  
+        );
+        
+        setTtdMengetahuiPreview(transparentAndResizedUrl);
+        setFormData((p: any) => ({ ...p, ttd_mengetahui: 'UPLOADED_LOCAL' }));
     };
-    
-    const finalSettings = settings || defaultSettings;
-    
-    if (settings) {
-        setTransparencySettings(settings);
-    }
-
-    const transparentAndResizedUrl = await resizeAndMakeTransparent(
-        croppedImage, 
-        finalSettings, 
-        600  
-    );
-    
-    setTtdMengetahuiPreview(transparentAndResizedUrl);
-    setFormData((p: any) => ({ ...p, ttd_mengetahui: 'UPLOADED_LOCAL' }));
-};
 
     const handleTtdMengetahuiCropCancel = () => {
         setIsTtdMengetahuiCropModalOpen(false);
@@ -1064,9 +1046,10 @@ const handleRemoveFile = (index: number) => {
                 setNotification({ type: 'error', message: 'NPP pengguna tidak ditemukan.' });
                 return;
             }
-
-            const res = await fetch(`/api/user/delete/ttd`, { 
-                method: 'DELETE',
+            
+            // Gunakan URL langsung untuk delete TTD
+            const res = await fetch(getDeleteTtdApiUrl(), { 
+                method: 'DELETE', // atau POST tergantung implementasi API, di env tidak spesifik method, biasanya DELETE
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
@@ -1090,7 +1073,7 @@ const handleRemoveFile = (index: number) => {
             console.error("Error deleting TTD:", error);
             setNotification({ type: 'error', message: `Gagal menghapus tanda tangan: ${error.message}` });
         }
-    }, [formData.npp_mengetahui, fetchTtdMengetahuiHistory, setNotification]);
+    }, [formData.npp_mengetahui, fetchTtdMengetahuiHistory]);
 
     const handleTtdMengetahuiButtonClick = () => {
         if (ttdMengetahuiHistory.length > 0) {
@@ -1112,25 +1095,25 @@ const handleRemoveFile = (index: number) => {
     };
 
     const handleSelectChange = (name: string, option: { value: string, label: string } | null) => {
-    const value = option ? option.value : ""; 
-    const label = option ? option.label : "";
+        const value = option ? option.value : ""; 
+        const label = option ? option.label : "";
 
-    setFormData((p: any) => {
-        const newData = { ...p };
+        setFormData((p: any) => {
+            const newData = { ...p };
 
-        if (name === 'kepada') {
-            newData.kepada = label;       
-            newData.kd_satker = value;   
-        } else if (name === 'referensiSurat') {
-            newData.referensiSurat = value;
-            newData.no_referensi = value;
-        } else {
-            newData[name] = value;
-        }
+            if (name === 'kepada') {
+                newData.kepada = label;       
+                newData.kd_satker = value;   
+            } else if (name === 'referensiSurat') {
+                newData.referensiSurat = value;
+                newData.no_referensi = value;
+            } else {
+                newData[name] = value;
+            }
 
-        return newData;
-    });
-};
+            return newData;
+        });
+    };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -1151,7 +1134,7 @@ const handleRemoveFile = (index: number) => {
         setSaveConfirmModal({ isOpen: true });
     };
 
-const handleUpdate = async () => {
+    const handleUpdate = async () => {
         if (!formData) return;
         
         setIsSaving(true);
@@ -1165,15 +1148,12 @@ const handleUpdate = async () => {
         }
         
         try {
-            // --- BAGIAN INI DIUBAH ---
-            // 1. Upload File Baru (Multiple)
             let uploadedFilePaths: string[] = [];
             
             if (newFiles.length > 0) {
                 setNotification({ type: 'warning', message: `Sedang mengupload ${newFiles.length} lampiran baru...` });
                 
                 try {
-                    // Panggil fungsi multiple upload sekali saja
                     const paths = await uploadMultipleLampiran(newFiles, token);
                     uploadedFilePaths = paths;
                     
@@ -1183,313 +1163,292 @@ const handleUpdate = async () => {
                     console.error("Gagal upload multiple:", uploadErr);
                     setNotification({ type: 'error', message: `Gagal upload file: ${uploadErr.message}` });
                     setIsSaving(false);
-                    return; // Stop jika upload gagal
+                    return; 
                 }
             }
         
-        const currentFiles = Array.isArray(formData.file) ? formData.file : [];
-        const combinedFiles = [...currentFiles, ...uploadedFilePaths];
+            const currentFiles = Array.isArray(formData.file) ? formData.file : [];
+            const combinedFiles = [...currentFiles, ...uploadedFilePaths];
 
-        console.log("File Lama:", currentFiles);
-        console.log("File Baru:", uploadedFilePaths);
-        console.log("Total yang dikirim:", combinedFiles);
-
-        const apiData = {
-            hal: formData.hal,
-            hal_id: formData.hal,
-            hal_nama: formData.hal_nama,
-            kepada: formData.kepada,
-            kd_satker: formData.kd_satker,
-            satker: formData.satker_id,
-            name_pelapor: formData.name_pelapor,
-            npp_pelapor: formData.npp_pelapor,
-            tlp_pelapor: formData.tlp_pelapor,
-            kode_barang: formData.kode_barang,
-            keterangan: formData.keterangan,
-            file_paths: JSON.stringify(combinedFiles),
-            mengetahui: formData.mengetahui,
-            npp_mengetahui: formData.npp_mengetahui,
-            no_surat: formData.no_surat,
-            no_referensi: formData.no_referensi,
-            ttd_pelapor: formData.ttd_pelapor, 
-            ttd_mengetahui: formData.ttd_mengetahui
-        };
-        
-        const response = await fetch(`/api/pengajuan/edit/${uuid}`, {
-            method: 'PUT',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(apiData),
-        });
-        
-        const result = await response.json();
-        
-        if (!response.ok || !result.success) {
-            throw new Error(result.message || 'Gagal update data.');
+            const apiData = {
+                hal: formData.hal,
+                hal_id: formData.hal,
+                hal_nama: formData.hal_nama,
+                kepada: formData.kepada,
+                kd_satker: formData.kd_satker,
+                satker: formData.satker_id,
+                name_pelapor: formData.name_pelapor,
+                npp_pelapor: formData.npp_pelapor,
+                tlp_pelapor: formData.tlp_pelapor,
+                kode_barang: formData.kode_barang,
+                keterangan: formData.keterangan,
+                file_paths: JSON.stringify(combinedFiles),
+                mengetahui: formData.mengetahui,
+                npp_mengetahui: formData.npp_mengetahui,
+                no_surat: formData.no_surat,
+                no_referensi: formData.no_referensi,
+                ttd_pelapor: formData.ttd_pelapor, 
+                ttd_mengetahui: formData.ttd_mengetahui
+            };
+            
+            // Fetch langsung ke Gateway tanpa Proxy Next.js
+            const apiUrl = getEditApiUrl(uuid);
+            const response = await fetch(apiUrl, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(apiData),
+            });
+            
+            const result = await response.json();
+            
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Gagal update data.');
+            }
+            
+            setNotification({ type: 'success', message: 'Data berhasil diperbarui!' });
+            setSaveConfirmModal({ isOpen: false });
+            
+            setTimeout(() => {
+                router.push("/dashboard/lampiran");
+            }, 1500);
+            
+        } catch (error: any) {
+            console.error('Update error:', error);
+            setNotification({ type: 'error', message: error.message });
+        } finally {
+            setIsSaving(false);
         }
-        
-        setNotification({ type: 'success', message: 'Data berhasil diperbarui!' });
-        setSaveConfirmModal({ isOpen: false });
-        
-        setTimeout(() => {
-            router.push("/dashboard/lampiran");
-        }, 1500);
-        
-    } catch (error: any) {
-        console.error('Update error:', error);
-        setNotification({ type: 'error', message: error.message });
-    } finally {
-        setIsSaving(false);
-    }
-};
-
-const uploadSignatureToFileHandler = async (file: File, token: string): Promise<string> => {
-    const formData = new FormData();
-    formData.append('photo', file);
-    formData.append('filename', `ttd-mengetahui-${uuid}`);
-    
-    const date = new Date();
-    const folderPath = `work-order/${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/`;
-    formData.append('path', folderPath);
-
-    const res = await fetch('/api/file-handler/foto', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${token}`
-        },
-        body: formData
-    });
-
-    if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Gagal mengupload tanda tangan ke server.");
-    }
-
-    const json = await res.json();
-    
-    
-    if (json.data && json.data.filepath) {
-        return json.data.filepath;
-    } else if (json.data && json.data.local_path) {
-        return json.data.local_path; 
-    }
-    
-    throw new Error("Respon upload tidak valid.");
-};
-
-
-const uploadMultipleLampiran = async (files: File[], token: string): Promise<string[]> => {
-    const formData = new FormData();
-    
-    // 1. Set Jumlah Foto
-    formData.append('photo_count', files.length.toString());
-
-    // 2. Loop append file ke FormData sesuai format yang diminta API Route
-    files.forEach((file, index) => {
-        const i = index + 1; // Index dimulai dari 1 (photo_1, photo_2)
-        
-        formData.append(`photo_${i}`, file);
-        
-        // Generate nama dasar sementara (API Route akan menambahkan Unique ID & Timestamp)
-        const randomStr = Math.random().toString(36).substring(2, 8);
-        const filename = `work-order-lampiran-${randomStr}`; 
-        formData.append(`filename_${i}`, filename);
-    });
-
-    // 3. Tembak ke API Route Next.js yang baru dibuat
-    const res = await fetch('/api/file-handler/upload/multiple/foto', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
-    });
-
-    if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Gagal mengupload lampiran (Multiple).");
-    }
-
-    const json = await res.json();
-
-    // 4. Ambil array path bersih dari response API
-    if (json.success && Array.isArray(json.clean_filepaths)) {
-        return json.clean_filepaths;
-    } else {
-        throw new Error("Format respons upload tidak valid.");
-    }
-};
-
-const executeStatusUpdate = async (status: 'approved' | 'rejected') => {
-    if (!uuid) return;
-
-    if (status === 'rejected' && confirmModal.rejectReason.trim() === '') {
-        alert('Alasan penolakan wajib diisi.');
-        return;
-    }
-
-    setConfirmModal(p => ({ ...p, isOpen: false }));
-    setIsSaving(true);
-    setError(null);
-
-    const token = localStorage.getItem('token');
-    if (!token) {
-        setNotification({ type: 'error', message: 'Sesi habis, silakan login ulang.' });
-        setIsSaving(false);
-        return;
-    }
-
-    const apiUrl = LOCAL_UPDATE_API_STATUS_PATH.replace('{uuid}', uuid);
-    
-    const apiBody: any = {
-        status: status,
-        mengetahui: formData.mengetahui,
-        npp_mengetahui: formData.npp_mengetahui,
     };
 
-    if (status === 'rejected') {
-        apiBody.catatan_status = confirmModal.rejectReason;
-    } else if (status === 'approved') {
-        // --- LOGIKA BARU: UPLOAD OTOMATIS SAAT APPROVE ---
+    const uploadSignatureToFileHandler = async (file: File, token: string): Promise<string> => {
+        const formData = new FormData();
+        formData.append('photo', file);
+        formData.append('filename', `ttd-mengetahui-${uuid}`);
         
-        let finalTtdUrl = formData.ttd_mengetahui;
+        const date = new Date();
+        const folderPath = `work-order/${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/`;
+        formData.append('path', folderPath);
 
-        // Cek 1: Apakah ada file baru yang dipilih/dicrop (ttdMengetahuiFile)
-        if (ttdMengetahuiFile) {
-            try {
-                // Tampilkan notifikasi proses upload
-                setNotification({ type: 'warning', message: 'Sedang mengupload tanda tangan...' });
-                
-                // Lakukan Upload ke File Handler
-                const uploadedPath = await uploadSignatureToFileHandler(ttdMengetahuiFile, token);
-                
-                // Jika sukses, gunakan path hasil upload
-                finalTtdUrl = uploadedPath;
-                console.log("TTD Berhasil diupload ke:", finalTtdUrl);
-
-            } catch (uploadError: any) {
-                console.error("Gagal upload TTD:", uploadError);
-                setNotification({ type: 'error', message: `Gagal upload TTD: ${uploadError.message}` });
-                setIsSaving(false);
-                return; // Stop proses jika upload gagal
-            }
-        } 
-        // Cek 2: Jika menggunakan base64 dari preview (kasus jarang jika file ada, tapi untuk jaga-jaga)
-        else if (ttdMengetahuiPreview && ttdMengetahuiPreview.startsWith('data:')) {
-             try {
-                setNotification({ type: 'warning', message: 'Memproses gambar tanda tangan...' });
-                // Konversi base64 ke File
-                const fileFromBase64 = await dataURLtoFile(ttdMengetahuiPreview, `ttd-${uuid}.png`);
-                const uploadedPath = await uploadSignatureToFileHandler(fileFromBase64, token);
-                finalTtdUrl = uploadedPath;
-             } catch (uploadError: any) {
-                setNotification({ type: 'error', message: `Gagal memproses gambar TTD: ${uploadError.message}` });
-                setIsSaving(false);
-                return;
-             }
-        }
-        
-        // Validasi Akhir: Pastikan URL TTD sudah ada (bukan null/kosong)
-        if (!finalTtdUrl || finalTtdUrl === 'UPLOADED_LOCAL') {
-             alert("GAGAL: Tanda tangan 'Mengetahui' belum terupload dengan benar.");
-             setIsSaving(false);
-             return;
-        }
-
-        // Masukkan URL final ke body API
-        apiBody.ttd_mengetahui = finalTtdUrl;
-    }
-
-    try {
-        const response = await fetch(apiUrl, {
-            method: 'PUT',
+        const res = await fetch(getUploadFileUrl(), {
+            method: 'POST',
             headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify(apiBody),
+            body: formData
         });
 
-        const textResult = await response.text();
-        let result: any = {};
-        
-        try {
-            result = JSON.parse(textResult);
-        } catch (e) {
-            throw new Error(`Gagal memproses respons server: ${textResult.substring(0, 50)}...`);
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || "Gagal mengupload tanda tangan ke server.");
         }
 
-        if (!response.ok || !result.success) {
-            throw new Error(result.message || `Gagal ${status} pengajuan.`);
+        const json = await res.json();
+        
+        if (json.data && json.data.filepath) {
+            return json.data.filepath;
+        } else if (json.data && json.data.local_path) {
+            return json.data.local_path; 
+        }
+        
+        throw new Error("Respon upload tidak valid.");
+    };
+
+    const uploadMultipleLampiran = async (files: File[], token: string): Promise<string[]> => {
+        const formData = new FormData();
+        
+        formData.append('photo_count', files.length.toString());
+
+        files.forEach((file, index) => {
+            const i = index + 1; 
+            
+            formData.append(`photo_${i}`, file);
+            
+            const randomStr = Math.random().toString(36).substring(2, 8);
+            const filename = `work-order-lampiran-${randomStr}`; 
+            formData.append(`filename_${i}`, filename);
+        });
+
+        const res = await fetch(getUploadMultipleUrl(), {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || "Gagal mengupload lampiran (Multiple).");
         }
 
-        setStatusPengajuan(status);
-        
-        if (status === 'rejected' && confirmModal.rejectReason) {
-            setCatatanStatus(confirmModal.rejectReason);
-        }
-        
-        // Notifikasi yang lebih jelas dengan emoji
-        if (status === 'approved') {
-            setNotification({ 
-                type: 'success', 
-                message: '✅ Pengajuan berhasil di-APPROVE! Tanda tangan telah tersimpan.' 
-            });
+        const json = await res.json();
+
+        if (json.success && Array.isArray(json.clean_filepaths)) {
+            return json.clean_filepaths;
         } else {
-            setNotification({ 
-                type: 'success', 
-                message: `✅ Pengajuan berhasil di-REJECT dengan alasan: ${confirmModal.rejectReason}` 
+            throw new Error("Format respons upload tidak valid.");
+        }
+    };
+
+    const executeStatusUpdate = async (status: 'approved' | 'rejected') => {
+        if (!uuid) return;
+
+        if (status === 'rejected' && confirmModal.rejectReason.trim() === '') {
+            alert('Alasan penolakan wajib diisi.');
+            return;
+        }
+
+        setConfirmModal(p => ({ ...p, isOpen: false }));
+        setIsSaving(true);
+        setError(null);
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setNotification({ type: 'error', message: 'Sesi habis, silakan login ulang.' });
+            setIsSaving(false);
+            return;
+        }
+
+        const apiUrl = getUpdateStatusApiUrl(uuid);
+        
+        const apiBody: any = {
+            status: status,
+            mengetahui: formData.mengetahui,
+            npp_mengetahui: formData.npp_mengetahui,
+        };
+
+        if (status === 'rejected') {
+            apiBody.catatan_status = confirmModal.rejectReason;
+        } else if (status === 'approved') {
+            let finalTtdUrl = formData.ttd_mengetahui;
+
+            if (ttdMengetahuiFile) {
+                try {
+                    setNotification({ type: 'warning', message: 'Sedang mengupload tanda tangan...' });
+                    
+                    const uploadedPath = await uploadSignatureToFileHandler(ttdMengetahuiFile, token);
+                    
+                    finalTtdUrl = uploadedPath;
+                    console.log("TTD Berhasil diupload ke:", finalTtdUrl);
+
+                } catch (uploadError: any) {
+                    console.error("Gagal upload TTD:", uploadError);
+                    setNotification({ type: 'error', message: `Gagal upload TTD: ${uploadError.message}` });
+                    setIsSaving(false);
+                    return; 
+                }
+            } else if (ttdMengetahuiPreview && ttdMengetahuiPreview.startsWith('data:')) {
+                 try {
+                    setNotification({ type: 'warning', message: 'Memproses gambar tanda tangan...' });
+                    const fileFromBase64 = await dataURLtoFile(ttdMengetahuiPreview, `ttd-${uuid}.png`);
+                    const uploadedPath = await uploadSignatureToFileHandler(fileFromBase64, token);
+                    finalTtdUrl = uploadedPath;
+                 } catch (uploadError: any) {
+                    setNotification({ type: 'error', message: `Gagal memproses gambar TTD: ${uploadError.message}` });
+                    setIsSaving(false);
+                    return;
+                 }
+            }
+            
+            if (!finalTtdUrl || finalTtdUrl === 'UPLOADED_LOCAL') {
+                 alert("GAGAL: Tanda tangan 'Mengetahui' belum terupload dengan benar.");
+                 setIsSaving(false);
+                 return;
+            }
+
+            apiBody.ttd_mengetahui = finalTtdUrl;
+        }
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(apiBody),
             });
+
+            const textResult = await response.text();
+            let result: any = {};
+            
+            try {
+                result = JSON.parse(textResult);
+            } catch (e) {
+                throw new Error(`Gagal memproses respons server: ${textResult.substring(0, 50)}...`);
+            }
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || `Gagal ${status} pengajuan.`);
+            }
+
+            setStatusPengajuan(status);
+            
+            if (status === 'rejected' && confirmModal.rejectReason) {
+                setCatatanStatus(confirmModal.rejectReason);
+            }
+            
+            if (status === 'approved') {
+                setNotification({ 
+                    type: 'success', 
+                    message: '✅ Pengajuan berhasil di-APPROVE! Tanda tangan telah tersimpan.' 
+                });
+            } else {
+                setNotification({ 
+                    type: 'success', 
+                    message: `✅ Pengajuan berhasil di-REJECT dengan alasan: ${confirmModal.rejectReason}` 
+                });
+            }
+
+            if (formData.npp_mengetahui) {
+                fetchTtdMengetahuiHistory(token, formData.npp_mengetahui);
+            }
+
+        } catch (err: any) {
+            console.error('Error updating status:', err);
+            setError(err.message || 'Gagal terhubung ke API status update.');
+            setNotification({ type: 'error', message: `Aksi gagal: ${err.message}` });
+        } finally {
+            setIsSaving(false);
+            setConfirmModal(p => ({ ...p, rejectReason: '' })); 
+        }
+    };
+
+    const handleStatusAction = (status: 'approved' | 'rejected') => {
+        if (statusPengajuan === 'approved' || statusPengajuan === 'rejected') {
+            setNotification({
+                type: 'warning',
+                message: `Pengajuan sudah berstatus '${statusPengajuan}'. Tidak bisa diubah.`
+            });
+            return;
         }
 
-        if (formData.npp_mengetahui) {
-            fetchTtdMengetahuiHistory(token, formData.npp_mengetahui);
+        if (status === 'approved' && !ttdMengetahuiPreview) {
+            setNotification({
+                type: 'error',
+                message: 'Tanda tangan "Mengetahui" wajib diisi sebelum melakukan approve. Silakan unggah tanda tangan terlebih dahulu.'
+            });
+            const ttdElement = document.getElementById('ttd-mengetahui-section');
+            if (ttdElement) {
+                ttdElement.scrollIntoView({ behavior: 'smooth' });
+                ttdElement.classList.add('ring-2', 'ring-red-500', 'ring-opacity-75');
+                setTimeout(() => {
+                    ttdElement.classList.remove('ring-2', 'ring-red-500', 'ring-opacity-75');
+                }, 3000);
+            }
+            return;
         }
 
-    } catch (err: any) {
-        console.error('Error updating status:', err);
-        setError(err.message || 'Gagal terhubung ke API status update.');
-        setNotification({ type: 'error', message: `Aksi gagal: ${err.message}` });
-    } finally {
-        setIsSaving(false);
-        setConfirmModal(p => ({ ...p, rejectReason: '' })); 
-    }
-};
-
-const handleStatusAction = (status: 'approved' | 'rejected') => {
-    if (statusPengajuan === 'approved' || statusPengajuan === 'rejected') {
-        setNotification({
-            type: 'warning',
-            message: `Pengajuan sudah berstatus '${statusPengajuan}'. Tidak bisa diubah.`
+        const actionText = status === 'approved' ? 'SETUJUI (APPROVE)' : 'TOLAK (REJECT)';
+        
+        setConfirmModal({
+            isOpen: true,
+            action: status,
+            message: `Apakah Anda yakin ingin ${actionText} pengajuan ini? Aksi ini tidak dapat dibatalkan.`,
+            rejectReason: '', 
         });
-        return;
-    }
-
-    if (status === 'approved' && !ttdMengetahuiPreview) {
-        setNotification({
-            type: 'error',
-            message: 'Tanda tangan "Mengetahui" wajib diisi sebelum melakukan approve. Silakan unggah tanda tangan terlebih dahulu.'
-        });
-        const ttdElement = document.getElementById('ttd-mengetahui-section');
-        if (ttdElement) {
-            ttdElement.scrollIntoView({ behavior: 'smooth' });
-            ttdElement.classList.add('ring-2', 'ring-red-500', 'ring-opacity-75');
-            setTimeout(() => {
-                ttdElement.classList.remove('ring-2', 'ring-red-500', 'ring-opacity-75');
-            }, 3000);
-        }
-        return;
-    }
-
-    const actionText = status === 'approved' ? 'SETUJUI (APPROVE)' : 'TOLAK (REJECT)';
-    
-    setConfirmModal({
-        isOpen: true,
-        action: status,
-        message: `Apakah Anda yakin ingin ${actionText} pengajuan ini? Aksi ini tidak dapat dibatalkan.`,
-        rejectReason: '', 
-    });
-};
+    };
 
     const handlePrint = () => {
         setIsPrintMode(true);
@@ -1509,7 +1468,6 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
         setModalImageSrc(null);
     };
 
-    // --- INITIAL DATA FETCH ---
     const fetchAllInitialData = useCallback(async () => {
         if (didMountRef.current) return;
         didMountRef.current = true;
@@ -1528,10 +1486,11 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
         try {
             const headers = { Authorization: `Bearer ${token}` };
             
+            // Fetch dropdowns langsung ke Gateway
             const [halRes, satkerRes, refSuratRes] = await Promise.all([
-                fetch("/api/hal", { headers, cache: "no-store" }),
-                fetch("/api/satker", { headers }),
-                fetch(REFERENSI_SURAT_LOCAL_PATH, { headers, cache: "no-store" }),
+                fetch(GET_HAL_URL, { headers, cache: "no-store" }),
+                fetch(GET_SATKER_URL, { headers }),
+                fetch(getRefSuratApiUrl(), { headers, cache: "no-store" }),
             ]);
 
             const halJson = await halRes.json();
@@ -1547,7 +1506,8 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
             const refOptionsMap = (refSuratJson?.data || []).map((item: any) => ({ uuid: item.uuid || null, nomor_surat: item.no_surat }));
             setRefSuratOptions(refOptionsMap);
 
-            const detailRes = await fetch(`${DETAIL_API_PATH}/${storedUuid}`, { headers, cache: "no-store" });
+            // Fetch Detail Data langsung ke Gateway
+            const detailRes = await fetch(getDetailApiUrl(storedUuid), { headers, cache: "no-store" });
             const result = await detailRes.json();
 
             if (!detailRes.ok || !result.success) {
@@ -1562,17 +1522,36 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                 setCatatanStatus(item.catatan_status);
             }
             
+            // --- PERBAIKAN 1: LOAD TTD PELAPOR ---
             if (item.ttd_pelapor) {
-                const proxyUrl = `${IMAGE_PROXY_PATH}?url=${encodeURIComponent(item.ttd_pelapor)}`;
-                setTtdPelaporPreview(await fetchAndMakeTransparent(proxyUrl, token));
+                const ttdPelaporUrl = item.ttd_pelapor.startsWith('http') 
+                    ? item.ttd_pelapor 
+                    : `${IMAGE_STORAGE_BASE_URL}${item.ttd_pelapor}`; 
+
+                setTtdPelaporPreview(await fetchAndMakeTransparent(ttdPelaporUrl, token));
             }
+
+            // --- PERBAIKAN 2: LOAD TTD MENGETAHUI ---
             if (item.ttd_mengetahui) {
-                const proxyUrlMengetahui = `${IMAGE_PROXY_PATH}?url=${encodeURIComponent(item.ttd_mengetahui)}`;
-                setTtdMengetahuiPreview(await fetchAndMakeTransparent(proxyUrlMengetahui, token));
+                const ttdMengetahuiUrl = item.ttd_mengetahui.startsWith('http')
+                    ? item.ttd_mengetahui
+                    : `${IMAGE_STORAGE_BASE_URL}${item.ttd_mengetahui}`; 
+
+                setTtdMengetahuiPreview(await fetchAndMakeTransparent(ttdMengetahuiUrl, token));
             }
+
             let rawFiles: string[] = item.file || [];
-            const fullFileUrls = rawFiles.map((path: string) => `${IMAGE_PROXY_PATH}?path=${path}`);
+            
+            const fullFileUrls = rawFiles.map((path: string) => {
+                if (path.startsWith('http')) {
+                    return path;
+                }
+                if (!path) return FALLBACK_IMAGE_URL;
+                return `${IMAGE_STORAGE_BASE_URL}${path}`;
+            });
+
             setFilePreviews(fullFileUrls);
+            
             
             const halNameFromAPI = item.hal;
             const matchedHal = halOptionsMap.find(opt => opt.nama_jenis === halNameFromAPI);
@@ -1581,7 +1560,6 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
             const halId = masterHal.id?.toString() || item.hal_id?.toString() || "";
             const halName = masterHal.nama_jenis || item.hal || "";
 
-            // --- PERUBAHAN LOGIKA DISINI ---
             const kepadaName = result.kd_satker?.satker_name || item.kepada || "";
             
             const satkerAsalName = result.kd_parent?.parent_satker || item.satker || "";
@@ -1618,7 +1596,6 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
 
             const targetNpp = item.mengetahui_npp || item.npp_mengetahui;
             
-            // Ambil NPP User yang sedang login dari localStorage (karena state mungkin belum update)
             let loggedInNpp = null;
             try {
                 const userData = localStorage.getItem("user_data");
@@ -1628,7 +1605,6 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                 }
             } catch (e) {}
 
-            // Jika ada NPP Mengetahui
             if (targetNpp) {
                 const historyItems = await fetchTtdMengetahuiHistory(token, targetNpp);
 
@@ -1648,7 +1624,6 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                     setNotification({ type: 'success', message: 'Tanda tangan Anda dimuat otomatis dari riwayat.' });
                 }
             }
-            // ----------------------------------------
 
         } catch (err: any) {
             console.error("Error fetching initial data:", err);
@@ -1668,8 +1643,6 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
         }
     }, [permissionsLoaded, hasAccess, fetchAllInitialData]);
 
-
-    // --- RENDER BLOCK ---
     if (!permissionsLoaded) {
         return (
             <div className="flex justify-center items-center h-screen bg-gray-100">
@@ -1683,7 +1656,6 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
     if (!hasAccess) {
         return <AccessDeniedUI />;
     }
-
 
     if (loading || isInitialLoading) {
         return (
@@ -1799,7 +1771,6 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                     .select-print-only { display: block !important; }
                     .select-input-only { display: none !important; }
                     
-                    /* Perbaikan untuk keterangan */
                     #print-area .keterangan-container {
                         white-space: pre-wrap !important;
                         font-family: 'Times New Roman', serif;
@@ -1863,7 +1834,7 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                             <>
                                 <button
                                     onClick={() => handleStatusAction('approved')}
-                                    className={`px-3 py-2 text-white rounded flex items-center gap-2 transition 
+                                    className={`px-3 py-2 text-white rounded flex items-center gap-2 transition   
                                         ${isSaving || isFinalStatus ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
                                     disabled={isSaving || isFinalStatus} 
                                 >
@@ -1871,7 +1842,7 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                                 </button>
                                 <button
                                     onClick={() => handleStatusAction('rejected')}
-                                    className={`px-3 py-2 text-white rounded flex items-center gap-2 transition 
+                                    className={`px-3 py-2 text-white rounded flex items-center gap-2 transition   
                                         ${isSaving || isFinalStatus ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}`}
                                     disabled={isSaving || isFinalStatus} 
                                 >
@@ -1902,10 +1873,10 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                                 <div className="mt-2 text-sm text-red-700">
                                     <p>{catatanStatus}</p>
                                 </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )}
                 
                 <form onSubmit={handleSaveClick} id="print-area" className="p-6">
                     <div className="flex justify-between items-start">
@@ -1938,7 +1909,7 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                                             valueContainer: (base) => ({ ...base, padding: '0 8px' }),
                                             indicatorsContainer: (base) => ({ ...base, height: '30px' }),
                                         }}
-                                    />
+                                        />
                                 )}
                             </div>
                             
@@ -1991,7 +1962,7 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                                             valueContainer: (base) => ({ ...base, padding: '0 8px' }),
                                             indicatorsContainer: (base) => ({ ...base, height: '30px' }),
                                         }}
-                                    />
+                                        />
                                 </div>
                             )}
                             <br className="no-print" />
@@ -2050,7 +2021,7 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                                 }} 
                             />
                         ) : (
-                            <textarea   
+                            <textarea    
                                 name="keterangan"
                                 value={formData.keterangan}
                                 onChange={handleInputChange}
@@ -2206,7 +2177,7 @@ const handleStatusAction = (status: 'approved' | 'rejected') => {
                         <button
                             type="submit"
                             disabled={isSaving || isFinalStatus} 
-                            className={`fixed bottom-6 right-6 px-6 py-3 rounded-full shadow-xl flex items-center gap-2 transition-all duration-200 
+                            className={`fixed bottom-6 right-6 px-6 py-3 rounded-full shadow-xl flex items-center gap-2 transition-all duration-200   
                                 ${isSaving || isFinalStatus ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}
                         >
                             {isSaving ? (

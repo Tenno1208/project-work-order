@@ -4,10 +4,39 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from "next/navigation";
 import { Loader2, AlertTriangle, Eye, Printer, FileText, X, Lock, Home } from 'lucide-react';
 
-const IMAGE_PROXY_PATH = '/api/image-proxy';
+// --- KONFIGURASI API DIRECT (DARI ENV) ---
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+const STORAGE_BASE_URL = process.env.NEXT_PUBLIC_IMAGE_STORAGE_BASE_URL || "https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto/?path=";
+
 const FALLBACK_IMAGE_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
-// --- FUNGSI PROSES GAMBAR (DENGAN AUTO-CROP) ---
+async function fetchImageDirectly(pathOrUrl: string, token: string | null): Promise<string> {
+    if (!pathOrUrl) return FALLBACK_IMAGE_URL;
+    if (pathOrUrl.startsWith('data:')) return pathOrUrl; 
+
+    try {
+        let finalUrl = pathOrUrl;
+        if (!pathOrUrl.startsWith('http')) {
+            finalUrl = `${STORAGE_BASE_URL}${encodeURIComponent(pathOrUrl)}`;
+        }
+
+        const res = await fetch(finalUrl, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            }
+        });
+
+        if (!res.ok) throw new Error("Gagal load gambar");
+
+        const blob = await res.blob();
+        return URL.createObjectURL(blob); 
+    } catch (e) {
+        console.error("Error fetching image direct:", e);
+        return FALLBACK_IMAGE_URL;
+    }
+}
+
 async function processImageTransparency(dataUrl: string, settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }): Promise<string> {
     return new Promise((resolve) => {
         try {
@@ -91,16 +120,11 @@ async function processImageTransparency(dataUrl: string, settings?: { whiteThres
                     maxX = Math.min(canvas.width, maxX + padding);
                     maxY = Math.min(canvas.height, maxY + padding);
 
-                    const cropWidth = maxX - minX;
-                    const cropHeight = maxY - minY;
-
                     const croppedCanvas = document.createElement("canvas");
-                    croppedCanvas.width = cropWidth;
-                    croppedCanvas.height = cropHeight;
+                    croppedCanvas.width = maxX - minX;
+                    croppedCanvas.height = maxY - minY;
                     const croppedCtx = croppedCanvas.getContext("2d")!;
-
-                    croppedCtx.drawImage(canvas, minX, minY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-
+                    croppedCtx.drawImage(canvas, minX, minY, maxX - minX, maxY - minY, 0, 0, maxX - minX, maxY - minY);
                     resolve(croppedCanvas.toDataURL("image/png"));
                 } else {
                     resolve(canvas.toDataURL("image/png"));
@@ -113,52 +137,12 @@ async function processImageTransparency(dataUrl: string, settings?: { whiteThres
     });
 }
 
-async function fetchAndMakeTransparent(proxyUrl: string, token: string | null): Promise<string> {
-    if (!proxyUrl) return FALLBACK_IMAGE_URL;
-    
-    if (proxyUrl.startsWith('data:')) {
-        return processImageTransparency(proxyUrl);
-    }
-
-    return new Promise(async (resolve) => {
-        try {
-            let finalUrl = proxyUrl;
-            if (!proxyUrl.includes('/api/image-proxy')) {
-                const isUrl = proxyUrl.startsWith('http');
-                const paramKey = isUrl ? 'url' : 'path';
-                finalUrl = `${IMAGE_PROXY_PATH}?${paramKey}=${encodeURIComponent(proxyUrl)}`;
-            }
-            
-            const res = await fetch(finalUrl, {
-                headers: {
-                    'Authorization': `Bearer ${token}`, 
-                    'Accept': 'image/png, image/jpeg, image/gif',
-                },
-            });
-            
-            if (!res.ok) {
-                return resolve(FALLBACK_IMAGE_URL);
-            }
-
-            const imageBlob = await res.blob();
-            
-            const dataUrl: string = await new Promise((res, rej) => {
-                const reader = new FileReader();
-                reader.onloadend = () => res(reader.result as string);
-                reader.onerror = rej;
-                reader.readAsDataURL(imageBlob);
-            });
-            
-            const transparentUrl = await processImageTransparency(dataUrl);
-            resolve(transparentUrl);
-
-        } catch (error) {
-            resolve(FALLBACK_IMAGE_URL);
-        }
-    });
+async function fetchAndMakeTransparent(pathUrl: string, token: string | null): Promise<string> {
+    const blobUrl = await fetchImageDirectly(pathUrl, token);
+    return processImageTransparency(blobUrl);
 }
 
-// --- DEFINISI TIPE DATA (TIDAK DIUBAH) ---
+// --- DEFINISI TIPE DATA ---
 type MasterHal = {
     id: number;
     kode: string;
@@ -209,7 +193,7 @@ type ModalViewer = {
     title: string;
 };
 
-const DETAIL_API_PATH = (uuid: string) => `/api/pengajuan/view/${uuid}`;
+// --- SUB COMPONENTS ---
 
 const MediaViewerModal = ({ viewer, onClose }: { viewer: ModalViewer, onClose: () => void }) => {
     if (!viewer.isOpen || !viewer.src) return null;
@@ -219,11 +203,7 @@ const MediaViewerModal = ({ viewer, onClose }: { viewer: ModalViewer, onClose: (
             <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-full max-h-[90vh] flex flex-col">
                 <div className="flex justify-between items-center p-3 border-b border-gray-200">
                     <h3 className="text-lg font-semibold text-gray-900">{viewer.title}</h3>
-                    <button
-                        onClick={onClose}
-                        className="text-gray-500 hover:text-gray-700 p-1 transition-colors"
-                        aria-label="Tutup"
-                    >
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 p-1 transition-colors">
                         <X size={24} />
                     </button>
                 </div>
@@ -237,11 +217,7 @@ const MediaViewerModal = ({ viewer, onClose }: { viewer: ModalViewer, onClose: (
                         />
                     ) : (
                         <div className="flex justify-center items-center h-full">
-                            <img
-                                src={viewer.src}
-                                alt={viewer.title}
-                                className="max-w-full max-h-full object-contain"
-                            />
+                            <img src={viewer.src} alt={viewer.title} className="max-w-full max-h-full object-contain" />
                         </div>
                     )}
                 </div>
@@ -253,7 +229,6 @@ const MediaViewerModal = ({ viewer, onClose }: { viewer: ModalViewer, onClose: (
     );
 };
 
-// --- COMPONENT: ACCESS DENIED UI ---
 const AccessDeniedUI = () => {
     const router = useRouter();
     return (
@@ -273,23 +248,21 @@ const AccessDeniedUI = () => {
                         <li>workorder-pti.pengajuan.riwayat.view</li>
                     </ul>
                 </div>
-                <button
-                    onClick={() => router.push('/dashboard')} 
-                    className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors shadow-md"
-                >
-                    <Home size={18} />
-                    Kembali ke Dashboard
+                <button onClick={() => router.push('/dashboard')} className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors shadow-md">
+                    <Home size={18} /> Kembali ke Dashboard
                 </button>
             </div>
         </div>
     );
 };
 
-// --- KOMPONEN UTAMA (LOGIKA FETCH TIDAK DIUBAH) ---
+// --- MAIN COMPONENT ---
 export default function DetailPengajuanPage() {
     const params = useParams();
-    const uuid = params?.uuid;
+    const uuid = params?.uuid as string;
     const router = useRouter();
+    
+    // State
     const [permissionsLoaded, setPermissionsLoaded] = useState(false);
     const [hasAccess, setHasAccess] = useState(false);
     const [data, setData] = useState<DetailData | null>(null);
@@ -300,14 +273,9 @@ export default function DetailPengajuanPage() {
     const [ttdPelaporPreview, setTtdPelaporPreview] = useState<string | null>(null);
     const [ttdMengetahuiPreview, setTtdMengetahuiPreview] = useState<string | null>(null); 
     const [filePreviews, setFilePreviews] = useState<string[]>([]);
-    const [viewerModal, setViewerModal] = useState<ModalViewer>({ 
-        isOpen: false, src: null, isPdf: false, title: '' 
-    });
+    const [viewerModal, setViewerModal] = useState<ModalViewer>({ isOpen: false, src: null, isPdf: false, title: '' });
     
-    const formatDate = (d: Date) =>
-        `${d.getDate().toString().padStart(2, "0")}-${(d.getMonth() + 1)
-            .toString()
-            .padStart(2, "0")}-${d.getFullYear()}`;
+    const formatDate = (d: Date) => `${d.getDate().toString().padStart(2, "0")}-${(d.getMonth() + 1).toString().padStart(2, "0")}-${d.getFullYear()}`;
     const todayStr = `Semarang, ${formatDate(new Date())}`;
 
     const handleViewMedia = (src: string, isPdf: boolean, title: string) => {
@@ -318,42 +286,30 @@ export default function DetailPengajuanPage() {
         setViewerModal({ isOpen: false, src: null, isPdf: false, title: '' });
     };
 
-    // --- 1. CEK PERMISSION ---
+    // --- 1. CHECK PERMISSION ---
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const storedPermissions = localStorage.getItem('user_permissions');
             let perms: string[] = [];
-            
             if (storedPermissions) {
-                try {
-                    perms = JSON.parse(storedPermissions);
-                } catch (e) {
-                    console.error("Error parsing permissions", e);
-                }
+                try { perms = JSON.parse(storedPermissions); } 
+                catch (e) { console.error("Error parsing permissions", e); }
             }
-
             const hasViewPermission = perms.includes('workorder-pti.pengajuan.view');
             const hasRiwayatViewPermission = perms.includes('workorder-pti.pengajuan.riwayat.view');
-
-            if (hasViewPermission || hasRiwayatViewPermission) {
-                setHasAccess(true);
-            } else {
-                setHasAccess(false);
-            }
-            
+            setHasAccess(hasViewPermission || hasRiwayatViewPermission);
             setPermissionsLoaded(true);
         }
     }, []);
 
+    // --- 2. FETCH DATA (DIRECT API) ---
     useEffect(() => {
         const fetchDetail = async () => {
             if (!uuid) return;
-
             setLoading(true);
             setError(null);
             
             const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
             if (!token) {
                 setError("Token otorisasi tidak ditemukan. Mohon login ulang.");
                 setLoading(false);
@@ -361,7 +317,8 @@ export default function DetailPengajuanPage() {
             }
 
             try {
-                const response = await fetch(DETAIL_API_PATH(uuid), {
+                // --- FETCH DATA JSON UTAMA (DIRECT) ---
+                const response = await fetch(`${API_BASE_URL}/pengajuan/view/${uuid}`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -385,41 +342,37 @@ export default function DetailPengajuanPage() {
                 
                 setData(fetchedData);
                 
+                // --- 3. FETCH & PROSES GAMBAR (DIRECT FETCH BLOB) ---
+                // Menghindari Proxy, kita fetch blob langsung dari storage url menggunakan token
+                
+                // TTD Pelapor
                 if (fetchedData.ttd_pelapor) {
-                    const isUrl = fetchedData.ttd_pelapor.startsWith('http');
-                    const paramKey = isUrl ? 'url' : 'path';
-                    const proxyUrl = `${IMAGE_PROXY_PATH}?${paramKey}=${encodeURIComponent(fetchedData.ttd_pelapor)}`;
-                    
-                    const transparentTtd = await fetchAndMakeTransparent(proxyUrl, token);
-                    setTtdPelaporPreview(transparentTtd);
+                    const processed = await fetchAndMakeTransparent(fetchedData.ttd_pelapor, token);
+                    setTtdPelaporPreview(processed);
                 }
 
+                // TTD Mengetahui
                 if (fetchedData.ttd_mengetahui) {
-                    const isUrl = fetchedData.ttd_mengetahui.startsWith('http');
-                    const paramKey = isUrl ? 'url' : 'path';
-                    const proxyUrl = `${IMAGE_PROXY_PATH}?${paramKey}=${encodeURIComponent(fetchedData.ttd_mengetahui)}`;
-                    
-                    const transparentTtdMengetahui = await fetchAndMakeTransparent(proxyUrl, token);
-                    setTtdMengetahuiPreview(transparentTtdMengetahui);
+                    const processed = await fetchAndMakeTransparent(fetchedData.ttd_mengetahui, token);
+                    setTtdMengetahuiPreview(processed);
                 }
 
+                // Lampiran Files
                 let rawFiles: string[] = [];
                 if (Array.isArray(fetchedData.file)) {
                     rawFiles = fetchedData.file;
                 } else if (fetchedData.file && typeof fetchedData.file === 'string') {
-                    try {
-                        rawFiles = JSON.parse(fetchedData.file);
-                    } catch (e) {
-                        const cleaned = fetchedData.file.replace(/[\[\]"]/g, '');
-                        rawFiles = cleaned.split(',').map(s => s.trim()).filter(s => s.length > 0);
-                    }
+                    try { rawFiles = JSON.parse(fetchedData.file); } 
+                    catch (e) { rawFiles = fetchedData.file.replace(/[\[\]"]/g, '').split(',').map(s => s.trim()).filter(s => s.length > 0); }
                 }
                 
-                const fullFileUrls = rawFiles.map(path => {
-                    return `${IMAGE_PROXY_PATH}?path=${encodeURIComponent(path)}`; 
-                });
-                
-                setFilePreviews(fullFileUrls);
+                if (rawFiles.length > 0) {
+                    // Fetch setiap file sebagai Blob URL agar bisa ditampilkan
+                    const fileUrls = await Promise.all(rawFiles.map(async (path) => {
+                        return await fetchImageDirectly(path, token);
+                    }));
+                    setFilePreviews(fileUrls);
+                }
 
             } catch (err: any) {
                 setError(`Terjadi kesalahan koneksi atau server: ${err.message || err.toString()}`);
@@ -443,54 +396,13 @@ export default function DetailPengajuanPage() {
         }, 300);
     };
 
-    // --- RENDER BLOCK ---
-    if (!permissionsLoaded) {
-        return (
-            <div className="flex items-center justify-center h-screen bg-gray-50">
-                <Loader2 className="animate-spin text-blue-600 mr-2" size={32}/>
-                <span className="text-xl text-gray-700">Memeriksa izin akses...</span>
-            </div>
-        );
-    }
-
-    if (!hasAccess) {
-        return <AccessDeniedUI />;
-    }
+    if (!permissionsLoaded) return <div className="flex items-center justify-center h-screen bg-gray-50"><Loader2 className="animate-spin text-blue-600 mr-2" size={32}/><span className="text-xl text-gray-700">Memeriksa izin akses...</span></div>;
+    if (!hasAccess) return <AccessDeniedUI />;
+    if (loading) return <div className="flex items-center justify-center h-screen bg-gray-50"><Loader2 className="animate-spin text-blue-600 mr-2" size={32}/><span className="text-xl text-gray-700">Memuat Detail Pengajuan...</span></div>;
+    if (error) return <div className="p-8 text-center bg-red-100 text-red-700 rounded-lg m-8 border border-red-300"><AlertTriangle className="inline-block mr-2" size={24}/><h2 className="text-xl font-bold">Gagal Memuat Data</h2><p>{error}</p></div>;
+    if (!data) return <div className="p-8 text-center bg-gray-100 text-gray-700 rounded-lg m-8 border border-gray-300"><h2 className="text-xl font-bold">Data Tidak Ditemukan</h2></div>;
     
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-screen bg-gray-50">
-                <Loader2 className="animate-spin text-blue-600 mr-2" size={32}/>
-                <span className="text-xl text-gray-700">Memuat Detail Pengajuan...</span>
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="p-8 text-center bg-red-100 text-red-700 rounded-lg m-8 border border-red-300">
-                <AlertTriangle className="inline-block mr-2" size={24}/>
-                <h2 className="text-xl font-bold">Gagal Memuat Data</h2>
-                <p>{error}</p>
-            </div>
-        );
-    }
-
-    if (!data) {
-         return (
-            <div className="p-8 text-center bg-gray-100 text-gray-700 rounded-lg m-8 border border-gray-300">
-                <h2 className="text-xl font-bold">Data Tidak Ditemukan</h2>
-                <p>Pengajuan dengan UUID {uuid} tidak ada atau telah dihapus.</p>
-            </div>
-        );
-    }
-    
-    const { 
-        no_surat, no_referensi, keterangan, status, name_pelapor, npp_pelapor, 
-        mengetahui, masterhal, catatan_status, 
-        display_kepada, display_satker_asal
-    } = data;
-    
+    const { no_surat, no_referensi, keterangan, status, name_pelapor, npp_pelapor, mengetahui, masterhal, catatan_status, display_kepada, display_satker_asal } = data;
     const halDisplay = masterhal?.nama_jenis || data.hal || "-";
     const jabatanMengetahui = mengetahui || "...........................";
 
@@ -507,16 +419,9 @@ export default function DetailPengajuanPage() {
                 }
                 .big-box { border: 1px solid #000; min-height: 120px; padding: 8px; }
                 .ttd-container { border: 1px solid #ccc; }
-                
-                .kepada-yth-container {
-                    line-height: 1.2; 
-                }
-                .kepada-yth-container div {
-                    margin-bottom: 2px; 
-                }
-                .kepada-yth-container .font-semibold {
-                    margin-bottom: 5px; 
-                }
+                .kepada-yth-container { line-height: 1.2; }
+                .kepada-yth-container div { margin-bottom: 2px; }
+                .kepada-yth-container .font-semibold { margin-bottom: 5px; }
             `}</style>
             
             <MediaViewerModal viewer={viewerModal} onClose={handleCloseMediaViewer} />
@@ -527,16 +432,11 @@ export default function DetailPengajuanPage() {
                     <div className="flex items-center gap-3">
                         <div className="bg-blue-600 p-2 rounded text-white"><Eye /></div>
                         <div>
-                            <div className="font-semibold text-base">
-                                Detail Pengajuan Status: {status} 
-                            </div>
+                            <div className="font-semibold text-base">Detail Pengajuan Status: {status}</div>
                             <div className="text-xs text-gray-500">(No: {no_surat || 'N/A'})</div>
                         </div>
                     </div>
-                    <button
-                        onClick={handlePrint}
-                        className="px-3 py-2 bg-blue-600 text-white rounded flex items-center gap-2 hover:bg-blue-700 transition"
-                    >
+                    <button onClick={handlePrint} className="px-3 py-2 bg-blue-600 text-white rounded flex items-center gap-2 hover:bg-blue-700 transition">
                         <Printer size={16} /> Cetak Form
                     </button>
                 </div>
@@ -544,16 +444,10 @@ export default function DetailPengajuanPage() {
                 {status && status.toLowerCase() === 'rejected' && catatan_status && (
                     <div className="bg-red-50 border-l-4 border-red-500 p-4 m-4 no-print">
                         <div className="flex">
-                            <div className="flex-shrink-0">
-                                <AlertTriangle className="h-5 w-5 text-red-400" />
-                            </div>
+                            <AlertTriangle className="h-5 w-5 text-red-400 flex-shrink-0" />
                             <div className="ml-3">
-                                <h3 className="text-sm font-medium text-red-800">
-                                    Catatan Penolakan
-                                </h3>
-                                <div className="mt-2 text-sm text-red-700">
-                                    <p>{catatan_status}</p>
-                                </div>
+                                <h3 className="text-sm font-medium text-red-800">Catatan Penolakan</h3>
+                                <div className="mt-2 text-sm text-red-700"><p>{catatan_status}</p></div>
                             </div>
                         </div>
                     </div>
@@ -577,7 +471,6 @@ export default function DetailPengajuanPage() {
                                 <span className="font-semibold whitespace-nowrap">Hal:</span>
                                 <span className="font-normal">{halDisplay}</span> 
                             </div>
-                            
                             <div className="flex items-center gap-2">
                                 <span className="text-xs font-semibold whitespace-nowrap">Ref. Surat:</span>
                                 <span className="font-normal text-xs">{no_referensi|| "-"}</span>
@@ -587,7 +480,6 @@ export default function DetailPengajuanPage() {
                         <div className="w-1/2 text-sm kepada-yth-container">
                             Kepada Yth. 
                             <div className="font-semibold">{display_kepada || "-"}</div>
-                            
                             PERUMDA AIR MINUM Tirta Moedal <div>di <strong>SEMARANG</strong></div>
                         </div>
                     </div>
@@ -619,37 +511,35 @@ export default function DetailPengajuanPage() {
                             <div className="font-semibold mb-2">Lampiran File :</div>
                             <div className="grid grid-cols-4 gap-3">
                                 {filePreviews.map((src, i) => {
-                                    const isPdf = src.toLowerCase().endsWith('.pdf');
-                                    const title = isPdf ? `PDF File #${i + 1}` : `Gambar File #${i + 1}`;
+                                    // Deteksi PDF based on content (sedikit tricky dengan blob url, tapi nama file asli sudah tidak ada)
+                                    // Kita coba render sebagai image dulu, kalau error (karena pdf), kita anggap PDF?
+                                    // Atau lebih baik kita asumsikan semua image, dan sediakan tombol "Buka PDF" jika gagal render
+                                    
+                                    // NOTE: Blob URL tidak punya ekstensi. Kita gunakan state 'isPdf' di modal viewer.
+                                    // Untuk thumbnail, kita coba tampilkan IMG.
+                                    
+                                    const title = `Lampiran File #${i + 1}`;
                                     
                                     return (
-                                        <div 
-                                            key={i} 
-                                            onClick={() => handleViewMedia(src, isPdf, title)}
-                                            className="block cursor-pointer"
-                                        >
-                                            {isPdf ? (
-                                                <div className="w-full h-24 flex flex-col items-center justify-center bg-red-100 rounded border border-red-300 hover:bg-red-200 transition">
-                                                    <FileText size={32} className="text-red-500" />
-                                                    <span className="text-xs text-red-700 mt-1">Lihat PDF</span>
-                                                </div>
-                                            ) : (
-                                                <img
-                                                src={src}
-                                                alt={`Lampiran ${i + 1}`}
+                                        <div key={i} onClick={() => handleViewMedia(src, false, title)} className="block cursor-pointer">
+                                            <img 
+                                                src={src} 
+                                                alt={`Lampiran ${i + 1}`} 
                                                 className="w-full h-24 object-cover rounded border border-gray-300 hover:border-blue-500 transition-colors"
                                                 onError={(e) => {
-                                                    // 1. Mencegah loop infinite jika gambar fallback juga error
-                                                    e.currentTarget.onerror = null; 
-                                                    
-                                                    e.currentTarget.src = "https://placehold.co/400x300?text=File+Tidak+Ditemukan&font=roboto";
-                                                    
-                                                    // Opsional: Tambahkan border merah biar ketahuan kalau error
-                                                    e.currentTarget.style.border = "2px solid red";
+                                                    // Jika gagal load sebagai image, mungkin PDF. Ganti icon PDF.
+                                                    e.currentTarget.style.display = 'none';
+                                                    e.currentTarget.parentElement!.classList.add('bg-red-50', 'flex', 'items-center', 'justify-center');
+                                                    e.currentTarget.parentElement!.innerHTML = `
+                                                        <div class="text-center p-2">
+                                                            <svg class="w-8 h-8 text-red-500 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                                            <span class="text-xs text-red-700 block mt-1">Dokumen/PDF</span>
+                                                        </div>
+                                                    `;
+                                                    // Update modal click handler to open as PDF iframe
+                                                    e.currentTarget.parentElement!.onclick = () => handleViewMedia(src, true, title);
                                                 }}
                                             />
-                                            )}
-                                            
                                             <span className="text-xs text-gray-600 mt-1 block truncate">File {i + 1}</span>
                                         </div>
                                     );
@@ -658,34 +548,22 @@ export default function DetailPengajuanPage() {
                         </div>
                     )}
 
-
                     <div className="mt-3 text-xs text-left">
                         Demikian laporan kami untuk menjadi periksa dan mohon untuk perhatian.
                     </div>
                     
-                    {/* TANDA TANGAN (STANDARISASI UKURAN - DIUBAH DISINI) */}
                     <div className="mt-16 flex justify-between px-10 text-center">
-                        
                         {/* Kolom Mengetahui */}
                         <div className="flex flex-col items-center w-[200px]">
-                            {/* Header */}
                             <div className="h-12 flex flex-col justify-end pb-2">
                                 <div className="text-sm font-semibold">Mengetahui</div>
                                 <div className="text-[10px] leading-none text-gray-600 max-w-[180px]">{jabatanMengetahui}</div> 
                             </div>
-
-                            {/* CONTAINER TTD STANDAR - TINGGI DIKURANGI */}
                             <div className="w-[200px] h-[80px] flex items-center justify-center my-1">
                                 {ttdMengetahuiPreview && (
-                                    <img 
-                                        src={ttdMengetahuiPreview} 
-                                        alt="TTD Mengetahui"
-                                        className="max-w-full max-h-full object-contain"
-                                    />
+                                    <img src={ttdMengetahuiPreview} alt="TTD Mengetahui" className="max-w-full max-h-full object-contain"/>
                                 )}
                             </div>
-
-                            {/* Nama & NPP */}
                             <div className="mt-1 w-full">
                                 <div className="text-sm font-medium underline decoration-gray-400 underline-offset-2 break-words">
                                     {data.mengetahui_name || "(...........................)"}
@@ -698,23 +576,14 @@ export default function DetailPengajuanPage() {
 
                         {/* Kolom Pelapor */}
                         <div className="flex flex-col items-center w-[200px]">
-                            {/* Header */}
                             <div className="h-12 flex flex-col justify-end pb-2">
                                 <div className="text-sm font-semibold">Pelapor</div>
                             </div>
-                            
-                            {/* CONTAINER TTD STANDAR - TINGGI DIKURANGI */}
                             <div className="w-[200px] h-[80px] flex items-center justify-center my-1">
                                 {ttdPelaporPreview && (
-                                    <img
-                                        src={ttdPelaporPreview}
-                                        alt="Tanda tangan pelapor"
-                                        className="max-w-full max-h-full object-contain"
-                                    />
+                                    <img src={ttdPelaporPreview} alt="Tanda tangan pelapor" className="max-w-full max-h-full object-contain"/>
                                 )}
                             </div>
-
-                            {/* Nama & NPP */}
                             <div className="mt-1 w-full">
                                 <div className="text-sm font-medium underline decoration-gray-400 underline-offset-2 break-words">
                                     {name_pelapor || "(...........................)"}
@@ -729,10 +598,7 @@ export default function DetailPengajuanPage() {
             </div>
 
             <div className="flex justify-center mt-6 no-print">
-                <button 
-                    onClick={() => router.back()}
-                    className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors shadow-md"
-                >
+                <button onClick={() => router.back()} className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors shadow-md">
                     Kembali ke Daftar Pengajuan
                 </button>
             </div>

@@ -18,13 +18,17 @@ import {
     Copy,
     MapPin,
     CheckCircle,
-    FileX // Icon untuk state data kosong
+    FileX 
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-// --- KONSTANTA API & PERMISSION ---
-const DELETE_API_SPK_URL_LOCAL = "/api/spk/delete/"; 
-const RIWAYAT_SPK_STAFF_BASE_URL = "/api/spk/riwayat-staff"; 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+const API_ENDPOINTS = {
+    RIWAYAT_STAFF: `${API_BASE_URL}/spk/staf`, 
+    DELETE: `${API_BASE_URL}/spk/delete` 
+};
+
 const MAX_RETRIES = 1;
 
 const RIWAYAT_PERMISSION = 'workorder-pti.spk.riwayat.views';
@@ -65,6 +69,10 @@ type ModalState = {
     spkToDelete: SPKItem | null;
 };
 
+type CurrentUser = {
+    npp: string;
+    name: string;
+};
 
 // --- HELPER FUNCTIONS ---
 
@@ -161,6 +169,7 @@ function RiwayatSPKContent() {
     // --- STATE MANAGEMENT ---
     const [permissionsLoaded, setPermissionsLoaded] = useState(false);
     const [userPermissions, setUserPermissions] = useState<string[]>([]);
+    const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
     const [loading, setLoading] = useState(true);
     const [spks, setSpks] = useState<SPKItem[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
@@ -199,6 +208,17 @@ function RiwayatSPKContent() {
                     setUserPermissions([]);
                 }
             }
+
+            const storedUser = localStorage.getItem('user_data');
+            if (storedUser) {
+                try {
+                    const userData = JSON.parse(storedUser);
+                    setCurrentUser(userData);
+                } catch (e) {
+                    console.error("Gagal parse user_data", e);
+                }
+            }
+
             setPermissionsLoaded(true);
         }
     }, []);
@@ -256,10 +276,12 @@ function RiwayatSPKContent() {
         const nomor = modal.spkToDelete.nomor;
         const token = localStorage.getItem("token"); 
 
+        const deleteUrl = `${API_ENDPOINTS.DELETE}/${uuid}`;
+
         try {
             if (!token) throw new Error("Token tidak ditemukan.");
             
-            const res = await fetch(`${DELETE_API_SPK_URL_LOCAL}/${uuid}`, {
+            const res = await fetch(deleteUrl, {
                 method: "DELETE",
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -267,9 +289,10 @@ function RiwayatSPKContent() {
                 },
             });
 
+            const responseData = await res.json();
+
             if (!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.message || "Gagal menghapus SPK");
+                throw new Error(responseData.message || "Gagal menghapus SPK");
             }
 
             await new Promise((r) => setTimeout(r, 600)); 
@@ -285,7 +308,7 @@ function RiwayatSPKContent() {
         }
     };
 
-    // ---- FETCH DATA ----
+    // ---- FETCH DATA DIRECT ----
     const fetchData = useCallback(async () => {
         if (!permissionsLoaded) return; 
         
@@ -305,7 +328,7 @@ function RiwayatSPKContent() {
             return;
         }
         
-        const DYNAMIC_API_URL = `${RIWAYAT_SPK_STAFF_BASE_URL}`;
+        const DYNAMIC_API_URL = API_ENDPOINTS.RIWAYAT_STAFF;
 
         for (let i = 0; i < MAX_RETRIES; i++) {
             try {
@@ -327,11 +350,10 @@ function RiwayatSPKContent() {
 
                 const result = await res.json();
 
-                // HANDLE KHUSUS: Jika sukses tapi data array kosong
                 if (result.success && (!result.data || result.data.length === 0)) {
-                    setSpks([]); // Set state ke array kosong
+                    setSpks([]); 
                     setLoading(false);
-                    return; // Stop di sini, jangan lanjut mapping
+                    return; 
                 }
 
                 const rawData = Array.isArray(result.data) ? result.data : [];

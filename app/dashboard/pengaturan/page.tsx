@@ -10,7 +10,7 @@ import {
   Settings,
   ShieldCheck,
   Printer,
-  Home // Icon Home untuk tombol kembali
+  Home 
 } from 'lucide-react';
 
 import ProfilSayaContent from '@/components/ProfilSayaContent'; 

@@ -1,16 +1,23 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Waves, Droplet, User, LogOut, Settings, Lock } from 'lucide-react';
+import { User, Lock, Settings } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import DateFilter from '@/components/DateFilter'; 
 import DashboardStats from '@/components/DashboardStats';
 import LogoutModal from '@/components/LogoutModal';
 
-// --- API CONFIGURATION ---
-const DASHBOARD_API_LOCAL_PROXY = "/api/dashboard-data";
+// --- KONFIGURASI API DARI ENV ---
+const API_BASE_WORKORDER = process.env.NEXT_PUBLIC_API_BASE_URL;
+const API_BASE_PORTAL = process.env.NEXT_PUBLIC_API_BASE_URL_PORTAL_PEGAWAI;
 
-// --- TYPE DEFINITIONS ---
+if (!API_BASE_WORKORDER || !API_BASE_PORTAL) {
+    console.error("CRITICAL: ENV Variables (NEXT_PUBLIC_API_BASE_URL atau NEXT_PUBLIC_API_BASE_URL_PORTAL_PEGAWAI) belum disetting!");
+}
+
+const URL_API_DASHBOARD = `${API_BASE_WORKORDER}/dashboard/data`;
+const URL_API_LOGOUT = `${API_BASE_PORTAL}/auth/logout`;
+
 type ActiveFilter = { 
     startDate: string; 
     endDate: string; 
@@ -37,13 +44,13 @@ export default function DashboardPage() {
     const [userPermissions, setUserPermissions] = useState<string[]>([]);
     const [showSettingsAccessDenied, setShowSettingsAccessDenied] = useState(false);
 
-    // --- HELPER FUNCTIONS ---
     const getToken = () => localStorage.getItem("token");
 
     const hasPermission = useCallback((permissionName: string): boolean => {
         return userPermissions.includes(permissionName);
     }, [userPermissions]);
 
+    // Load User Data
     useEffect(() => {
         const storedUserData = localStorage.getItem("user_data");
         if (storedUserData) {
@@ -56,6 +63,7 @@ export default function DashboardPage() {
         }
     }, []);
 
+    // Load Permissions
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const storedPermissions = localStorage.getItem('user_permissions');
@@ -74,12 +82,12 @@ export default function DashboardPage() {
         }
     }, []);
 
-    // --- API CALLS ---
+    // --- API CALLS (DIRECT FETCH VIA ENV) ---
     const fetchDashboardData = useCallback(async () => { 
         const token = getToken(); 
         
         if (!token) { 
-            console.warn("Token tidak ditemukan."); 
+            console.warn("Token tidak ditemukan, membatalkan request dashboard."); 
             return; 
         }
         
@@ -101,16 +109,18 @@ export default function DashboardPage() {
         }
         
         const queryParams = new URLSearchParams(payload).toString();
+        const finalUrl = `${URL_API_DASHBOARD}?${queryParams}`;
         
         try {
-            const res = await fetch(`${DASHBOARD_API_LOCAL_PROXY}?${queryParams}`, { 
+            const res = await fetch(finalUrl, { 
                 method: "GET", 
                 headers: { 
                     Authorization: `Bearer ${token}`, 
                     "Content-Type": "application/json", 
+                    "Accept": "application/json"
                 },
             });
-            
+
             if (!res.ok) { 
                 console.warn("Gagal mengambil data dashboard:", res.status); 
                 setDashboardData(null); 
@@ -119,51 +129,51 @@ export default function DashboardPage() {
             
             const result = await res.json();
             
-            if (!result.success) { 
-                console.warn("Gagal mengambil data dashboard:", result.message); 
+            if (result.success === false) { 
+                console.warn("API mengembalikan success: false", result.message); 
                 setDashboardData(null); 
                 return; 
             }
             
             setDashboardData(result); 
         } catch (err) { 
-            console.error("Error fetching dashboard data:", err); 
+            console.error("Error fetching dashboard data (Network/CORS):", err); 
             setDashboardData(null); 
         } finally { 
             setLoadingDashboardData(false); 
         }
-    }, [activeFilter]);
+    }, [activeFilter, router]);
 
-    // --- LOGOUT FUNCTION ---
+    // --- LOGOUT FUNCTION (DIRECT FETCH VIA ENV) ---
     const handleLogout = useCallback(async () => {
         setLoggingOut(true);
         const token = localStorage.getItem("token"); 
+        
+        // Bersihkan Storage Dulu (Optimistic UI Update)
         localStorage.removeItem("token"); 
         localStorage.removeItem("user_data"); 
         localStorage.removeItem("user_permissions");
         
-        if (!token) { 
-            router.push("/login"); 
-            setLoggingOut(false); 
-            return; 
+        if (token) {
+            try { 
+                // Request Logout ke API Asli
+                await fetch(URL_API_LOGOUT, { 
+                    method: 'POST', 
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }, 
+                }); 
+            } catch (error) { 
+                console.error("Error calling logout API:", error); 
+            } 
         }
-        
-        try { 
-            await fetch('/api/logout', { 
-                method: 'POST', 
-                headers: { 
-                    'Authorization': `Bearer ${token}`, 
-                }, 
-            }); 
-        } catch (error) { 
-            console.error("Error calling local proxy:", error); 
-        } finally { 
-            router.push("/login"); 
-            setLoggingOut(false); 
-        }
+
+        router.push("/login"); 
+        setLoggingOut(false); 
     }, [router]);
 
-    // --- SETTINGS FUNCTION ---
+    // --- SETTINGS NAV ---
     const handleSettingsClick = useCallback(() => {
         if (hasPermission('workorder-pti.view.pengaturan')) {
             router.push('/pengaturan');
@@ -177,7 +187,7 @@ export default function DashboardPage() {
         fetchDashboardData();
     }, [fetchDashboardData]);
 
-    // --- RENDER ---
+    // --- RENDER PERMISSION CHECK ---
     if (!permissionsLoaded) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
@@ -188,7 +198,6 @@ export default function DashboardPage() {
             </div>
         );
     }
-
 
     if (!hasPermission('workorder-pti.view.dashboard')) {
         return (
@@ -201,7 +210,7 @@ export default function DashboardPage() {
                     <p className="text-gray-700 mb-6 leading-relaxed">
                         Maaf, Anda tidak memiliki izin yang diperlukan untuk mengakses halaman Dashboard.
                     </p>
-                    <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                    <div className="bg-gray-5 rounded-lg p-4 mb-6 text-left">
                         <p className="text-sm font-semibold text-gray-700 mb-2">Izin yang Diperlukan:</p>
                         <div className="space-y-1">
                             <div className="flex items-center gap-2">
@@ -212,9 +221,6 @@ export default function DashboardPage() {
                             </div>
                         </div>
                     </div>
-                    <p className="text-sm text-gray-500 mb-6">
-                        Silakan hubungi administrator sistem untuk memperoleh izin yang sesuai.
-                    </p>
                     <button
                         onClick={() => setShowLogoutModal(true)}
                         className="w-full bg-blue-600 text-white py-3 rounded-lg mt-4 flex items-center justify-center hover:bg-blue-700 transition-colors"
@@ -224,7 +230,6 @@ export default function DashboardPage() {
                     </button>
                 </div>
 
-                {/* --- TAMBAHKAN MODAL DI SINI AGAR BISA MUNCUL --- */}
                 <LogoutModal 
                     show={showLogoutModal} 
                     onConfirm={handleLogout} 
@@ -235,6 +240,7 @@ export default function DashboardPage() {
         );
     }
 
+    // --- RENDER MAIN CONTENT ---
     return (
         <>  
             <DateFilter 
@@ -255,19 +261,15 @@ export default function DashboardPage() {
                         <p className="text-gray-700 mb-6 text-center">
                             Maaf, Anda tidak memiliki izin yang diperlukan untuk mengakses halaman Pengaturan.
                         </p>
-                        <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                        <div className="bg-gray-5 rounded-lg p-4 mb-6">
                             <p className="text-sm font-semibold text-gray-700 mb-2">Izin yang Diperlukan:</p>
                             <div className="flex items-center gap-2">
                                 <span className="text-red-500">✗</span>
                                 <code className="bg-red-100 text-red-700 px-2 py-1 rounded text-sm font-mono">
                                     workorder-pti.view.pengaturan
                                 </code>
-                                <span className="text-sm text-gray-600">- Mengakses Pengaturan</span>
                             </div>
                         </div>
-                        <p className="text-sm text-gray-500 mb-6 text-center">
-                            Silakan hubungi administrator sistem untuk memperoleh izin yang sesuai.
-                        </p>
                         <div className="flex gap-3">
                             <button
                                 onClick={() => setShowSettingsAccessDenied(false)}

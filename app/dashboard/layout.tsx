@@ -1,19 +1,24 @@
-// app/dashboard/layout.tsx
-
 "use client"
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Menu, X, CheckCircle, AlertTriangle } from 'lucide-react'; // Tambah Icon untuk Toast
+import { Menu, X, CheckCircle, AlertTriangle } from 'lucide-react'; 
+
 
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import LogoutModal from '@/components/LogoutModal';
 
-const NOTIFICATIONS_API_LOCAL_PROXY = "/api/notifications";
-const NOTIFICATIONS_ALL_API_LOCAL_PROXY = "/api/notifications/all";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+const PORTAL_API_URL = process.env.NEXT_PUBLIC_API_BASE_URL_PORTAL_PEGAWAI;
 
-// --- TIPE DATA TOAST ---
+const API_ENDPOINTS = {
+    NOTIFICATIONS_USER: `${API_BASE_URL}/notifications`, 
+    UPDATE_READ: `${API_BASE_URL}/notifications/update`,
+    UPDATE_ALL_READ: `${API_BASE_URL}/notifications/update/all`,
+    LOGOUT: `${PORTAL_API_URL}/auth/logout`
+};
+
 type ToastMessage = {
     show: boolean;
     message: string;
@@ -37,7 +42,6 @@ interface Notification {
     uuid_pengajuan?: string; 
 }
 
-// --- KOMPONEN TOAST SEDERHANA ---
 const ToastBox = ({ toast, onClose }: { toast: ToastMessage, onClose: () => void }) =>
     toast.show && (
         <div className={`fixed top-5 right-5 px-4 py-3 rounded-xl shadow-xl text-white text-sm z-[100] transition-all duration-300 flex items-center gap-3 animate-in slide-in-from-right-5 ${
@@ -55,7 +59,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const router = useRouter();
     const pathname = usePathname();
 
-    // --- STATE MANAGEMENT ---
     const [collapsed, setCollapsed] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -64,7 +67,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const [loggingOut, setLoggingOut] = useState(false);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-    // STATE TOAST (Tambahan)
     const [toast, setToast] = useState<ToastMessage>({ show: false, message: "", type: "success" });
 
     const [userData, setUserData] = useState<UserData>({});
@@ -77,7 +79,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const [showingAllNotifications, setShowingAllNotifications] = useState(false); 
     const [loadingMoreNotifications, setLoadingMoreNotifications] = useState(false); 
     
-    // State Loading untuk Button "Tandai Semua"
     const [markingAllAsRead, setMarkingAllAsRead] = useState(false);
     
     const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
@@ -86,110 +87,57 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     const getToken = () => localStorage.getItem("token");
 
-    // Helper untuk menampilkan Toast
     const showToast = useCallback((message: string, type: "success" | "error") => {
         setToast({ show: true, message, type });
         setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
     }, []);
 
-    // ... (Kode useEventSourceNotifications SAMA, tidak perlu diubah) ...
     const useEventSourceNotifications = useCallback(() => {
-        const storedUserData = localStorage.getItem("user_data");
-        if (!storedUserData) return;
-        
-        let userData: UserData;
-        try {
-            userData = JSON.parse(storedUserData) as UserData;
-        } catch (e) {
-            console.error("Gagal parse user data:", e);
-            return;
-        }
-        
-        const npp = userData.npp;
-        if (!npp || npp === '-') return;
-        
-        const token = getToken();
-        if (!token) return;
-        
-        setLoadingNotifications(true);
-        
-        if (window.notificationEventSource) {
-            window.notificationEventSource.close();
-        }
-        
-        const eventSourceUrl = `${NOTIFICATIONS_API_LOCAL_PROXY}/stream?npp=${npp}&token=${encodeURIComponent(token)}`;
-        const eventSource = new EventSource(eventSourceUrl);
-        window.notificationEventSource = eventSource;
-        
-        eventSource.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                
-                if (data.connected) {
-                    console.log('Terhubung ke stream notifikasi');
-                    setLoadingNotifications(false);
-                    return;
-                }
-                
-                if (data.error) {
-                    console.error('Error dari stream notifikasi:', data.error);
-                    setLoadingNotifications(false);
-                    return;
-                }
-                
-                const rawApiNotifications = data.data;
-                
-                if (Array.isArray(rawApiNotifications)) {
-                    const mappedNotifications: Notification[] = rawApiNotifications.map((item: any) => ({
-                        id: item.id,
-                        title: item.judul,
-                        message: item.pesan,
-                        read: item.status === 'read',
-                        created_at: item.created_at,
-                        uuid_pengajuan: item.uuid_pengajuan || null,
-                    }))
-                    .sort((a, b) => {
-                        if (a.created_at && b.created_at) {
-                            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-                        }
-                        return 0;
-                    });
-                    
-                    setNotifications(mappedNotifications);
-                    setUnreadNotificationCount(data.unread_count || 0);
-                    
-                    // Logic browser notification pop-up (sama seperti kode Anda)
-                    const newUnreadNotifications = mappedNotifications.filter(n => !n.read);
-                    if (newUnreadNotifications.length > 0) {
-                        if ("Notification" in window && Notification.permission === "granted") {
-                            const latestNotification = newUnreadNotifications[0];
-                            new Notification(latestNotification.title, {
-                                body: latestNotification.message,
-                                icon: "/favicon.ico",
-                            });
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('Error parsing notification data:', e);
-            } finally {
-                setLoadingNotifications(false);
-            }
-        };
-        
-        eventSource.onerror = (error) => {
-            console.error('EventSource error:', error);
-            setLoadingNotifications(false);
-            
-            setTimeout(() => {
-                if (window.notificationEventSource?.readyState === EventSource.CLOSED) {
-                    useEventSourceNotifications();
-                }
-            }, 5000);
-        };
-    }, []);
+    const token = getToken();
+    const storedUserData = localStorage.getItem("user_data");
+    if (!token || !storedUserData) return;
 
-    // ... (Kode fetchAndSetAllNotifications SAMA, tidak perlu diubah) ...
+    const userDataObj = JSON.parse(storedUserData);
+    const npp = userDataObj.npp;
+    if (!npp || npp === '-') return;
+
+    if (window.notificationEventSource) {
+        window.notificationEventSource.close();
+    }
+
+    // KIRIM TOKEN LEWAT URL (Aman untuk SSE dan mencegah CORS/502)
+    const eventSourceUrl = `${API_ENDPOINTS.NOTIFICATIONS_USER}/${npp}?stream=1&token=${encodeURIComponent(token)}`;
+    
+    // Gunakan EventSource standar browser
+    const eventSource = new EventSource(eventSourceUrl);
+    window.notificationEventSource = eventSource;
+
+    eventSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.success && Array.isArray(data.data)) {
+                const mappedNotifications = data.data.map((item: any) => ({
+                    id: item.id,
+                    title: item.judul,
+                    message: item.pesan,
+                    read: item.status === 'read',
+                    created_at: item.created_at,
+                    uuid_pengajuan: item.uuid_pengajuan || null,
+                }));
+                setNotifications(mappedNotifications);
+                setUnreadNotificationCount(data.unread_count || 0);
+            }
+        } catch (e) {
+            console.error('Error parsing:', e);
+        }
+    };
+
+    eventSource.onerror = () => {
+        eventSource.close();
+    };
+}, [setNotifications, setUnreadNotificationCount]);
+
+    // --- FETCH ALL NOTIFICATIONS (DIRECT API) ---
     const fetchAndSetAllNotifications = useCallback(async () => {
         const storedUserData = localStorage.getItem("user_data");
         if (!storedUserData) return;
@@ -207,7 +155,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         setLoadingMoreNotifications(true);
         
         try {
-            const response = await fetch(`${NOTIFICATIONS_ALL_API_LOCAL_PROXY}/${npp}`, {
+            // DIRECT FETCH
+            const response = await fetch(`${API_ENDPOINTS.NOTIFICATIONS_USER}/${npp}`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -215,7 +164,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 },
             });
             
-            if (!response.ok) throw new Error("Gagal fetch API lokal");
+            if (!response.ok) throw new Error("Gagal fetch API Notifikasi");
             
             const data = await response.json();
             const rawData = Array.isArray(data) ? data : (data.data || []); 
@@ -241,13 +190,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }, []);
 
 
-    // --- API CALLS ---
+    // --- MARK READ SINGLE (DIRECT API) ---
     const markNotificationAsRead = useCallback(async (notificationId: number) => {
         const token = getToken();
         if (!token) return;
 
         try {
-            const res = await fetch(`/api/notifications/update/${notificationId}`, {
+            const res = await fetch(`${API_ENDPOINTS.UPDATE_READ}/${notificationId}`, {
                 method: "PUT",
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -266,7 +215,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }
     }, []); 
 
-    // --- FUNGSI UPDATE: MENAMBAHKAN TOAST DISINI ---
+    // --- MARK ALL READ (DIRECT API) ---
     const markAllNotificationsAsRead = useCallback(async () => { 
         const token = getToken(); 
         if (!token) return;
@@ -276,7 +225,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (!npp || npp === '-') return;
 
         try {
-            const res = await fetch(`${NOTIFICATIONS_API_LOCAL_PROXY}/update/${npp}`, {
+            const res = await fetch(`${API_ENDPOINTS.UPDATE_ALL_READ}/${npp}`, {
                 method: "PUT", 
                 headers: { 
                     Authorization: `Bearer ${token}`, 
@@ -289,7 +238,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             setAllNotifications(prev => prev.map(n => ({ ...n, read: true })));
             setUnreadNotificationCount(0);
             
-            // Tampilkan notifikasi sukses
             showToast("Semua notifikasi telah ditandai sebagai dibaca", "success");
 
         } catch (err) { 
@@ -299,7 +247,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }, [notifications, allNotifications, showingAllNotifications, userData.npp, showToast]);
 
 
-    // --- FUNGSI UPDATE: MENAMBAHKAN TOAST DISINI (Utama) ---
+    // --- MARK ALL READ UTAMA (DIRECT API) ---
     const markAllNotificationsAsReadAll = useCallback(async () => { 
         const token = getToken(); 
         if (!token) return;
@@ -307,10 +255,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const npp = userData.npp; 
         if (!npp || npp === '-') return;
 
-        setMarkingAllAsRead(true); // Mulai loading
+        setMarkingAllAsRead(true); 
 
         try {
-            const res = await fetch(`/api/notifications/update/all/${npp}`, {
+            const res = await fetch(`${API_ENDPOINTS.UPDATE_ALL_READ}/${npp}`, {
                 method: "PUT", 
                 headers: { 
                     Authorization: `Bearer ${token}`, 
@@ -320,19 +268,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             
             if (!res.ok) throw new Error("Gagal update"); 
             
-            // Update UI State
             setNotifications(prev => prev.map(n => ({ ...n, read: true })));
             setAllNotifications(prev => prev.map(n => ({ ...n, read: true })));
             setUnreadNotificationCount(0);
 
-            // Tampilkan Notifikasi Sukses
             showToast("Semua notifikasi berhasil ditandai sebagai dibaca", "success");
 
         } catch (err) { 
             console.error("Error marking all notifications as read:", err); 
             showToast("Gagal melakukan aksi", "error");
         } finally {
-            // Beri sedikit delay agar user sempat melihat spinner loadingnya
             setTimeout(() => {
                 setMarkingAllAsRead(false);
             }, 500);
@@ -360,6 +305,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         setShowLogoutConfirm(true);
     }, []);
 
+    // --- LOGOUT (DIRECT API) ---
     const handleLogout = useCallback(async () => {
         setLoggingOut(true);
         const token = localStorage.getItem("token");
@@ -373,14 +319,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             return; 
         }
         try { 
-            await fetch('/api/logout', { 
+            // HIT PORTAL LOGOUT DIRECTLY
+            await fetch(API_ENDPOINTS.LOGOUT, { 
                 method: 'POST', 
                 headers: { 
                     'Authorization': `Bearer ${token}`, 
                 }, 
             }); 
         } catch (error) { 
-            console.error("Error calling local proxy:", error); 
+            console.error("Error logging out:", error); 
         } finally { 
             router.push("/login"); 
             setLoggingOut(false); 
@@ -444,15 +391,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // --- MENU CONFIGURATION (Sama) ---
     const allMenuItems = [ 
         { href: "/dashboard", 
-            label: "Dashboard", 
-            icon: require('lucide-react').LayoutDashboard, 
-            description: "Ringkasan & Statistik",
-            requiredPermission: "workorder-pti.view.dashboard"
-            }, 
+          label: "Dashboard", 
+          icon: require('lucide-react').LayoutDashboard, 
+          description: "Ringkasan & Statistik",
+          requiredPermission: "workorder-pti.view.dashboard"
+          }, 
         { href: "/dashboard/admin", 
-            label: "Admin", icon: require('lucide-react').Users, 
-            description: "Kelola Pengguna", 
-            requiredPermission: "workorder-pti.Admin"
+          label: "Admin", icon: require('lucide-react').Users, 
+          description: "Kelola Pengguna", 
+          requiredPermission: "workorder-pti.Admin"
         }, 
 
         { 
@@ -520,9 +467,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 pathname={pathname} 
                 handleNavigation={handleNavigation} 
                 handleLogout={requestLogout} 
-                loggingOut={loggingOut} 
+                loggingOut={loggingOut}
+                mobileMenuOpen={mobileMenuOpen}
+                setMobileMenuOpen={setMobileMenuOpen}
             />
-            
+
             <button 
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
                 className="lg:hidden fixed top-4 left-4 z-[60] bg-white/90 backdrop-blur-md p-3 rounded-xl shadow-lg border border-cyan-200 transition-transform hover:scale-110"
@@ -549,7 +498,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     markNotificationAsRead={markNotificationAsRead}
                     markAllNotificationsAsRead={markAllNotificationsAsRead}
                     markAllNotificationsAsReadAll={markAllNotificationsAsReadAll}
-                    markingAllAsRead={markingAllAsRead} // State loading dikirim ke header -> portal -> dropdown
+                    markingAllAsRead={markingAllAsRead} 
                     onLoadMoreNotifications={handleLoadMoreNotifications}
                 />
 

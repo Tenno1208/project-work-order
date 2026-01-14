@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react'; // 1. Import useRef
+import React, { useState, useEffect, useRef } from 'react'; 
 import { 
     User, 
     Phone, 
@@ -13,6 +13,8 @@ import {
     BadgeCheck
 } from 'lucide-react';
 
+const PORTAL_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL_PORTAL_PEGAWAI;
+
 interface UserProfile {
     nama?: string;
     npp?: string;
@@ -20,6 +22,8 @@ interface UserProfile {
     satker?: string;
     subsatker?: string;
     alamat?: string; 
+    name?: string; 
+    email?: string;
 }
 
 export default function ProfilSayaContent() {
@@ -27,15 +31,13 @@ export default function ProfilSayaContent() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // 2. Buat Ref untuk melacak apakah komponen sudah mount
     const didMountRef = useRef(false);
 
     const getToken = () => localStorage.getItem("token");
 
     useEffect(() => {
-        // 3. Cek jika sudah mount sebelumnya, hentikan eksekusi
         if (didMountRef.current) return; 
-        didMountRef.current = true; // Tandai sudah mount
+        didMountRef.current = true; 
 
         const fetchProfile = async () => {
             setLoading(true);
@@ -48,22 +50,59 @@ export default function ProfilSayaContent() {
                 return;
             }
 
+            if (!PORTAL_BASE_URL) {
+                console.error("ENV NEXT_PUBLIC_API_BASE_URL_PORTAL_PEGAWAI belum diset!");
+                setError("Konfigurasi server belum lengkap.");
+                setLoading(false);
+                return;
+            }
+
             try {
-                const res = await fetch("/api/me", {
+                const response = await fetch(`${PORTAL_BASE_URL}/auth/me`, {
                     method: "GET",
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
+                        "Authorization": `Bearer ${token}`,
                     },
                 });
 
-                if (!res.ok) {
-                    throw new Error(`Gagal mengambil data: ${res.statusText}`);
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        throw new Error("Sesi kadaluarsa. Silakan login ulang.");
+                    }
+                    throw new Error(`Gagal mengambil data: ${response.status} ${response.statusText}`);
                 }
 
-                const data: UserProfile = await res.json();
-                setProfile(data);
+                const result = await response.json();
+            
+                // --- LOGIKA MAPPING BARU SESUAI STRUKTUR JSON ---
+                const rootData = result.data || {};
+                const userObj = rootData.user || {};
+                const pegawaiObj = userObj.rl_pegawai || {}; // Data lengkap ada di rl_pegawai
+
+                // Mapping
+                const finalProfile: UserProfile = {
+                    // Prioritas ambil dari rl_pegawai.nama, kalau null ambil dari user.name
+                    nama: pegawaiObj.nama || userObj.name || "Tanpa Nama",
+                    
+                    // Ambil NPP dari user object
+                    npp: userObj.npp || "-",
+                    
+                    // Ambil no telp dari rl_pegawai.tlp
+                    no_telp: pegawaiObj.tlp || "-",
+                    
+                    // Prioritas ambil yang formatted agar lebih rapi
+                    satker: pegawaiObj.satker_formatted || pegawaiObj.satker || "-",
+                    subsatker: pegawaiObj.subsatker_formatted || pegawaiObj.subsatker || "-",
+                    
+                    // Alamat dari rl_pegawai
+                    alamat: pegawaiObj.alamat || "Belum diatur"
+                };
+
+                setProfile(finalProfile);
+
             } catch (err: any) {
+                console.error("Error fetching profile:", err);
                 setError(err.message || "Terjadi kesalahan yang tidak diketahui.");
             } finally {
                 setLoading(false);
@@ -101,7 +140,7 @@ export default function ProfilSayaContent() {
         );
     }
 
-    // --- Tampilan Data Profil (BERSIH - Tanpa Wrapper Card Sendiri) ---
+    // --- Tampilan Data Profil ---
     return (
         <div className="w-full">
             {/* Header Profile Section */}

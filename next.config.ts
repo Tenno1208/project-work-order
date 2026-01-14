@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-
-  eslint: {
+   eslint: {
     ignoreDuringBuilds: true,
   },
   typescript: {
@@ -15,7 +14,7 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'gateway.pdamkotasmg.co.id',
         port: '',
-        pathname: '/api-gw-balanced/file-handler/foto/**', 
+        pathname: '/api-gw-dev/file-handler/foto/**', 
       },
       {
         protocol: 'https',

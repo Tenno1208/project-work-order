@@ -16,12 +16,17 @@ import {
     Lock, 
     Home,
     Copy,
-    MapPin // 1. Import Icon MapPin
+    MapPin 
 } from "lucide-react";
 
-// KONFIGURASI API
-const LIST_API_BASE_PATH = "/api/pengajuan/riwayat"; 
-const DELETE_API_BASE = "/api/pengajuan/delete/";
+// --- KONFIGURASI API DIRECT ---
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+const API_ENDPOINTS = {
+    LIST_VIEWS: `${API_BASE_URL}/pengajuan/riwayat`, 
+    DELETE: `${API_BASE_URL}/pengajuan/delete` 
+};
+
 const MAX_RETRIES = 1;
 
 // KONFIGURASI PERMISSION
@@ -215,7 +220,8 @@ export default function RiwayatDataPengajuanPage() {
             return;
         }
 
-        const fullApiUrl = LIST_API_BASE_PATH;
+        // --- FETCH LANGSUNG KE API ---
+        const fullApiUrl = API_ENDPOINTS.LIST_VIEWS;
         const headers = {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
@@ -241,16 +247,26 @@ export default function RiwayatDataPengajuanPage() {
 
             const result: ApiResponse = await response.json();
 
-            if (!result.success || !Array.isArray(result.data)) {
-                console.warn("Data API kosong / bukan array");
+            // PENTING: Struktur response GET_API_PENGAJUAN_URL biasanya { success: true, data: { data: [...] } } (Paginated)
+            // Atau { success: true, data: [...] } (Non-paginated)
+            // Cek kedua struktur untuk aman
+            let apiDataArray = [];
+            if (Array.isArray(result.data)) {
+                apiDataArray = result.data;
+            } else if (result.data && Array.isArray((result.data as any).data)) {
+                apiDataArray = (result.data as any).data;
+            }
+
+            if (!result.success && !apiDataArray) {
+                console.warn("Data API kosong / struktur tidak sesuai");
                 setPengajuans([]);
                 setLoading(false);
                 return;
             }
 
-            const activeData = result.data.filter((item) => item.is_deleted !== 1);
+            const activeData = apiDataArray.filter((item: any) => item.is_deleted !== 1);
 
-            const mapped = activeData.map((item) => {
+            const mapped = activeData.map((item: any) => {
                 const rawKeterangan = item.keterangan || item.catatan || item.kode_barang || "Tidak Ada Keterangan";
                 return {
                     id: item.id,
@@ -340,7 +356,6 @@ export default function RiwayatDataPengajuanPage() {
         showToast(`No Surat "${text}" berhasil disalin!`, "success");
     };
 
-    // 2. Fungsi Handle Tracking (Baru)
     const handleTracking = (uuid: string) => {
         if (!uuid) return;
         // Membuka tab baru ke halaman tracking
@@ -383,10 +398,10 @@ export default function RiwayatDataPengajuanPage() {
         const headers: HeadersInit = {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
-            "bypass-tunnel-reminder": "true",
         };
 
-        const deleteUrl = `${DELETE_API_BASE}/${uuidToDelete}`;
+        // --- DELETE LANGSUNG KE API ---
+        const deleteUrl = `${API_ENDPOINTS.DELETE}/${uuidToDelete}`;
 
         for (let i = 0; i < MAX_RETRIES; i++) {
             try {

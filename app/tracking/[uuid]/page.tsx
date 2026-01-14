@@ -28,14 +28,11 @@ import {
 } from 'lucide-react';
 
 // ====================================================================
-// --- CONFIGURATION --------------------------------------------------
+// --- CONFIGURATION (DIRECT API VIA ENV) -----------------------------
 // ====================================================================
 
-const API_CONFIG = {
-  PORTAL_BASE_URL: "https://gateway.pdamkotasmg.co.id/api-gw-balanced/portal-pegawai/api",
-  
-  WORKORDER_BASE_URL: "https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti"
-};
+const WORKORDER_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+const PORTAL_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL_PORTAL_PEGAWAI;
 
 // ====================================================================
 // --- HELPER FUNCTIONS -----------------------------------------------
@@ -178,7 +175,7 @@ export default function TrackingPage() {
     const [loginLoading, setLoginLoading] = useState(false);
     const [loginError, setLoginError] = useState("");
 
-    // --- FUNCTION FETCH DATA ---
+    // --- FUNCTION FETCH DATA (DIRECT) ---
     const fetchData = useCallback(async () => {
         if (!uuid) return;
         setLoading(true);
@@ -193,11 +190,11 @@ export default function TrackingPage() {
         }
 
         try {
-            const url = `${API_CONFIG.WORKORDER_BASE_URL}/tracking/uuid/${uuid}`;
+            const url = `${WORKORDER_BASE_URL}/tracking/uuid/${uuid}`;
             
             const res = await fetch(url, {
                 headers: {
-                    'Authorization': `Bearer ${token}` 
+                    'Authorization': `Bearer ${token}`,
                 }
             });
             
@@ -233,20 +230,22 @@ export default function TrackingPage() {
         fetchData();
     }, [fetchData]);
 
-    // --- LOGIN HANDLER ---
+    // --- LOGIN HANDLER (DIRECT) ---
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoginLoading(true);
         setLoginError("");
 
         try {
-            // DIRECT CALL KE PORTAL PEGAWAI
-            const loginUrl = `${API_CONFIG.PORTAL_BASE_URL}/login`;
+            // DIRECT CALL KE PORTAL PEGAWAI (/auth/login)
+            const loginUrl = `${PORTAL_BASE_URL}/auth/login`;
 
             const res = await fetch(loginUrl, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ npp, password, hwid: "prod" }), // Tambahkan hwid sesuai request
+                headers: { 
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ npp, password, hwid: "prod" }), 
             });
 
             // Parsing response lebih aman
@@ -258,11 +257,14 @@ export default function TrackingPage() {
                 result = {};
             }
 
-            if (res.ok && result.token) {
-                localStorage.setItem("token", result.token);
+            if (res.ok && result.data && result.data.access_token) {
+                // Ambil token dari structure portal yang benar (result.data.access_token)
+                localStorage.setItem("token", result.data.access_token);
                 
-                // Optional: Ambil data user sederhana jika perlu disimpan
-                // Tapi untuk tracking cukup token saja dulu agar cepat
+                // Simpan user data jika perlu (opsional)
+                if (result.data.user) {
+                     localStorage.setItem("user_data", JSON.stringify(result.data.user));
+                }
                 
                 setShowLoginModal(false);
                 setNpp("");

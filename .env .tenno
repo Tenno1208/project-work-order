@@ -1,16 +1,17 @@
-API_BASE_URL="https://gateway.pdamkotasmg.co.id/api-gw/workorder-pti" 
+NEXT_PUBLIC_API_BASE_URL="https://gateway.pdamkotasmg.co.id/api-gw-dev/workorder-pti/api" 
 
-API_BASE_URL_PORTAL_PEGAWAI="https://gateway.pdamkotasmg.co.id/api-gw-balanced/portal-pegawai/api"
+NEXT_PUBLIC_API_BASE_URL_PORTAL_PEGAWAI="https://gateway.pdamkotasmg.co.id/api-gw-dev/portal-pegawai/api"
+
+NEXT_PUBLIC_API_BASE_URL_LOGOUT_PORTAL_PEGAWAI="https://gateway.pdamkotasmg.co.id/api-gw/portal-pegawai/api"
 
 NEXT_PUBLIC_EXTERNAL_API_URL="https://getpost.id/"
 
-NEXT_PUBLIC_IMAGE_STORAGE_BASE_URL="https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto/?path="
+NEXT_PUBLIC_IMAGE_STORAGE_BASE_URL="https://gateway.pdamkotasmg.co.id/api-gw-dev/file-handler/foto/?path="
 
 # ==========================================================
 # --PENGAJUAN--
-# ==========================================================
-
-GET_API_PENGAJUAN_URL=${API_BASE_URL}/api/pengajuan/views?page={number}
+# =========================================================
+GET_API_PENGAJUAN_URL=${API_BASE_URL}/api/pengajuan/views
 POST_API_PENGAJUAN_URL=${API_BASE_URL}/api/pengajuan
 GET_API_DETAIL_PENGAJUAN=${API_BASE_URL}/api/pengajuan/view/{uuid}
 DELETE_API_PENGAJUAN_URL=${API_BASE_URL}/api/pengajuan/delete/{uuid}
@@ -37,7 +38,7 @@ GET_API_HAL_DROPDOWN=${API_BASE_URL}/api/hal
 # --JENIS PEKERJAAN-- 
 # ==========================================================
 
-GET_API_JENISPEKERJAAN_DROPDOWN=${API_BASE_URL}/api/master-jenis-pekerjaan
+GET_API_JENISPEKERJAAN_DROPDOWN=${NEXT_PUBLIC_API_BASE_URL}/api/master-jenis-pekerjaan
         <{-_+}>                        
 # ==========================================================
 # --MENUGGASKAN-- 
@@ -99,7 +100,7 @@ GET_API_SPK_VIEW=${API_BASE_URL}/api/spk/view/{uuid}
 # --RIWAYAT SPK STAFF-- 
 # ==========================================================
 
-GET_API_SPK_RIWAYAT_STAF=${API_BASE_URL}/api/spk/staf/{npp}
+GET_API_SPK_RIWAYAT_STAF=${API_BASE_URL}/api/spk/riwayat
 
 # ==========================================================
 # --RIWYAT SPK MENGETAHUI-- 
@@ -148,6 +149,12 @@ GET_API_TRACKING_NOTOKEN_UUID=${API_BASE_URL}/tracking/uuid/{uuid}
 
 GET_API_LAPORAN_PENGAJUAN=${API_BASE_URL}/api/report/data/pengajuan
 GET_API_LAPORAN_SPK=${API_BASE_URL}api/report/data/spk
+
+# ==========================================================
+# --All Satker-- 
+# ==========================================================
+
+GET_API_ALL_SATKER=${API_BASE_URL}client/satker/all
 
 npp
 

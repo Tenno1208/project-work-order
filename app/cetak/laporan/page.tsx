@@ -4,6 +4,8 @@ import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Loader2, AlertTriangle, ArrowLeft, Printer } from 'lucide-react';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+
 export default function CetakLaporanPage() {
     return (
         <Suspense fallback={<div className="h-screen bg-white flex items-center justify-center text-black">Menyiapkan Dokumen...</div>}>
@@ -26,7 +28,6 @@ function LaporanContent() {
     // --- INISIALISASI ---
     useEffect(() => {
         const init = async () => {
-            // A. Set Tanggal Cetak
             const now = new Date();
             const day = String(now.getDate()).padStart(2, '0');
             const month = String(now.getMonth() + 1).padStart(2, '0'); 
@@ -35,17 +36,15 @@ function LaporanContent() {
             const minutes = String(now.getMinutes()).padStart(2, '0');
             setPrintDate(`${day}-${month}-${year} ${hours}:${minutes} WIB`);
 
-            // B. AMBIL DATA DARI LOCAL STORAGE
             let currentParams: any = {};
             const storedData = localStorage.getItem("temp_print_data");
             
             if (storedData) {
                 try {
                     currentParams = JSON.parse(storedData);
-                } catch (e) { console.error(e); }
+                } catch (e) { console.error("Error parsing temp data:", e); }
             } 
             
-            // Fallback ke URL jika localStorage kosong
             if (!currentParams.mode) {
                 currentParams.mode = searchParams.get('mode');
             }
@@ -57,44 +56,41 @@ function LaporanContent() {
                 return; 
             }
 
-            // C. Fetch Data ke Server
             try {
                 const token = searchParams.get('auth_token') || localStorage.getItem('token');
-                let baseUrl = window.location.origin;
-                if (baseUrl.includes('localhost')) {
-                   baseUrl = baseUrl.replace('localhost', '127.0.0.1');
-                }
-
-                const proxyUrl = new URL('/api/proxy-laporan', baseUrl);
                 
-                // --- MAPPING PARAMETER ---
-                if (currentParams.mode) proxyUrl.searchParams.append('mode', currentParams.mode);
-                if (currentParams.start_date) proxyUrl.searchParams.append('start_date', currentParams.start_date);
-                if (currentParams.end_date) proxyUrl.searchParams.append('end_date', currentParams.end_date);
-                
-                // Status
-                if (currentParams.mode === 'spk' && currentParams.status_id) {
-                    proxyUrl.searchParams.append('status_id', currentParams.status_id);
-                } else if (currentParams.status) {
-                    proxyUrl.searchParams.append('status', currentParams.status);
+                if (!API_BASE_URL) {
+                    throw new Error("ENV NEXT_PUBLIC_API_BASE_URL belum diset!");
                 }
 
-                // Satker
-                if (currentParams.satker_id) {
-                    proxyUrl.searchParams.append('satker', currentParams.satker_id); 
+                let endpoint = "";
+                if (currentParams.mode === 'pengajuan') {
+                    endpoint = `${API_BASE_URL}/report/data/pengajuan`;
+                } else {
+                    endpoint = `${API_BASE_URL}/report/data/spk`;
                 }
 
-                // Hal ID
-                if (currentParams.hal_id) {
-                    proxyUrl.searchParams.append('nama_hal', currentParams.hal_id);
+                const apiUrl = new URL(endpoint);
+
+                Object.keys(currentParams).forEach(key => {
+                    if (key !== 'mode' && !key.startsWith('ttd_') && currentParams[key]) {
+                        apiUrl.searchParams.append(key, currentParams[key]);
+                    }
+                });
+
+                if (currentParams.status_id && !apiUrl.searchParams.has('status_id')) {
+                    apiUrl.searchParams.append('status_id', currentParams.status_id);
                 }
-                
-                // Jenis Pekerjaan ID
-                if (currentParams.jenis_pekerjaan_id) proxyUrl.searchParams.append('jenis_pekerjaan_id', currentParams.jenis_pekerjaan_id);
+                if (currentParams.satker_id && !apiUrl.searchParams.has('satker')) {
+                    apiUrl.searchParams.append('satker', currentParams.satker_id);
+                }
+                if (currentParams.hal_id && !apiUrl.searchParams.has('nama_hal')) {
+                    apiUrl.searchParams.append('nama_hal', currentParams.hal_id);
+                }
 
-                console.log("Fetching URL:", proxyUrl.toString());
+                console.log("Fetching Direct URL:", apiUrl.toString());
 
-                const res = await fetch(proxyUrl.toString(), {
+                const res = await fetch(apiUrl.toString(), {
                     method: 'GET',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -103,7 +99,9 @@ function LaporanContent() {
                     cache: 'no-store'
                 });
 
-                if (!res.ok) throw new Error(`Gagal mengambil data (${res.status})`);
+                if (!res.ok) {
+                    throw new Error(`Gagal mengambil data dari server (${res.status} ${res.statusText})`);
+                }
 
                 const json = await res.json();
                 const resultData = Array.isArray(json) ? json : (json.data || []);
@@ -123,31 +121,27 @@ function LaporanContent() {
         init();
     }, [searchParams]);
 
-    // Auto Print
     useEffect(() => {
         if (!loading && !error && data.length > 0) {
             setTimeout(() => window.print(), 1000); 
         }
     }, [loading, error, data]);
 
-    // --- HELPER TRANSLATE STATUS & BADGE ---
     const getStatusBadge = (status: string) => {
         if (!status) return <span className="text-gray-500">-</span>;
         
         const s = status.toLowerCase();
-        let label = status; // Default label = status asli
+        let label = status; 
         let classes = "px-2 py-1 rounded text-[10px] font-bold uppercase inline-block border ";
 
-        // Logika Translate & Warna
         if (s.includes("appr") || s.includes("selesai") || s.includes("produksi")) {
-            label = "Disetujui"; // Translate ke Indonesia
-            if (s.includes("selesai")) label = "Selesai";
+            label = s.includes("selesai") ? "Selesai" : "Disetujui";
             classes += "bg-green-100 text-green-700 border-green-200 print-green";
         } else if (s.includes("reject") || s.includes("tolak") || s.includes("batal")) {
-            label = "Ditolak"; // Translate ke Indonesia
+            label = "Ditolak";
             classes += "bg-red-100 text-red-700 border-red-200 print-red";
         } else if (s.includes("pend") || s.includes("tunggu") || s.includes("menunggu") || s === "4") {
-            label = "Menunggu"; // Translate ke Indonesia
+            label = "Menunggu";
             classes += "bg-orange-100 text-orange-700 border-orange-200 print-orange";
         } else if (s.includes("proses") || s.includes("jalan")) {
             label = "Proses";
@@ -159,29 +153,25 @@ function LaporanContent() {
         return <span className={classes}>{label}</span>;
     };
 
-    // --- HELPER TANDA TANGAN (PERBAIKAN ALIGNMENT) ---
+    // --- HELPER TANDA TANGAN ---
     const renderSignatureColumn = (
         judul: string, 
         jabatan: string, 
         nama: string, 
         npp: string, 
         tanggal: string, 
-        hideDate: boolean
+        hideDate: any
     ) => {
-        if (!nama) return <div></div>;
+        if (!nama && !judul) return <div></div>;
 
         const kota = params.kota || "Semarang"; 
-        
-        // Format tanggal display
         const displayDate = `${kota}, ${tanggal || printDate.split(' ')[0]}`;
+
+        const isDateHidden = hideDate === true || hideDate === "true";
 
         return (
             <div className="flex flex-col items-center justify-start text-center">
-                {/* LOGIKA PERBAIKAN: 
-                    Gunakan visibility: hidden jika hideDate=true agar tempatnya tetap terjaga 
-                    sehingga sejajar dengan kolom lain.
-                */}
-                <p className={`text-[11px] mb-1 ${hideDate ? 'invisible' : ''}`}>
+                <p className={`text-[11px] mb-1 ${isDateHidden ? 'invisible' : ''}`}>
                     {displayDate}
                 </p>
                 
@@ -190,7 +180,7 @@ function LaporanContent() {
                 
                 <div className="h-20"></div> 
                 
-                <p className="font-bold underline uppercase text-[11px]">{nama}</p>
+                <p className="font-bold underline uppercase text-[11px]">{nama || ".........................."}</p>
                 {npp && <p className="text-[11px] font-medium">NPP. {npp}</p>}
             </div>
         );
@@ -209,10 +199,9 @@ function LaporanContent() {
     };
 
     return (
-        // Menggunakan font-sans (Arial/Helvetica) untuk tampilan standar dokumen
         <div className="bg-white py-8 print:py-0 font-sans print:h-auto print:overflow-visible text-black">
             
-            {/* Toolbar */}
+            {/* Toolbar (Tidak Tercetak) */}
             <div className="print:hidden fixed top-0 left-0 right-0 bg-white border-b border-gray-200 text-gray-800 px-6 py-3 shadow-sm z-50 flex justify-between items-center h-16">
                 <div className="flex items-center gap-4">
                     <button onClick={() => window.close()} className="hover:bg-gray-100 p-2 rounded-full transition text-gray-600">
@@ -245,6 +234,7 @@ function LaporanContent() {
                     <div className="h-[100mm] flex flex-col items-center justify-center text-center p-8 border border-red-200 rounded-lg bg-red-50 mt-10">
                         <AlertTriangle className="text-red-500 w-10 h-10 mb-3" />
                         <p className="text-red-600 font-medium">{error}</p>
+                        <p className="text-xs text-red-400 mt-2">Cek koneksi internet atau VPN/Ngrok anda.</p>
                     </div>
                 )}
 
@@ -261,7 +251,6 @@ function LaporanContent() {
                             
                             {renderPeriode()}
 
-                            {/* LOGIKA SATKER: HANYA TAMPIL JIKA ADA FILTERS */}
                             {params.satker && <p className="text-sm font-bold mt-1 uppercase">Satuan Kerja: {params.satker}</p>}
                         </div>
 
@@ -275,158 +264,158 @@ function LaporanContent() {
                         )}
 
                         <table className="w-full border-collapse border border-black mb-6">
-    <thead>
-        <tr className="bg-gray-100 print:bg-gray-100 text-black font-bold text-center">
-            <th className="border border-black p-2 w-10">No</th>
-            {params.mode === 'spk' ? (
-                <>
-                    <th className="border border-black p-2">No. Surat & Referensi</th>
-                    <th className="border border-black p-2">Jenis Pekerjaan</th>
-                    <th className="border border-black p-2">Kode Barang</th>
-                    <th className="border border-black p-2">Tanggal Pengerjaan</th>
-                    <th className="border border-black p-2">Uraian</th>
-                    <th className="border border-black p-2">Staff</th>
-                    <th className="border border-black p-2 w-28">Status</th>
-                </>
-            ) : (
-                <>
-                    <th className="border border-black p-2">No. Surat</th>
-                    <th className="border border-black p-2">Hal</th>
-                    <th className="border border-black p-2">Kode Barang</th>
-                    <th className="border border-black p-2">Keterangan</th>
-                    <th className="border border-black p-2">Satuan Kerja</th>
-                    <th className="border border-black p-2">Pelapor</th>
-                    <th className="border border-black p-2 w-28">Status</th>
-                </>
-            )}
-        </tr>
-    </thead>
-    <tbody>
-        {data.length > 0 ? (
-            data.map((item, index) => (
-                <tr key={index} className="break-inside-avoid">
-                    <td className="border border-black p-2 text-center align-top">{index + 1}</td>
-                    {params.mode === 'spk' ? (
-                        <>
-                            <td className="border border-black p-2 align-top font-medium">
-                                <div className="flex flex-col">
-                                    <span>{item.no_surat || "-"}</span>
-                                    {item.no_referensi && (
-                                        <span className="text-[10px] text-gray-500 italic mt-1">
-                                            Ref: {item.no_referensi}
-                                        </span>
-                                    )}
-                                </div>
-                            </td>
-                            <td className="border border-black p-2 align-top">
-                                {item.rl_master?.jenispekerjaan?.nama_pekerjaan || "-"}
-                            </td>
-                            <td className="border border-black p-2 align-top text-center">{item.kode_barang || "-"}</td>
-                            <td className="border border-black p-2 align-top">
-                                {item.tanggal ? new Date(item.tanggal).toLocaleDateString('id-ID') : "-"}
-                            </td>
-                            <td className="border border-black p-2 align-top">
-                                {item.uraian_pekerjaan || "-"}
-                            </td>
-                            <td className="border border-black p-2 align-top">
-                                <div className="space-y-1">
-                                    {item.stafs ? (
-                                        (() => {
-                                            try {
-                                                const staffList = JSON.parse(item.stafs);
-                                                return staffList.map((staff: any, staffIndex: number) => (
-                                                    <div key={staffIndex} className="flex items-start gap-1">
-                                                        <span className={`text-[10px] font-medium ${
-                                                            staff.is_penanggung_jawab 
-                                                                ? 'text-red-600' 
-                                                                : 'text-black'
-                                                        }`}>
-                                                            {staff.is_penanggung_jawab ? 'PJ:' : '•'}
-                                                        </span>
-                                                        <div className="flex-1">
-                                                            <div className="text-[10px] text-black font-medium">
-                                                                {staff.nama}
-                                                            </div>
-                                                            <div className="text-[9px] text-gray-500">
-                                                                NPP: {staff.npp}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ));
-                                            } catch (e) {
-                                                return <div className="text-[10px] text-gray-500">Format data staff tidak valid</div>;
-                                            }
-                                        })()
+                            <thead>
+                                <tr className="bg-gray-100 print:bg-gray-100 text-black font-bold text-center">
+                                    <th className="border border-black p-2 w-10">No</th>
+                                    {params.mode === 'spk' ? (
+                                        <>
+                                            <th className="border border-black p-2">No. Surat & Referensi</th>
+                                            <th className="border border-black p-2">Jenis Pekerjaan</th>
+                                            <th className="border border-black p-2">Kode Barang</th>
+                                            <th className="border border-black p-2">Tanggal Pengerjaan</th>
+                                            <th className="border border-black p-2">Uraian</th>
+                                            <th className="border border-black p-2">Staff</th>
+                                            <th className="border border-black p-2 w-28">Status</th>
+                                        </>
                                     ) : (
-                                        <div className="text-[10px] text-gray-500 italic">-</div>
+                                        <>
+                                            <th className="border border-black p-2">No. Surat</th>
+                                            <th className="border border-black p-2">Hal</th>
+                                            <th className="border border-black p-2">Kode Barang</th>
+                                            <th className="border border-black p-2">Keterangan</th>
+                                            <th className="border border-black p-2">Satuan Kerja</th>
+                                            <th className="border border-black p-2">Pelapor</th>
+                                            <th className="border border-black p-2 w-28">Status</th>
+                                        </>
                                     )}
-                                </div>
-                            </td>
-                            <td className="border border-black p-2 text-center align-top">
-                                {getStatusBadge(item.rl_master?.status?.name || item.status)}
-                            </td>
-                        </>
-                    ) : (
-                        <>
-                            <td className="border border-black p-2 align-top font-medium">
-                                <div className="flex flex-col">
-                                    <span>{item.no_surat || "-"}</span>
-                                    {item.no_referensi && (
-                                        <span className="text-[10px] text-gray-500 italic mt-1">
-                                            Ref: {item.no_referensi}
-                                        </span>
-                                    )}
-                                </div>
-                            </td>
-                            <td className="border border-black p-2 align-top">{item.rl_data?.masterhal?.nama_jenis || "-"}</td>
-                            <td className="border border-black p-2 align-top text-center">{item.kode_barang || "-"}</td>
-                            <td className="border border-black p-2 align-top">
-                                <div dangerouslySetInnerHTML={{ __html: item.keterangan || "-" }} />
-                            </td>
-                            <td className="border border-black p-2 align-top">
-                                <div className="text-[10px]">
-                                    {item.rl_data?.kd_satker?.satker_name || "-"}
-                                    {item.rl_data?.kd_parent?.parent_satker && (
-                                        <div className="text-gray-500 text-[9px] italic mt-1">
-                                            Parent: {item.rl_data.kd_parent.parent_satker}
-                                        </div>
-                                    )}
-                                </div>
-                            </td>
-                            <td className="border border-black p-2 align-top">
-                                <div className="text-[10px]">
-                                    <div>{item.name_pelapor || "-"}</div>
-                                    {item.npp_pelapor && (
-                                        <div className="text-gray-500 text-[9px]">
-                                            NPP: {item.npp_pelapor}
-                                        </div>
-                                    )}
-                                </div>
-                            </td>
-                            <td className="border border-black p-2 text-center align-top">
-                                {getStatusBadge(item.status)}
-                            </td>
-                        </>
-                    )}
-                </tr>
-            ))
-        ) : (
-            <tr><td colSpan={params.mode === 'spk' ? 8 : 7} className="border border-black p-8 text-center italic">Data tidak ditemukan.</td></tr>
-        )}
-    </tbody>
-</table>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {data.length > 0 ? (
+                                    data.map((item, index) => (
+                                        <tr key={index} className="break-inside-avoid">
+                                            <td className="border border-black p-2 text-center align-top">{index + 1}</td>
+                                            {params.mode === 'spk' ? (
+                                                <>
+                                                    <td className="border border-black p-2 align-top font-medium">
+                                                        <div className="flex flex-col">
+                                                            <span>{item.no_surat || "-"}</span>
+                                                            {item.no_referensi && (
+                                                                <span className="text-[10px] text-gray-500 italic mt-1">
+                                                                    Ref: {item.no_referensi}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="border border-black p-2 align-top">
+                                                        {item.rl_master?.jenispekerjaan?.nama_pekerjaan || "-"}
+                                                    </td>
+                                                    <td className="border border-black p-2 align-top text-center">{item.kode_barang || "-"}</td>
+                                                    <td className="border border-black p-2 align-top">
+                                                        {item.tanggal ? new Date(item.tanggal).toLocaleDateString('id-ID') : "-"}
+                                                    </td>
+                                                    <td className="border border-black p-2 align-top">
+                                                        {item.uraian_pekerjaan || "-"}
+                                                    </td>
+                                                    <td className="border border-black p-2 align-top">
+                                                        <div className="space-y-1">
+                                                            {item.stafs ? (
+                                                                (() => {
+                                                                    try {
+                                                                        const staffList = JSON.parse(item.stafs);
+                                                                        return staffList.map((staff: any, staffIndex: number) => (
+                                                                            <div key={staffIndex} className="flex items-start gap-1">
+                                                                                <span className={`text-[10px] font-medium ${
+                                                                                    staff.is_penanggung_jawab ? 'text-red-600' : 'text-black'
+                                                                                }`}>
+                                                                                    {staff.is_penanggung_jawab ? 'PJ:' : '•'}
+                                                                                </span>
+                                                                                <div className="flex-1">
+                                                                                    <div className="text-[10px] text-black font-medium">
+                                                                                        {staff.nama}
+                                                                                    </div>
+                                                                                    <div className="text-[9px] text-gray-500">
+                                                                                        NPP: {staff.npp}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        ));
+                                                                    } catch (e) {
+                                                                        return <div className="text-[10px] text-gray-500">Format data staff tidak valid</div>;
+                                                                    }
+                                                                })()
+                                                            ) : (
+                                                                <div className="text-[10px] text-gray-500 italic">-</div>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="border border-black p-2 text-center align-top">
+                                                        {getStatusBadge(item.rl_master?.status?.name || item.status)}
+                                                    </td>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <td className="border border-black p-2 align-top font-medium">
+                                                        <div className="flex flex-col">
+                                                            <span>{item.no_surat || "-"}</span>
+                                                            {item.no_referensi && (
+                                                                <span className="text-[10px] text-gray-500 italic mt-1">
+                                                                    Ref: {item.no_referensi}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="border border-black p-2 align-top">{item.rl_data?.masterhal?.nama_jenis || "-"}</td>
+                                                    <td className="border border-black p-2 align-top text-center">{item.kode_barang || "-"}</td>
+                                                    <td className="border border-black p-2 align-top">
+                                                        <div dangerouslySetInnerHTML={{ __html: item.keterangan || "-" }} />
+                                                    </td>
+                                                    <td className="border border-black p-2 align-top">
+                                                        <div className="text-[10px]">
+                                                            {item.rl_data?.kd_satker?.satker_name || "-"}
+                                                            {item.rl_data?.kd_parent?.parent_satker && (
+                                                                <div className="text-gray-500 text-[9px] italic mt-1">
+                                                                    Parent: {item.rl_data.kd_parent.parent_satker}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="border border-black p-2 align-top">
+                                                        <div className="text-[10px]">
+                                                            <div>{item.name_pelapor || "-"}</div>
+                                                            {item.npp_pelapor && (
+                                                                <div className="text-gray-500 text-[9px]">
+                                                                    NPP: {item.npp_pelapor}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="border border-black p-2 text-center align-top">
+                                                        {getStatusBadge(item.status)}
+                                                    </td>
+                                                </>
+                                            )}
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr><td colSpan={params.mode === 'spk' ? 8 : 7} className="border border-black p-8 text-center italic">Data tidak ditemukan.</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+
+                        {/* BAGIAN TANDA TANGAN */}
                         <div className="grid grid-cols-3 gap-4 mt-8 break-inside-avoid px-4 text-black">
                             {renderSignatureColumn(
                                 params.ttd_kiri_judul, params.ttd_kiri_jabatan, params.ttd_kiri_nama, params.ttd_kiri_npp, params.ttd_kiri_tanggal, 
-                                params.ttd_kiri_hide_date // Pass hide flag
+                                params.ttd_kiri_hide_date 
                             )}
                             {renderSignatureColumn(
                                 params.ttd_tengah_judul, params.ttd_tengah_jabatan, params.ttd_tengah_nama, params.ttd_tengah_npp, params.ttd_tengah_tanggal, 
-                                params.ttd_tengah_hide_date // Pass hide flag
+                                params.ttd_tengah_hide_date 
                             )}
                             {renderSignatureColumn(
                                 params.ttd_kanan_judul, params.ttd_kanan_jabatan, params.ttd_kanan_nama, params.ttd_kanan_npp, params.ttd_kanan_tanggal, 
-                                params.ttd_kanan_hide_date // Pass hide flag
+                                params.ttd_kanan_hide_date
                             )}
                         </div>
 

@@ -1,35 +1,29 @@
 "use client";
 
-// 1. Tambahkan Suspense di sini
 import React, { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation"; 
-import { X, CheckCircle, Loader2, AlertTriangle, Users, Send, ArrowLeft, File, Image as ImageIcon, Download } from "lucide-react"; 
+// --- PERBAIKAN IMPORT ---
+import { X, CheckCircle, Loader2, AlertTriangle, Users, Send, ArrowLeft, File, Image as ImageIcon, Download, Home } from "lucide-react"; 
 
-// --- KONSTANTA API ---
-const API_BASE_URL = "https://workorder123.loca.lt"; 
-const GET_API_SPK_VIEW_TEMPLATE_PROXY = "/api/spk-proxy/view/{uuid}";
-const GET_API_PENGAJUAN_VIEW_PROXY = "/api/pengajuan/view/{uuid}"; 
-const GET_PEGAWAI_API_LOCAL = "/api/pegawai-proxy/all-pegawai";
-const ASSIGN_SPK_API_LOCAL = "/api/spk-proxy/menugaskan";
-const GET_PHONE_NUMBERS_API = "/api/search-npp-proxy"; 
+// --- KONFIGURASI URL ASLI DARI ENV ---
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || ""; 
+const API_BASE_URL_PORTAL_PEGAWAI = process.env.NEXT_PUBLIC_API_BASE_URL_PORTAL_PEGAWAI || "";
+const IMAGE_STORAGE_BASE_URL = process.env.NEXT_PUBLIC_IMAGE_STORAGE_BASE_URL || "";
 
-// Helper function: Menggunakan route proxy lokal untuk mengambil file.
-const getProxyFileUrl = (path: string | null | undefined): string | null => {
-    if (!path || path.trim() === '') return null;
-    
-    const sanitizedPath = path.startsWith('/') ? path.slice(1) : path;
-    
-    if (path.startsWith('http')) {
-        return `/api/image-proxy?url=${encodeURIComponent(path)}`;
-    }
+// --- URL ENDPOINT ASLI (NO PROXY) ---
+const GET_SPK_VIEW_URL = `${API_BASE_URL}/spk/view`;
+const POST_ASSIGN_SPK_URL = `${API_BASE_URL}/spk/menugaskan`;
 
-    return `/api/image-proxy?path=${encodeURIComponent(sanitizedPath)}`;
-};
+const GET_PENGAJUAN_VIEW_URL = `${API_BASE_URL}/pengajuan/view`;
 
-// --- TYPES (Dilewati) ---
-type PegawaiItem = { name: string; npp: string | null; jabatan: string | null; };
-type AssignedPerson = PegawaiItem & { isPic: boolean; tlp?: string; };
-type ToastMessage = { show: boolean; message: string; type: "success" | "error"; };
+const GET_PEGAWAI_ALL_URL = `${API_BASE_URL_PORTAL_PEGAWAI}/client/user/all-pegawai`;
+
+const FALLBACK_IMAGE_URL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+// --- TYPES ---
+type PegawaiItem = { name: string; npp: string | null; jabatan: string | null; tlp: string | null };
+type AssignedPerson = PegawaiItem & { isPic: boolean };
+type ToastMessage = { show: boolean; message: string; type: "success" | "error" };
 
 type SPKDetail = {
     uuid: string;
@@ -58,7 +52,7 @@ type PengajuanDetail = {
     status: string;
 };
 
-// --- KOMPONEN MODAL BARU ---
+// --- KOMPONEN MODAL ---
 const ImageModal = ({ imageUrl, onClose }: { imageUrl: string | null, onClose: () => void }) => {
     if (!imageUrl) return null;
 
@@ -73,19 +67,18 @@ const ImageModal = ({ imageUrl, onClose }: { imageUrl: string | null, onClose: (
             >
                 <button
                     onClick={onClose}
-                    className="absolute top-3 right-3 p-2 bg-white rounded-full text-gray-800 hover:bg-gray-100 transition z-10"
+                    className="absolute top-3 right-3 p-2 bg-white rounded-full text-gray-800 hover:bg-gray-100 z-10"
                     title="Tutup"
                 >
                     <X size={20} />
                 </button>
-                
-                <img src={imageUrl} alt="Lampiran Detail" className="w-full h-auto max-w-[80vw] max-h-[85vh] object-contain p-2"/>
+                <img src={imageUrl} alt="Lampiran Detail" className="w-full h-auto" />
             </div>
         </div>
     );
 };
 
-// --- UTILITY COMPONENTS (Dilewati) ---
+// --- UTILITY COMPONENTS ---
 const Button = ({ onClick, children, className = "bg-blue-600 hover:bg-blue-700 text-white", disabled = false }: any) => (
     <button
         onClick={onClick}
@@ -96,13 +89,17 @@ const Button = ({ onClick, children, className = "bg-blue-600 hover:bg-blue-700 
     </button>
 );
 
-const ToastBox = ({ toast, onClose }: { toast: ToastMessage, onClose: () => void }) =>
+const ToastBox = ({ toast, onClose }: {
+    toast: ToastMessage,
+    onClose: () => void
+}) =>
     toast.show && (
         <div
             className={`fixed top-5 right-5 px-4 py-2 rounded-xl shadow-lg text-white text-sm z-50 transition-opacity duration-300 flex items-center gap-2 ${
                 toast.type === "success" ? "bg-green-600" : "bg-red-600"
             }`}
         >
+            {toast.type === "success" ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
             {toast.message}
             <button onClick={onClose} className="text-white ml-2">
                 <X size={14} />
@@ -110,6 +107,7 @@ const ToastBox = ({ toast, onClose }: { toast: ToastMessage, onClose: () => void
         </div>
     );
 
+// --- DROPDOWN PEGAWAI ---
 const GmailDropdown = ({ 
     items, 
     onSelect, 
@@ -127,16 +125,14 @@ const GmailDropdown = ({
     setInputValue: (value: string) => void;
     assignedPeople: AssignedPerson[];
 }) => {
-    // FIX: Pastikan 'items' selalu dianggap sebagai array.
     const safeItems = Array.isArray(items) ? items : []; 
 
     const [highlightedIndex, setHighlightedIndex] = useState(0);
     const dropdownRef = useRef<HTMLDivElement>(null); 
     
-    // Gunakan safeItems
     const filteredItems = safeItems.filter((item: PegawaiItem) => {
         const isAlreadyAssigned = assignedPeople.some((assigned: AssignedPerson) => 
-            assigned.name.toLowerCase() === item.name.toLowerCase()
+            assigned.name === item.name
         );
         const matchesInput = item.name.toLowerCase().includes(inputValue.toLowerCase());
         return !isAlreadyAssigned && matchesInput;
@@ -212,7 +208,7 @@ const GmailDropdown = ({
                     onClick={() => handleSelect(item)}
                 >
                     <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
-                        <span className="text-sm font-medium text-gray-600">
+                        <span className="text-sm font-medium text-black">
                             {item.name.charAt(0).toUpperCase()}
                         </span>
                     </div>
@@ -220,7 +216,7 @@ const GmailDropdown = ({
                         <div className="text-sm text-black">
                             {highlightMatch(item.name, inputValue)}
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-black">
                             {item.npp ? `NPP: ${item.npp}` : ''}
                         </div>
                     </div>
@@ -251,7 +247,41 @@ const Chip = ({ person, onRemove, onTogglePic }: { person: AssignedPerson, onRem
     </div>
 );
 
-// 2. GANTI NAMA fungsi utama, HAPUS 'export default'
+// --- HELPER: FORMAT TANGGAL BAHASA INDONESIA ---
+const formatDateIndo = (dateString: string) => {
+    if (!dateString) return "-";
+    
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) {
+            // Coba parse format DD/MM/YYYY jika ISO gagal
+            const parts = dateString.split('/');
+            if (parts.length === 3) {
+                const formatted = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                const newDate = new Date(formatted);
+                if (!isNaN(newDate.getTime())) return dateString; // Fallback ke string asli jika tidak bisa parse
+            }
+            return dateString;
+        }
+
+        const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+        const months = [
+            'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+        ];
+
+        const dayName = days[date.getDay()];
+        const day = date.getDate();
+        const monthName = months[date.getMonth()];
+        const year = date.getFullYear();
+
+        return `${dayName}, ${day} ${monthName} ${year}`;
+    } catch (e) {
+        return dateString;
+    }
+};
+
+// --- MAIN CONTENT ---
 function AssignSPKContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -273,12 +303,11 @@ function AssignSPKContent() {
     const [isLoadingPengajuan, setIsLoadingPengajuan] = useState(false);
     const [pengajuanError, setPengajuanError] = useState<string | null>(null);
     
-    // STATE BARU untuk Modal
+    // STATE MODAL
     const [modalImageUrl, setModalImageUrl] = useState<string | null>(null); 
 
     // Ref untuk form penentuan personel
     const personelFormRef = useRef<HTMLDivElement>(null);
-
     const inputRef = useRef<HTMLInputElement>(null);
 
     const showToast = useCallback((message: string, type: "success" | "error") => {
@@ -286,14 +315,167 @@ function AssignSPKContent() {
         setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
     }, []);
 
-    // Fungsi untuk scroll ke form penentuan personel
     const scrollToPersonelForm = () => {
         if (personelFormRef.current) {
             personelFormRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     };
 
-    // --- LOGIC MANIPULASI PERSON (Dilewati) ---
+    // --- FETCH PEGAWAI (DIRECT API) ---
+    const fetchAllPegawai = useCallback(async () => {
+        setIsLoadingPegawai(true);
+        const token = localStorage.getItem("token");
+        
+        if (!token) {
+            console.error("Token tidak ditemukan");
+            setIsLoadingPegawai(false);
+            return;
+        }
+
+        try {
+            const res = await fetch(GET_PEGAWAI_ALL_URL, {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+            });
+
+            if (!res.ok) throw new Error("Gagal mengambil data Pegawai dari Portal Pegawai API.");
+
+            const json = await res.json();
+            const dataArray = json.data || json;
+
+            if (Array.isArray(dataArray)) {
+                const formattedPegawai = dataArray
+                    .map((item: any) => ({
+                        name: item.nama_pegawai || item.nama || null,
+                        npp: item.npp || null,
+                        jabatan: item.jabatan || item.jabsatker || null,
+                        tlp: item.rl_pegawai_local?.tlp || item.tlp || item.telepon || null
+                    }))
+                    .filter((person): person is PegawaiItem => person.name !== null && person.name.trim() !== '');
+
+                setPegawaiList(formattedPegawai);
+            }
+        } catch (err) {
+            console.error("Error fetching pegawai:", err);
+        } finally {
+            setIsLoadingPegawai(false);
+        }
+    }, []);
+
+    // --- FETCH SPK DETAIL (DIRECT API) ---
+    const fetchDetailSPK = useCallback(async () => {
+        if (!spk_uuid) {
+            setError("UUID SPK tidak ditemukan dalam URL.");
+            setLoading(false);
+            return;
+        }
+        
+        setLoading(true);
+        setError(null);
+        
+        const token = localStorage.getItem("token");
+        if (!token) {
+            router.push("/login");
+            return;
+        }
+
+        try {
+            const url = `${GET_SPK_VIEW_URL}/${spk_uuid}`;
+            const res = await fetch(url, {
+                headers: { Authorization: `Bearer ${token}`, },
+            });
+            
+            const contentType = res.headers.get("content-type");
+            if (!res.ok || (contentType && !contentType.includes("application/json"))) {
+                throw new Error(`Gagal memuat data SPK. Server Status: ${res.status}`);
+            }
+            
+            const result = await res.json();
+
+            if (!result.success) {
+                throw new Error(result.message || "Gagal memuat data dari API SPK.");
+            }
+            
+            const item = result.data;
+
+            const mappedData: SPKDetail = {
+                uuid: item.uuid || spk_uuid,
+                pengajuan_uuid: item.uuid_pengajuan || null, 
+                nomor_spk: item.no_surat || item.uuid_pengajuan || "N/A",
+                pekerjaan_spk: item.uraian_pekerjaan || item.jenis_pekerjaan?.nama_pekerjaan || "Tidak ada data",
+                tanggal_spk: item.tanggal_spk || item.tanggal || "-",
+                status: item.status?.name || "Tidak ada data",
+            };
+
+            setSpkData(mappedData);
+
+        } catch (err: any) {
+            console.error("Error fetch SPK Detail:", err);
+            setError(err.message || "Terjadi kesalahan saat memuat SPK.");
+        } finally {
+            setLoading(false);
+        }
+    }, [spk_uuid, router]);
+
+    // --- FETCH PENGAJUAN DETAIL (DIRECT API) ---
+    const fetchDetailPengajuan = useCallback(async (pengajuanUuid: string) => {
+        if (!pengajuanUuid) {
+            setPengajuanError("UUID Pengajuan tidak ditemukan.");
+            return;
+        }
+
+        setIsLoadingPengajuan(true);
+        setPengajuanError(null);
+        const token = localStorage.getItem("token");
+
+        try {
+            const url = `${GET_PENGAJUAN_VIEW_URL}/${pengajuanUuid}`;
+            const res = await fetch(url, {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+            });
+
+            if (!res.ok) throw new Error(`Gagal memuat detail pengajuan. Status: ${res.status}`);
+
+            const result = await res.json();
+            
+            if (!result.success || !result.data) throw new Error(result.message || "Gagal memuat data dari API.");
+
+            const data = result.data;
+            const masterhal = result.masterhal;
+
+            // --- PERBAIKAN: AMBIL PARENT SATKER (kd_parent) ---
+            const satkerName = result.kd_parent?.parent_satker || result.kd_satker?.satker_name || data.satker;
+
+            const mappedPengajuan: PengajuanDetail = {
+                uuid: data.uuid,
+                no_surat: data.no_surat,
+                nama_jenis: masterhal?.nama_jenis || 'N/A', 
+                hal_id: masterhal?.id || 'N/A', 
+                kepada: data.kepada,
+                satker: satkerName, // PERBAIKAN LOGIKA SATKER
+                name_pelapor: data.name_pelapor,
+                npp_pelapor: data.npp_pelapor,
+                tlp_pelapor: data.rl_pegawai_local?.tlp || data.tlp_pelapor,
+                ttd_pelapor_path: data.ttd_pelapor,
+                mengetahui: data.mengetahui,
+                ttd_mengetahui_path: data.ttd_mengetahui,
+                keterangan: data.keterangan,
+                file_paths: Array.isArray(data.file) ? data.file : (data.file ? [data.file] : []),
+                status: data.status,
+            };
+
+            setPengajuanDetail(mappedPengajuan);
+
+        } catch (err: any) {
+            console.error("Error fetching Pengajuan Detail:", err);
+            setPengajuanError(err.message || "Gagal memuat data pengajuan.");
+        } finally {
+            setIsLoadingPengajuan(false);
+        }
+    }, []);
+
+    // --- HANDLERS ---
     const handleAddPerson = (selectedName: string | null = null) => {
         const name = (selectedName || currentPersonInput).trim();
         if (!name) return;
@@ -301,6 +483,7 @@ function AssignSPKContent() {
         const detail = pegawaiList.find(p => p.name.toLowerCase() === name.toLowerCase());
         const fullName = detail ? detail.name : name;
         const npp = detail ? detail.npp : null;
+        const tlp = detail ? detail.tlp : null; 
 
         if (assignedPeople.some(p => p.name.toLowerCase() === fullName.toLowerCase())) {
             setCurrentPersonInput("");
@@ -313,8 +496,9 @@ function AssignSPKContent() {
         const newPerson: AssignedPerson = {
             name: fullName,
             npp: npp,
-            isPic: isFirstPerson, 
-            jabatan: detail?.jabatan || null
+            isPic: isFirstPerson,
+            jabatan: detail?.jabatan || null,
+            tlp: tlp 
         };
 
         const updatedPeople = isFirstPerson 
@@ -358,228 +542,6 @@ function AssignSPKContent() {
         }
     };
 
-    // --- FUNGSI UNTUK MENGAMBIL DETAIL PENGAJUAN (Dilewati) ---
-    const fetchDetailPengajuan = useCallback(async (pengajuanUuid: string) => {
-        if (!pengajuanUuid) {
-            setPengajuanError("UUID Pengajuan tidak ditemukan.");
-            return;
-        }
-
-        setIsLoadingPengajuan(true);
-        setPengajuanError(null);
-
-        const url = GET_API_PENGAJUAN_VIEW_PROXY.replace('{uuid}', pengajuanUuid);
-        const token = localStorage.getItem("token");
-
-        try {
-            if (!token) throw new Error("Otorisasi hilang. Silakan login ulang.");
-
-            const res = await fetch(url, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-
-            if (!res.ok) throw new Error(`Gagal memuat detail pengajuan. Status: ${res.status}`);
-
-            const result = await res.json();
-            if (!result.success || !result.data) throw new Error(result.message || "Gagal memuat data dari API.");
-
-            const data = result.data;
-            const masterhal = result.masterhal;
-
-            const mappedPengajuan: PengajuanDetail = {
-                uuid: data.uuid,
-                no_surat: data.no_surat,
-                nama_jenis: masterhal?.nama_jenis || 'N/A', 
-                hal_id: masterhal?.kode || 'N/A', 
-                kepada: data.kepada,
-                satker: data.satker,
-                name_pelapor: data.name_pelapor,
-                npp_pelapor: data.npp_pelapor,
-                tlp_pelapor: data.tlp_pelapor,
-                ttd_pelapor_path: data.ttd_pelapor,
-                mengetahui: data.mengetahui,
-                ttd_mengetahui_path: data.ttd_mengetahui,
-                keterangan: data.keterangan,
-                file_paths: Array.isArray(data.file) ? data.file : (data.file ? [data.file] : []),
-                status: data.status,
-            };
-
-            setPengajuanDetail(mappedPengajuan);
-
-        } catch (err: any) {
-            setPengajuanError(err.message || "Terjadi kesalahan saat memuat detail pengajuan.");
-        } finally {
-            setIsLoadingPengajuan(false);
-        }
-    }, []);
-
-    // --- FETCH DATA SPK DETAIL & PEGAWAI (Dilewati) ---
-    const fetchDetailSPK = useCallback(async () => {
-        if (!spk_uuid) {
-            setError("UUID SPK tidak ditemukan dalam URL.");
-            setLoading(false);
-            return;
-        }
-        
-        setLoading(true);
-        setError(null);
-        
-        const url = GET_API_SPK_VIEW_TEMPLATE_PROXY.replace('{uuid}', spk_uuid);
-        const token = localStorage.getItem("token");
-
-        try {
-            if (!token) {
-                router.push("/login");
-                return;
-            }
-
-            const res = await fetch(url, {
-                headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-store" },
-            });
-            
-            const contentType = res.headers.get("content-type");
-            if (!res.ok || (contentType && !contentType.includes("application/json"))) {
-                await res.text();
-                throw new Error(`Gagal memuat data SPK. Server mengembalikan status ${res.status}.`);
-            }
-            
-            const result = await res.json();
-
-            if (!result.success) {
-                throw new Error(result.message || "Gagal memuat data dari API.");
-            }
-            
-            const item = result.data;
-
-            const mappedData: SPKDetail = {
-                uuid: item.uuid || spk_uuid,
-                pengajuan_uuid: item.uuid_pengajuan || item.uuid || null, 
-                nomor_spk: item.no_surat || item.uuid_pengajuan || "N/A",
-                pekerjaan_spk: item.uraian_pekerjaan || item.jenis_pekerjaan?.nama_pekerjaan || "Tidak ada data",
-                tanggal_spk: item.tanggal || "-",
-                status: item.status?.name || "Tidak ada data",
-            };
-
-            setSpkData(mappedData);
-
-        } catch (err: any) {
-             let userErrorMessage = "Terjadi kesalahan tidak terduga saat memuat SPK.";
-            if (err.message.includes("Otorisasi hilang") || err.message.includes("401")) {
-                 userErrorMessage = "Sesi Anda habis. Harap login ulang.";
-            } else if (err.message.includes("Gagal memuat data SPK")) {
-                userErrorMessage = err.message;
-            }
-
-            setError(userErrorMessage);
-            showToast(userErrorMessage, "error");
-        } finally {
-            setLoading(false);
-        }
-    }, [spk_uuid, showToast, router]);
-
-
-    useEffect(() => {
-        const fetchAllPegawai = async () => {
-            setIsLoadingPegawai(true);
-            try {
-                const token = localStorage.getItem("token");
-                if (!token) {
-                    console.error("Token tidak ditemukan");
-                    return;
-                }
-
-                const res = await fetch(GET_PEGAWAI_API_LOCAL, {
-                    headers: { Authorization: `Bearer ${token}` },
-                    cache: "no-store",
-                });
-
-                if (!res.ok) throw new Error("Gagal mengambil data Pegawai dari proxy.");
-
-                const json = await res.json();
-                const dataArray = json.data || json; 
-
-                if (Array.isArray(dataArray)) {
-                    const formattedPegawai = dataArray
-                        .map((item: any) => ({
-                            name: item.nama_pegawai || item.nama || null,
-                            npp: item.npp || null,
-                            jabatan: item.jabatan || null,
-                        }))
-                        .filter((person): person is PegawaiItem => person.name !== null && person.name.trim() !== '');
-
-                    setPegawaiList(formattedPegawai);
-                }
-            } catch (err) {
-                console.error("Error ambil data Pegawai:", err);
-            } finally {
-                setIsLoadingPegawai(false);
-            }
-        };
-
-        fetchAllPegawai();
-    }, []);
-    
-    useEffect(() => {
-        if (spkData && spkData.pengajuan_uuid) {
-            fetchDetailPengajuan(spkData.pengajuan_uuid);
-        }
-    }, [spkData, fetchDetailPengajuan]);
-
-    useEffect(() => {
-        fetchDetailSPK();
-    }, [fetchDetailSPK]);
-    
-    // --- FUNGSI UNTUK MENGAMBIL NOMOR TELEPON & SUBMIT (Dilewati) ---
-    const fetchPhoneNumbers = async (npps: string[]): Promise<{ [key: string]: string | null }> => {
-        if (npps.length === 0) return {};
-        
-        const token = localStorage.getItem("token");
-        if (!token) {
-            throw new Error("Otorisasi hilang. Token tidak ditemukan.");
-        }
-        
-        const phoneMap: { [key: string]: string | null } = {};
-
-        for (const npp of npps) {
-            try {
-                const response = await fetch(`${GET_PHONE_NUMBERS_API}/${npp}`, {
-                    method: 'GET',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                });
-                
-                if (!response.ok) {
-                    const status = response.status;
-                    if (status === 401) {
-                         throw new Error(`Otorisasi gagal (401) saat mencari NPP ${npp}. Harap login ulang.`);
-                    }
-                    console.warn(`Gagal mencari nomor telepon untuk NPP ${npp}. Status: ${status}. Menggunakan null.`);
-                    phoneMap[npp] = null;
-                    continue;
-                }
-                
-                const data = await response.json();
-                const responseData = data.data || data; 
-                let tlpFound: string | null = null;
-                if (Array.isArray(responseData) && responseData.length > 0) {
-                    const user = responseData.find((u: any) => u.npp === npp);
-                    if (user) {
-                        tlpFound = user.rl_pegawai_local?.tlp || user.tlp || null;
-                    }
-                } else if (responseData && responseData.npp === npp) {
-                     tlpFound = responseData.rl_pegawai_local?.tlp || responseData.tlp || null;
-                }
-                phoneMap[npp] = tlpFound && tlpFound.trim() !== '' ? tlpFound.trim() : null;
-
-            } catch (error) {
-                console.error(`Error fatal saat memproses NPP ${npp}:`, error);
-                throw error; 
-            }
-        }
-        
-        return phoneMap;
-    };
-
-
     const handleSubmitAssignment = async () => {
         if (assignedPeople.length === 0) {
             showToast("Minimal harus ada satu personel yang ditugaskan.", "error");
@@ -599,366 +561,423 @@ function AssignSPKContent() {
 
         setIsSubmitting(true);
         
-        const npps = assignedPeople.filter(p => p.npp).map(p => p.npp as string);
-        
-        let phoneNumbers: { [key: string]: string | null } = {};
-        
-        try {
-            phoneNumbers = await fetchPhoneNumbers(npps);
-        } catch (err: any) {
-            showToast(`Gagal memverifikasi nomor telepon: ${err.message || 'Proses dihentikan.'}`, "error");
+        const token = localStorage.getItem("token");
+        if (!token) {
+            showToast("Otorisasi hilang. Silakan login ulang.", "error");
             setIsSubmitting(false);
             return;
         }
         
-        const stafsPayload = assignedPeople.map(p => {
-            const tlpValue = p.npp ? (phoneNumbers[p.npp] === undefined ? null : phoneNumbers[p.npp]) : null;
-            return {
+        try {
+            const stafsPayload = assignedPeople.map(p => ({
                 npp: p.npp || 'NPP_KOSONG', 
                 nama: p.name,
-                tlp: tlpValue,
+                tlp: p.tlp || null, 
                 is_penanggung_jawab: p.isPic,
+            }));
+            
+            const payload = {
+                spk_uuid: spkData.uuid,
+                pengajuan_uuid: spkData.pengajuan_uuid,
+                stafs: stafsPayload,
             };
-        });
-        
-        const payload = {
-            spk_uuid: spkData.uuid,
-            pengajuan_uuid: spkData.pengajuan_uuid,
-            stafs: stafsPayload,
-        };
 
-        try {
-            const token = localStorage.getItem("token");
-            if (!token) {
-                showToast("Otorisasi hilang. Silakan login ulang.", "error");
-                return;
-            }
-
-            const res = await fetch(ASSIGN_SPK_API_LOCAL, { 
+            const res = await fetch(POST_ASSIGN_SPK_URL, { 
                 method: 'POST', 
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(payload)
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload),
             });
             
             const result = await res.json();
-
+            
             if (!res.ok || !result.success) {
-                throw new Error(result.message || "Gagal menyimpan penugasan");
+                throw new Error(result.message || "Gagal menyimpan penugasan.");
             }
 
             showToast(`SPK ${spkData.nomor_spk} berhasil ditugaskan! PIC: ${pic.name}`, "success");
             
-            setTimeout(() => router.push("/dashboard/spk"), 1500); 
+            setTimeout(() => {
+                router.push("/dashboard/spk");
+            }, 1500);
 
-        } catch (err: any) {
-            showToast(`Gagal menugaskan: ${err.message || 'Terjadi kesalahan saat menyimpan.'}`, "error");
+        } catch (error: any) {
+            console.error('Error submit assignment:', error);
+            showToast(`Gagal menugaskan: ${error.message || 'Terjadi kesalahan'}`, "error");
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    // --- RENDERING STATE (Dilewati) ---
+    // --- EFFECTS ---
+    useEffect(() => {
+        fetchAllPegawai();
+    }, [fetchAllPegawai]);
+
+    useEffect(() => {
+        if (spkData && spkData.pengajuan_uuid) {
+            fetchDetailPengajuan(spkData.pengajuan_uuid);
+        }
+    }, [spkData, fetchDetailPengajuan]);
+
+    useEffect(() => {
+        fetchDetailSPK();
+    }, [fetchDetailSPK]);
+
+    // --- HELPER GAMBAR (DIRECT API) ---
+    const getDirectImageUrl = (path: string | null): string | null => {
+        if (!path) return null;
+        
+        if (path.startsWith('http')) {
+            return path; 
+        }
+
+        return `${IMAGE_STORAGE_BASE_URL}${path}`; 
+    };
+
+    // --- RENDERING ---
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
                 <Loader2 className="animate-spin text-cyan-600 mr-3" size={32} />
-                <span className="text-xl font-medium text-gray-700">Memuat detail SPK...</span>
+                <span className="text-xl font-medium text-black">Memuat data SPK...</span>
             </div>
         );
     }
 
     if (error || !spkData) {
         return (
-            <div className="p-8 space-y-6 text-center bg-white min-h-screen border-t-4 border-red-500">
-                <AlertTriangle className="inline-block text-red-500" size={48} />
-                <h2 className="text-3xl font-extrabold text-red-600">Akses Ditolak / Data Tidak Ditemukan</h2>
-                <p className="text-gray-700 text-lg">Error: {error || "Data SPK tidak dapat dimuat."}</p>
+            <div className="p-8 max-w-2xl mx-auto bg-white rounded-xl shadow-xl mt-10">
+                <AlertTriangle className="text-red-500 mb-4 mx-auto" size={40} />
+                <h3 className="text-2xl font-bold text-red-600 text-center mb-2">Akses Ditolak / Data Tidak Ditemukan</h3>
+                <p className="text-black text-center mb-6">{error || "Data SPK tidak dapat dimuat."}</p>
                 <button
                     onClick={() => router.push("/dashboard/spk")}
-                    className="mt-4 px-4 py-2 text-sm bg-gray-800 text-white rounded-xl hover:bg-gray-900 transition-colors flex items-center mx-auto"
+                    className="w-full bg-blue-600 text-white py-2 rounded-lg mt-4 flex items-center justify-center"
                 >
-                    <ArrowLeft size={16} className="mr-2" /> Kembali ke Daftar SPK
+                    <Home size={18} className="inline-block mr-2" />
+                    Kembali
                 </button>
             </div>
         );
     }
 
-    // --- UI FORM UTAMA ---
-    return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-cyan-50 p-4">
-            <ToastBox toast={toast} onClose={() => setToast(prev => ({ ...prev, show: false }))} />
-            <ImageModal 
-                imageUrl={modalImageUrl} 
-                onClose={() => setModalImageUrl(null)} 
-            />
+    const picName = assignedPeople.find(p => p.isPic)?.name || "-";
 
-            <div className="max-w-4xl mx-auto space-y-6">
-                
-                <div className="flex items-center gap-4 bg-white p-5 rounded-2xl shadow-lg border border-blue-100">
+    return (
+        <div className="p-6 min-h-screen bg-gray-50">
+            <style>{`
+                @media print {
+                    .no-print { display: none !important; }
+                    body { background: white; }
+                .shadow-xl { box-shadow: none !important; border: 1px solid #ddd; }
+                .bg-gray-50 { background: white !important; }
+                .rounded-2xl { border-radius: 0 !important; }
+            }
+            `}</style>
+
+            <div className="max-w-5xl mx-auto space-y-6">
+                <ToastBox toast={toast} onClose={() => setToast(prev => ({ ...prev, show: false }))} />
+                <ImageModal 
+                    imageUrl={modalImageUrl} 
+                    onClose={() => setModalImageUrl(null)} 
+                />
+
+                {/* HEADER */}
+                <div className="flex items-center justify-between bg-white p-5 rounded-2xl shadow-lg">
                     <button 
                         onClick={() => router.push("/dashboard/spk")} 
-                        disabled={isSubmitting} 
+                        disabled={isSubmitting}
                         className="p-2 rounded-full bg-gray-800 text-white shadow hover:bg-gray-900 transition disabled:opacity-50 flex items-center justify-center"
-                        title="Kembali ke Daftar SPK"
                     >
                         <ArrowLeft size={20} />
                     </button>
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                            <Users size={24} className="text-cyan-600" />
-                            Penugasan Personel SPK
-                        </h1>
-                        <p className="text-sm text-gray-500 mt-1">
-                            Menugaskan personel untuk SPK: {spkData.nomor_spk}
-                        </p>
+                    <div className="flex items-center gap-4">
+                        <div className="bg-cyan-600 p-3 rounded-xl shadow-lg">
+                            <Users className="text-white" size={28} />
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-bold text-black">Penugasan Personel SPK</h1>
+                            <p className="text-sm text-black">
+                                Menugaskan personel untuk SPK: <span className="font-bold text-cyan-600">{spkData.nomor_spk}</span>
+                            </p>
+                        </div>
                     </div>
+                    <button onClick={() => router.push("/dashboard/spk")} className="bg-gray-100 text-black px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-200 transition">
+                        Kembali ke Daftar SPK
+                    </button>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-xl p-6 border-t-4 border-cyan-500">
-                    <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-semibold text-gray-700">Detail SPK & Pengajuan Terkait</h2>
-                        <Button 
-                            onClick={scrollToPersonelForm}
-                            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 flex items-center gap-2"
-                        >
-                            <Send size={16} />
-                            Tugaskan
-                        </Button>
-                    </div>
+                {/* KONTEN UTAMA: VERTICAL STACK */}
+                <div className="space-y-6">
                     
-                    {isLoadingPengajuan && <div className="flex items-center text-blue-600 mb-4"><Loader2 className="animate-spin mr-2 w-4 h-4" /> Memuat detail pengajuan terkait...</div>}
-                    {pengajuanError && <div className="text-red-600 mb-4 flex items-center"><AlertTriangle className="w-4 h-4 mr-2" /> Error: {pengajuanError}</div>}
-
-                    <dl className="space-y-2 text-sm text-black">
-                        <div className="grid grid-cols-2 gap-x-4 border-b pb-1">
-                            <dt className="font-medium">Nomor SPK:</dt>
-                            <dd className="font-bold text-cyan-700">{spkData.nomor_spk}</dd>
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-4 border-b pb-1">
-                            <dt className="font-medium">Tanggal SPK:</dt>
-                            <dd>{spkData.tanggal_spk}</dd>
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-4 border-b pb-1">
-                            <dt className="font-medium">Status Awal:</dt>
-                            <dd className="font-bold text-blue-500">{spkData.status}</dd>
+                    {/* BAGIAN 1: DETAIL SPK & PENGAJUAN */}
+                    <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-200">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold text-black">Detail SPK & Pengajuan Terkait</h2>
+                            <button 
+                                onClick={scrollToPersonelForm}
+                                className="text-sm bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 flex items-center gap-2 transition-colors shadow-sm"
+                            >
+                                <Send size={16} /> Ke Form Penugasan
+                            </button>
                         </div>
                         
-                        {/* --- TAMPILKAN DATA LENGKAP DARI PENGAJUAN --- */}
-                        {pengajuanDetail && (
-                            <div className="space-y-2 pt-2">
-                                <h3 className="text-base font-semibold text-gray-600 border-b pb-1 mt-3">Detail Pengajuan:</h3>
-                                <div className="grid grid-cols-2 gap-x-4 border-b pb-1">
-                                    <dt className="font-medium">No. Pengajuan:</dt>
-                                    <dd className="font-bold">{pengajuanDetail.no_surat}</dd>
-                                </div>
-                                <div className="grid grid-cols-2 gap-x-4 border-b pb-1">
-                                    <dt className="font-medium">Jenis Pengajuan (Perihal):</dt>
-                                    <dd className="font-bold text-purple-700">{pengajuanDetail.nama_jenis} ({pengajuanDetail.hal_id})</dd>
-                                </div>
-                                <div className="grid grid-cols-2 gap-x-4 border-b pb-1">
-                                    <dt className="font-medium">Pelapor (NPP/TLP):</dt>
-                                    <dd>{pengajuanDetail.name_pelapor} ({pengajuanDetail.npp_pelapor} / {pengajuanDetail.tlp_pelapor || 'N/A'})</dd>
-                                </div>
-                                <div className="grid grid-cols-2 gap-x-4 border-b pb-1">
-                                    <dt className="font-medium">Satker Asal:</dt>
-                                    <dd>{pengajuanDetail.satker}</dd>
-                                </div>
-                                <div className="pt-2 border-b pb-2">
-                                    <dt className="font-medium block mb-1">Uraian Pekerjaan/Keterangan:</dt>
-                                    <dd className="mt-1 p-3 bg-gray-50 border border-gray-200 rounded-lg italic text-black font-medium whitespace-pre-wrap">
-                                        {pengajuanDetail.keterangan || spkData.pekerjaan_spk || "N/A"}
-                                    </dd>
-                                </div>
+                        {isLoadingPengajuan && <div className="text-center py-4 text-blue-600"><Loader2 className="animate-spin mx-auto" size={24} /> Memuat detail pengajuan...</div>}
+                        {pengajuanError && <div className="text-red-600 bg-red-50 p-3 rounded border border-red-200 text-sm">{pengajuanError}</div>}
+                        
+                        {/* Detail SPK */}
+                        <dl className="space-y-3 text-sm text-black mb-6 pb-6 border-b">
+                            <div className="grid grid-cols-2 gap-4">
+                                <dt className="font-semibold text-black">Nomor SPK:</dt>
+                                <dd className="font-bold text-cyan-700">{spkData.nomor_spk}</dd>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <dt className="font-semibold text-black">Pekerjaan:</dt>
+                                <dd>{spkData.pekerjaan_spk}</dd>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <dt className="font-semibold text-black">Tanggal SPK:</dt>
+                                <dd className="font-semibold text-black">{formatDateIndo(spkData.tanggal_spk)}</dd>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <dt className="font-semibold text-black">Status:</dt>
+                                <dd className={`inline-block px-2 py-1 rounded text-white text-xs ${spkData.status === 'Approved' ? 'bg-green-500' : 'bg-gray-400'}`}>
+                                    {spkData.status}
+                                </dd>
+                            </div>
+                        </dl>
 
-                                {/* BAGIAN TANDA TANGAN - Ukuran H-32 dan penempatan ditukar */}
-                                <div className="grid grid-cols-2 gap-4 pt-4">
-                                    
+                        {/* Detail Pengajuan */}
+                        {pengajuanDetail && (
+                            <div className="space-y-4 text-sm">
+                                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <span className="text-black">No. Pengajuan:</span>
+                                        <span className="font-bold text-black">{pengajuanDetail.no_surat}</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <span className="text-black">Jenis (Perihal):</span>
+                                        <span className="font-bold text-purple-700">{pengajuanDetail.nama_jenis}</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <span className="text-black">Pelapor:</span>
+                                        <span className="text-black">{pengajuanDetail.name_pelapor} ({pengajuanDetail.npp_pelapor})</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <span className="text-black">Mengetahui:</span>
+                                        <span className="text-black">{pengajuanDetail.mengetahui}</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <span className="text-black">Satker Asal:</span>
+                                        <span className="font-bold text-black">{pengajuanDetail.satker}</span>
+                                    </div>
+                                </div>
+                                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 italic text-black whitespace-pre-wrap">
+                                    {pengajuanDetail.keterangan}
+                                </div>
+                                
+                                {/* TANDA TANGAN */}
+                                <div className="grid grid-cols-2 gap-4 pt-2 border-t">
                                     <div className="border border-gray-200 rounded-lg p-3">
-                                        <dt className="font-medium mb-2">Tanda Tangan Mengetahui:</dt>
+                                        <dt className="font-medium mb-2 text-black">Tanda Tangan Mengetahui</dt>
                                         <dd className="text-center h-40 flex flex-col justify-end items-center">
                                             {pengajuanDetail.ttd_mengetahui_path ? (
                                                 <img 
-                                                    src={getProxyFileUrl(pengajuanDetail.ttd_mengetahui_path) || ""} 
-                                                    alt="Tanda Tangan Mengetahui" 
-                                                    className="h-32 w-auto max-w-full object-contain mb-1" 
+                                                    src={getDirectImageUrl(pengajuanDetail.ttd_mengetahui_path) || ""} 
+                                                    alt="TTD Mengetahui" 
+                                                    className="h-32 w-auto mx-auto object-contain mb-1" 
                                                 />
                                             ) : (
-                                                <span className="text-gray-500 italic text-xs h-32 flex items-center justify-center">TTD tidak tersedia.</span>
+                                                <div className="h-32 bg-gray-100 rounded flex items-center justify-center text-black italic text-xs">TTD tidak tersedia.</div>
                                             )}
-                                             <p className="text-xs mt-1 text-gray-700 font-semibold">{pengajuanDetail.mengetahui || 'N/A'}</p>
+                                            <p className="text-xs mt-1 text-black font-semibold">{pengajuanDetail.mengetahui || 'N/A'}</p>
                                         </dd>
                                     </div>
-
                                     <div className="border border-gray-200 rounded-lg p-3">
-                                        <dt className="font-medium mb-2">Tanda Tangan Pelapor:</dt>
+                                        <dt className="font-medium mb-2 text-black">Tanda Tangan Pelapor</dt>
                                         <dd className="text-center h-40 flex flex-col justify-end items-center">
                                             {pengajuanDetail.ttd_pelapor_path ? (
                                                 <img 
-                                                    src={getProxyFileUrl(pengajuanDetail.ttd_pelapor_path) || ""} 
-                                                    alt="Tanda Tangan Pelapor" 
-                                                    className="h-32 w-auto max-w-full object-contain mb-1" 
+                                                    src={getDirectImageUrl(pengajuanDetail.ttd_pelapor_path) || ""} 
+                                                    alt="TTD Pelapor" 
+                                                    className="h-32 w-auto mx-auto object-contain mb-1" 
                                                 />
                                             ) : (
-                                                <span className="text-gray-500 italic text-xs h-32 flex items-center justify-center">TTD tidak tersedia.</span>
+                                                <div className="h-32 bg-gray-100 rounded flex items-center justify-center text-black italic text-xs">TTD tidak tersedia.</div>
                                             )}
-                                            <p className="text-xs mt-1 text-gray-700 font-semibold">{pengajuanDetail.name_pelapor}</p>
+                                            <p className="text-xs mt-1 text-black font-semibold">{pengajuanDetail.name_pelapor}</p>
                                         </dd>
                                     </div>
                                 </div>
 
+                                {/* LAMPIRAN */}
                                 {pengajuanDetail.file_paths.length > 0 && (
-                                    <div className="pt-4 border-t mt-4 border-gray-100">
-                                            <dt className="font-medium block mb-2 flex items-center gap-1 text-cyan-700">
-                                                <File size={16}/> Lampiran File ({pengajuanDetail.file_paths.length} file):
-                                            </dt>
-                                            <dd className="grid grid-cols-3 gap-3">
+                                    <div className="pt-4 border-t">
+                                        <h3 className="text-sm font-bold text-black mb-2">Lampiran ({pengajuanDetail.file_paths.length})</h3>
+                                        <div className="grid grid-cols-4 gap-4">
+                                            {pengajuanDetail.file_paths.map((path, index) => {
+                                                const imgUrl = getDirectImageUrl(path);
+                                                if (!imgUrl) return null;
 
-                                    {pengajuanDetail.file_paths.map((path, index) => {
-                                        const fileUrl = getProxyFileUrl(path); 
-                                        const isImage = /\.(jpe?g|png|gif|webp)$/i.test(path);
-                                        const fileName = path.split('/').pop() || 'File';
-
-                                        const handleClick = (e: React.MouseEvent) => {
-                                            if (isImage && fileUrl) {
-                                                e.preventDefault(); 
-                                                setModalImageUrl(fileUrl); 
-                                            } 
-                                        };
-
-                                        return (
-                                            <a 
-                                                key={index} 
-                                                href={fileUrl || '#'} 
-                                                target={isImage ? '_self' : '_blank'} 
-                                                rel="noopener noreferrer"
-                                                onClick={handleClick} 
-                                                className="block p-3 border border-gray-300 rounded-lg text-center hover:bg-gray-100 transition h-36 flex flex-col justify-between overflow-hidden" // Tambahkan overflow-hidden
-                                                title={fileName}
-                                            >
-                                                {isImage ? (
-                                                    <>
-                                                        <div className="relative w-full h-24 flex items-center justify-center">
+                                                return (
+                                                    <div key={index} className="relative group">
+                                                        <div 
+                                                            onClick={() => setModalImageUrl(imgUrl)}
+                                                            className="h-24 w-full bg-gray-100 rounded-lg border border-gray-300 overflow-hidden cursor-pointer hover:border-blue-400 transition"
+                                                        >
                                                             <img 
-                                                                src={fileUrl || ''} 
-                                                                alt="Thumbnail" 
-                                                                className="max-h-full max-w-full object-contain mx-auto rounded" 
-                                                                onError={(e) => { 
-                                                                    // FIX: Hapus on error handler agar tidak looping
-                                                                    e.currentTarget.onerror = null; 
-                                                                    // Ganti dengan placeholder icon sederhana atau image not found url yang VALID
-                                                                    // Contoh menggunakan placeholder dari placehold.co atau icon SVG static
-                                                                    e.currentTarget.src = 'https://placehold.co/100x100?text=No+Image'; 
-                                                                    // Atau sembunyikan gambar jika error
-                                                                    // e.currentTarget.style.display = 'none';
-                                                                }}
+                                                                src={imgUrl} 
+                                                                alt={`lampiran-${index}`}
+                                                                className="w-full h-full object-cover"
                                                             />
+                                                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 flex items-center justify-center transition-all">
+                                                                <ImageIcon className="text-white drop-shadow-md" size={20} />
+                                                            </div>
                                                         </div>
-                                                        <span className="text-xs text-gray-700 block truncate mt-1 font-bold">Lihat Gambar</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <File size={36} className="mx-auto text-blue-500 flex-shrink-0"/>
-                                                        <span className="text-xs text-gray-700 block truncate mt-1">
-                                                            Unduh File 
-                                                        </span>
-                                                        <Download size={12} className="inline ml-1 text-blue-500"/>
-                                                    </>
-                                                )}
-                                            </a>
-                                        );
-                                    })}
-
-                                            </dd>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 )}
                             </div>
                         )}
-                    </dl>
-                </div>
+                    </div>
 
-                {/* ========================================================= */}
-                {/* START: FORM PENUGASAN PERSONEL (DIPINDAH KE BAWAH) */}
-                {/* ========================================================= */}
-                <div ref={personelFormRef} className="bg-white rounded-2xl shadow-xl p-6 border-t-4 border-green-500">
-                    <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center gap-2">
-                        <Users size={20} className="text-green-600"/> Penentuan Personel
-                    </h2>
+                    {/* BAGIAN 2: FORM PENUGASAN (DIPINDAH KE BAWAH) */}
+                    <div ref={personelFormRef} className="bg-white p-6 rounded-2xl shadow-xl border border-gray-200 border-t-4 border-green-500">
+                        <h2 className="text-xl font-bold text-black mb-6 flex items-center gap-2">
+                            <Users size={20} className="text-green-600"/> Form Penugasan
+                        </h2>
 
-                    <div className="flex flex-col gap-4">
-                        <label className="text-sm font-medium text-gray-700">
-                            Pilih Personel yang Ditugaskan:
-                        </label>
-                        
-                        <div className="flex flex-wrap items-center p-1 border border-gray-400 rounded-xl bg-gray-50 min-h-[50px] focus-within:ring-2 focus-within:ring-blue-300 transition">
-                            {assignedPeople.map((person) => (
-                                <Chip 
-                                    key={person.name} 
-                                    person={person} 
-                                    onRemove={handleRemovePerson}
-                                    onTogglePic={handleTogglePic}
-                                />
-                            ))}
-
-                            <div className="flex-1 relative min-w-[200px]">
-                                <input
-                                    ref={inputRef}
-                                    type="text"
-                                    value={currentPersonInput}
-                                    onChange={(e) => {
-                                        setCurrentPersonInput(e.target.value);
-                                        setIsDropdownOpen(true);
-                                    }}
-                                    onFocus={() => setIsDropdownOpen(true)}
-                                    onKeyDown={handleKeyDown}
-                                    placeholder={isLoadingPegawai ? "Memuat daftar pegawai..." : "Ketik nama atau NPP..."}
-                                    className="flex-1 bg-transparent outline-none p-1 text-sm text-black"
-                                    disabled={isLoadingPegawai || isSubmitting}
-                                />
-                                
-                                <GmailDropdown
-                                    items={pegawaiList}
-                                    onSelect={(name) => handleAddPerson(name)}
-                                    isOpen={isDropdownOpen && currentPersonInput.length > 0}
-                                    onClose={() => setIsDropdownOpen(false)}
-                                    inputValue={currentPersonInput}
-                                    setInputValue={setCurrentPersonInput}
-                                    assignedPeople={assignedPeople}
-                                />
-                            </div>
+                        {/* INPUT PERSONEL */}
+                        <div className="space-y-4">
+                            <label className="text-sm font-medium text-black block">
+                                Pilih Personel yang Ditugaskan:
+                            </label>
                             
-                            <Button 
-                                onClick={() => handleAddPerson()} 
-                                className="ml-2 px-3 py-0.5 text-xs bg-green-500 hover:bg-green-600 rounded-full" 
-                                disabled={isLoadingPegawai || currentPersonInput.trim() === ''}
-                            >
-                                +
-                            </Button>
-                        </div>
+                            <div className="flex flex-wrap items-center p-3 border-2 border-dashed border-gray-300 rounded-xl bg-white min-h-[50px] focus-within:ring-2 focus-within:ring-green-300 transition-colors">
+                                {assignedPeople.map((person) => (
+                                    <Chip 
+                                        key={person.name} 
+                                        person={person} 
+                                        onRemove={handleRemovePerson}
+                                        onTogglePic={handleTogglePic}
+                                    />
+                                ))}
 
-                        {/* CATATAN PIC (Dilewati) */}
-                        <p className="text-xs text-red-600">
-                            * Wajib menentukan minimal 1 PIC (Penanggung Jawab) dengan mengklik ikon lingkaran/centang pada chip personel.
-                        </p>
+                                <div className="flex-1 relative min-w-[200px]">
+                                    <input
+                                        ref={inputRef}
+                                        type="text"
+                                        value={currentPersonInput}
+                                        onChange={(e) => {
+                                            setCurrentPersonInput(e.target.value);
+                                            setIsDropdownOpen(true);
+                                        }}
+                                        onFocus={() => setIsDropdownOpen(true)}
+                                        onKeyDown={handleKeyDown}
+                                        placeholder={isLoadingPegawai ? "Memuat daftar pegawai..." : "Ketik nama atau NPP..."}
+                                        className="flex-1 bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-100 text-black placeholder:text-gray-900"
+                                        disabled={isLoadingPegawai || isSubmitting}
+                                    />
+                                    
+                                    {isLoadingPegawai && (
+                                        <div className="absolute right-3 top-2.5">
+                                            <Loader2 className="animate-spin text-gray-400" size={16} />
+                                        </div>
+                                    )}
 
-                        {/* TOMBOL SUBMIT (Dilewati) */}
-                        <div className="pt-4">
-                            <Button
-                                onClick={handleSubmitAssignment} 
-                                className="w-full py-3 bg-green-600 hover:bg-green-700 text-white transition-transform transform hover:scale-[1.01] shadow-lg flex items-center justify-center gap-2"
-                                disabled={isSubmitting || assignedPeople.length === 0 || !assignedPeople.some(p => p.isPic)}
-                            >
-                                {isSubmitting ? (
-                                    <>
-                                        <Loader2 className="animate-spin" size={20} /> 
-                                        Menyimpan Penugasan...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Send size={20} /> 
-                                        Tugaskan Sekarang
-                                    </>
+                                    <GmailDropdown
+                                        items={pegawaiList}
+                                        onSelect={(name) => handleAddPerson(name)}
+                                        isOpen={isDropdownOpen && currentPersonInput.length > 0}
+                                        onClose={() => setIsDropdownOpen(false)}
+                                        inputValue={currentPersonInput}
+                                        setInputValue={setCurrentPersonInput}
+                                        assignedPeople={assignedPeople}
+                                    />
+                                </div>
+                                
+                                <Button 
+                                    onClick={() => handleAddPerson()} 
+                                    className="ml-2 px-3 py-0.5 text-xs bg-green-500 hover:bg-green-600 rounded-full text-white disabled:opacity-50" 
+                                    disabled={isLoadingPegawai || currentPersonInput.trim() === ''}
+                                >
+                                    +
+                                </Button>
+                            </div>
+
+                            {/* CATATAN PIC */}
+                            <p className="text-xs text-black">
+                                * Klik ikon bulat <CheckCircle className="inline w-3 h-3 mx-1 text-green-600"/> pada chip untuk set sebagai Penanggung Jawab (PIC).
+                            </p>
+
+                            {/* LIST ASSIGNED */}
+                            {assignedPeople.length > 0 && (
+                                <div className="mt-4">
+                                    <h3 className="text-sm font-semibold text-black mb-2">Personel Ditugaskan:</h3>
+                                    <div className="space-y-2">
+                                        {assignedPeople.map((person, index) => (
+                                            <div key={index} className={`flex items-center justify-between p-3 rounded-lg border ${person.isPic ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center font-bold text-black">
+                                                                {person.name.charAt(0).toUpperCase()}
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <div className="text-sm font-bold text-black">{person.name}</div>
+                                                                <div className="text-xs text-black flex items-center gap-2">
+                                                                    <span>NPP: {person.npp || '-'}</span>
+                                                                    <span className="text-gray-400">|</span>
+                                                                    <span>{person.tlp || 'No HP'}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="text-xs text-black mr-2">#{index + 1}</div>
+                                                            {person.isPic && (
+                                                                <span className="bg-green-100 text-green-800 text-[10px] font-bold px-2 py-0.5 rounded border border-green-300">PIC</span>
+                                                            )}
+                                                            <X 
+                                                                size={16} 
+                                                                className="cursor-pointer text-black hover:text-red-500" 
+                                                                onClick={() => handleRemovePerson(person.name)}
+                                                            />
+                                                        </div>
+                                                </div>
+                                            ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TOMBOL SUBMIT */}
+                            <div className="pt-6">
+                                <button
+                                    onClick={handleSubmitAssignment} 
+                                    className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 text-lg font-bold transition-transform transform hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={isSubmitting || assignedPeople.length === 0 || !assignedPeople.some(p => p.isPic)}
+                                >
+                                    {isSubmitting ? (
+                                        <>
+                                            <Loader2 size={20} className="animate-spin" /> 
+                                            Menyimpan...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Send size={20} /> 
+                                            Tugaskan Sekarang
+                                        </>
+                                    )}
+                                </button>
+                                {assignedPeople.some(p => p.isPic) && assignedPeople.length > 1 && (
+                                     <p className="text-xs text-black text-center mt-2">
+                                         Menugaskan untuk: <span className="font-bold text-green-600">{picName}</span> dan {assignedPeople.length - 1} staf lainnya.
+                                     </p>
                                 )}
-                            </Button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -972,7 +991,7 @@ export default function AssignSPKPage() {
         <Suspense fallback={
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
                 <Loader2 className="animate-spin text-cyan-600 mr-3" size={32} />
-                <span className="text-xl font-medium text-gray-700">Memuat Halaman...</span>
+                <span className="text-xl font-medium text-black">Memuat Halaman...</span>
             </div>
         }>
             <AssignSPKContent />

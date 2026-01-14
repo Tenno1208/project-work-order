@@ -10,14 +10,13 @@ import {
   Settings,
   ShieldCheck,
   Printer,
-  Home // Icon Home untuk tombol kembali
+  Home 
 } from 'lucide-react';
 
 import ProfilSayaContent from '@/components/ProfilSayaContent'; 
 import RiwayatTtdContent from '@/components/RiwayatTtdContent'; 
 import PengaturanCetakContent from '@/components/PengaturanCetakContent'; 
 
-// --- DEFINISI TAB & PERMISSION SUB-FITUR ---
 const tabs = [
     {
         id: 'profil',
@@ -39,7 +38,6 @@ const tabs = [
     },
 ];
 
-// --- KOMPONEN ACCESS DENIED UI (Style disamakan dengan Riwayat SPK) ---
 const AccessDeniedUI = ({ missingPermission }: { missingPermission: string }) => {
     const router = useRouter();
     return (
@@ -98,7 +96,6 @@ export default function PengaturanPage() {
 
     useEffect(() => {
         if (permissionsLoaded) {
-            // Cek tab aktif saat ini, apakah user punya izin?
             const activeTabData = tabs.find(tab => tab.id === activeTab);
             
             if (activeTabData && !hasPermission(activeTabData.requiredPermission)) {
@@ -138,7 +135,6 @@ export default function PengaturanPage() {
     }
 
     // --- 2. ACCESS DENIED CHECK (GATEKEEPER UTAMA) ---
-    // Jika user tidak punya izin 'workorder-pti.view.pengaturan', blokir seluruh halaman
     if (!hasPermission(PAGE_PERMISSION)) {
         return <AccessDeniedUI missingPermission={PAGE_PERMISSION} />;
     }
@@ -146,9 +142,7 @@ export default function PengaturanPage() {
     // --- 3. MAIN LAYOUT (Jika Lolos Check) ---
     return (
         <div className="min-h-screen bg-gray-50/50 pb-12">
-            {/* HEADER MEWAH (Blue Gradient & Waves) */}
             <div className="relative bg-gradient-to-r from-blue-800 via-blue-600 to-cyan-500 pb-24 pt-10 px-6 lg:px-10 overflow-hidden shadow-xl rounded-b-[2.5rem]">
-                {/* Dekorasi Background */}
                 <div className="absolute top-0 right-0 opacity-10 transform translate-x-10 -translate-y-10">
                     <Waves size={300} textAnchor="white" />
                 </div>
@@ -167,14 +161,12 @@ export default function PengaturanPage() {
                         </div>
                     </div>
 
-                    {/* TAB NAVIGASI MODERN */}
                     <div className="flex space-x-2 bg-white/10 backdrop-blur-sm p-1.5 rounded-xl w-fit border border-white/10 overflow-x-auto">
                         {tabs.map((tab) => {
                             const Icon = tab.icon;
                             const isActive = activeTab === tab.id;
                             const hasTabPermission = hasPermission(tab.requiredPermission);
 
-                            // Sembunyikan tab jika tidak punya permission spesifik tab tersebut
                             if (!hasTabPermission) return null;
 
                             return (
@@ -198,7 +190,6 @@ export default function PengaturanPage() {
                 </div>
             </div>
 
-            {/* KONTEN AREA (Floating Card) */}
             <div className="max-w-6xl mx-auto px-4 lg:px-6 -mt-16 relative z-20">
                 <div className="bg-white rounded-3xl shadow-xl border border-blue-50/50 min-h-[400px] overflow-hidden">
                     <div className="p-1">

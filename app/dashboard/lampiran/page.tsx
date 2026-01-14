@@ -9,10 +9,18 @@ import {
 } from "lucide-react";
 import Cropper, { Point, Area } from 'react-easy-crop';
 
-const LIST_API_PATH = "/api/pengajuan/views";
-const DELETE_API_BASE = "/api/pengajuan/delete/";
-const APPROVE_REJECT_API_BASE = "/api/pengajuan";
-const TTD_PROXY_PATH = "/api/ttd-proxy";
+// --- KONFIGURASI API LANGSUNG (DIRECT) ---
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+
+const API_ENDPOINTS = {
+    LIST_VIEWS: `${API_BASE_URL}/pengajuan/views`,
+    DELETE: `${API_BASE_URL}/pengajuan/delete`, 
+    UPDATE_STATUS: `${API_BASE_URL}/pengajuan`,
+    GET_TTD: `${API_BASE_URL}/user/ttd`,
+    UPLOAD_TTD: `${API_BASE_URL}/user/create/ttd`, 
+};
+
 const MAX_RETRIES = 1;
 
 type ApiPengajuanItem = {
@@ -292,8 +300,7 @@ const TtdCropModal = React.memo(({
     const [rotation, setRotation] = useState(0);
     const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
-    
-    // Setting default tanpa slider (Threshold disembunyikan/dihapus dari UI)
+     
     const [transparencySettings, setTransparencySettings] = useState({
         whiteThreshold: 235,
         blackThreshold: 35,
@@ -345,7 +352,6 @@ const TtdCropModal = React.memo(({
                     <div className="mb-4 p-3 bg-gray-100 rounded-lg border border-gray-300">
                         <h4 className="font-bold text-sm mb-2 text-black">Pengaturan Transparansi</h4>
                         <div>
-                            {/* Slider Threshold DIHAPUS, hanya sisa Checkbox */}
                             <label className="flex items-center gap-2 text-sm font-bold text-black cursor-pointer">
                                 <input
                                     type="checkbox"
@@ -451,13 +457,11 @@ const StatusActionModal = React.memo(({
 }) => {
     if (!statusModal.isOpen || statusModal.uuid === null) return null;
 
-    // Ambil no_surat dari state
     const { hal, isSubmitting, rejectReason, actionToConfirm, showApproveConfirm, no_surat } = statusModal;
     const isApproveSubmitting = isSubmitting && currentStatusAction === 'approve';
     const isRejectSubmitting = isSubmitting && currentStatusAction === 'reject';
     const isActionDisabled = isSubmitting || !currentUser;
 
-    // Tentukan label identitas (Gunakan No Surat jika ada, jika tidak gunakan Hal)
     const displayIdentity = no_surat && no_surat !== '-' ? `No. Surat ${no_surat}` : `Hal: ${hal}`;
 
     const handleActionClick = (action: StatusAction) => {
@@ -508,7 +512,6 @@ const StatusActionModal = React.memo(({
                 </div>
                 
                 <div className="text-gray-700 mb-6">
-                    {/* Tampilan Default: Pilihan Aksi */}
                     {!showApproveConfirm && !actionToConfirm && (
                         <p className="mb-4 font-medium text-center text-lg">
                             Silakan pilih aksi untuk data <br/>
@@ -516,7 +519,6 @@ const StatusActionModal = React.memo(({
                         </p>
                     )}
                     
-                    {/* Tampilan Konfirmasi Approve */}
                     {showApproveConfirm && (
                         <div className="border border-green-300 bg-green-50 p-4 rounded-lg mb-6">
                             <div className="flex items-center mb-3">
@@ -577,7 +579,7 @@ const StatusActionModal = React.memo(({
                                 <button
                                     onClick={() => handleActionClick('approve')}
                                     disabled={isActionDisabled}
-                                    className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-white rounded-lg transition-colors shadow-md transform hover:scale-[1.02] disabled:scale-100      
+                                    className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-white rounded-lg transition-colors shadow-md transform hover:scale-[1.02] disabled:scale-100       
                                         ${isApproveSubmitting ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700 disabled:bg-green-400'}
                                     `}
                                 >
@@ -603,7 +605,7 @@ const StatusActionModal = React.memo(({
                                     <button
                                         onClick={handleFinalReject}
                                         disabled={isActionDisabled || rejectReason.trim() === ''}
-                                        className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-white rounded-lg transition-colors shadow-md transform hover:scale-[1.02] disabled:scale-100      
+                                        className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-white rounded-lg transition-colors shadow-md transform hover:scale-[1.02] disabled:scale-100       
                                             ${isRejectSubmitting ? 'bg-red-400' : 'bg-red-600 hover:bg-red-700 disabled:bg-red-400'}
                                         `}
                                     >
@@ -619,7 +621,7 @@ const StatusActionModal = React.memo(({
                                 <button
                                     onClick={() => handleActionClick('reject')}
                                     disabled={isSubmitting}
-                                    className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-white rounded-lg transition-colors shadow-md transform hover:scale-[1.02] disabled:scale-100      
+                                    className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 text-sm font-medium text-white rounded-lg transition-colors shadow-md transform hover:scale-[1.02] disabled:scale-100       
                                         ${isRejectSubmitting ? 'bg-red-400' : 'bg-red-600 hover:bg-red-700 disabled:bg-red-400'}
                                     `}
                                 >
@@ -810,7 +812,6 @@ function DataPengajuanContent() {
         }, 4000);
     }, []);
 
-    // Effect to sync URL params with state when user navigates (back/forward)
     useEffect(() => {
         const pageFromUrl = Number(searchParams.get('page')) || 1;
         if (pageFromUrl !== currentPage) {
@@ -863,13 +864,17 @@ function DataPengajuanContent() {
             return;
         }
 
+        // --- FETCH LANGSUNG KE API ---
+        const url = new URL(API_ENDPOINTS.LIST_VIEWS);
+        url.searchParams.set('page', page.toString());
+        
         const headers: HeadersInit = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`,
         };
 
         try {
-            const response = await fetch(`${LIST_API_PATH}?page=${page}`, {
+            const response = await fetch(url.toString(), {
                 method: 'GET',
                 headers: headers,
             });
@@ -1015,10 +1020,10 @@ function DataPengajuanContent() {
         const headers: HeadersInit = {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
-            "bypass-tunnel-reminder": "true",
         };
 
-        const deleteUrl = `${DELETE_API_BASE}${uuidToDelete}`;
+        // --- DELETE LANGSUNG KE API ---
+        const deleteUrl = `${API_ENDPOINTS.DELETE}/${uuidToDelete}`;
 
         for (let i = 0; i < MAX_RETRIES; i++) {
             try {
@@ -1091,7 +1096,8 @@ function DataPengajuanContent() {
             const token = localStorage.getItem('token');
             if (!token) throw new Error("Token tidak ditemukan.");
 
-            const response = await fetch('/api/ttd-upload', {
+            // --- UPLOAD TTD LANGSUNG KE API ---
+            const response = await fetch(API_ENDPOINTS.UPLOAD_TTD, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -1183,13 +1189,14 @@ function DataPengajuanContent() {
                 'Authorization': `Bearer ${token}`,
             };
 
-            const updateUrl = `${APPROVE_REJECT_API_BASE}/${uuid}/status`;
+            // --- REJECT LANGSUNG KE API ---
+            const updateUrl = `${API_ENDPOINTS.UPDATE_STATUS}/${uuid}/status`;
 
             const bodyData: any = {
                 status: newStatus,
                 npp_mengetahui: currentUser.npp,
                 name_mengetahui: currentUser.name,
-                catatan_status: rejectReason,      
+                catatan_status: rejectReason,       
             };
 
             try {
@@ -1230,17 +1237,18 @@ function DataPengajuanContent() {
             }
         }
 
+        // Logic Approval (Approve)
         let ttdPathMengetahui: string | null = null;
         const { npp: nppMengetahui, name: nameMengetahui } = currentUser;
         
         if (ttdPaths[nppMengetahui]) {
             ttdPathMengetahui = ttdPaths[nppMengetahui];
-            // showToast(`Menggunakan tanda tangan yang tersimpan untuk NPP ${nppMengetahui}`, 'success');
         } else {
-            // showToast(`Mengambil tanda tangan untuk NPP ${nppMengetahui}...`, 'info');
             try {
-                const ttdRes = await fetch(`${TTD_PROXY_PATH}/${nppMengetahui}`, {
-                    headers: { 'Authorization': `Bearer ${token}` },
+                const ttdRes = await fetch(`${API_ENDPOINTS.GET_TTD}/${nppMengetahui}`, {
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                    },
                     cache: "no-store",
                 });
                 const ttdData = await ttdRes.json();
@@ -1281,14 +1289,14 @@ function DataPengajuanContent() {
             'Authorization': `Bearer ${token}`,
         };
 
-        const updateUrl = `${APPROVE_REJECT_API_BASE}/${uuid}/status`;
+        const updateUrl = `${API_ENDPOINTS.UPDATE_STATUS}/${uuid}/status`;
 
         const bodyData: any = {
             status: newStatus,
             npp_mengetahui: nppMengetahui,
             name_mengetahui: nameMengetahui,
             ttd_mengetahui: ttdPathMengetahui,
-            catatan_status: null,      
+            catatan_status: null,       
         };
 
         Object.keys(bodyData).forEach(key => bodyData[key] === undefined && delete bodyData[key]);

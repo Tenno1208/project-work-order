@@ -5,10 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import { Loader2, AlertTriangle, Eye, Printer, FileText, X, Lock, Home } from 'lucide-react';
 
 export async function generateStaticParams() {
-    return []; // Mengembalikan array kosong agar build tidak mencari ID tertentu
+    return []; 
 }
 
-export const dynamicParams = true;
+export const dynamicParams = false;
 
 // --- KONFIGURASI API DIRECT (DARI ENV) ---
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;

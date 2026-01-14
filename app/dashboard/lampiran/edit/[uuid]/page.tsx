@@ -43,9 +43,10 @@ type NoSurat = { id:string | number; no_surat:string };
 type NotificationType = 'success' | 'error' | 'warning';
 
 export async function generateStaticParams() {
-    return []; // Mengembalikan array kosong agar build menganggap ini halaman dinamis client-side
+    return []; // Agar build tidak error mencari UUID
 }
-export const dynamic = 'force-dynamic';
+
+export const dynamicParams = false;
 
 // --- HELPER FUNCTIONS ---
 async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {

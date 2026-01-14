@@ -1,14 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef, Suspense } from 'react';
-import { useParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Loader2, AlertTriangle, Eye, Printer, FileText, X, Lock, Home } from 'lucide-react';
-
-export async function generateStaticParams() {
-    return []; 
-}
-
-export const dynamicParams = false;
 
 // --- KONFIGURASI API DIRECT (DARI ENV) ---
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -264,9 +258,9 @@ const AccessDeniedUI = () => {
 
 // --- MAIN COMPONENT ---
 function DetailContent() {
-    const params = useParams();
-    const uuid = params ? (params.uuid as string) : "";
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const uuid = searchParams.get("uuid") || "";
     
     const [permissionsLoaded, setPermissionsLoaded] = useState(false);
     const [hasAccess, setHasAccess] = useState(false);

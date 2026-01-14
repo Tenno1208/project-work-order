@@ -904,14 +904,15 @@ export default function LampiranPengajuanPage() {
         throw new Error("Format respons upload tidak valid.");
     }
 
-        async function uploadMultipleToHandler(files: File[], token: string, namePrefix: string): Promise<string[]> {
+            async function uploadMultipleToHandler(files: File[], token: string, namePrefix: string): Promise<string[]> {
         if (files.length === 0) return [];
 
         const formData = new FormData();
         
         // --- PERBAIKAN DISINI ---
         const basePath = generateDynamicPath('pengajuans');
-        const path = `${basePath}work-order-pengajuan-foto/`; 
+        // HAPUS subfolder manual agar sama dengan path TTD yang sudah berhasil
+        const path = basePath; 
         // ----------------------
 
         formData.append('path', path);
@@ -1299,7 +1300,7 @@ export default function LampiranPengajuanPage() {
     const jabatanMengetahuiBase = supervisorOrgunit || mengetahuiPegawai?.jabatan || selectedSatker?.jabatan || "Ka.Unit";
     const jabatanMengetahui = `${PENGAJUAN_MENGETAHUI_KEPALA} ${jabatanMengetahuiBase}`;
 
-    const proceedSubmission = useCallback(async () => {
+        const proceedSubmission = useCallback(async () => {
         setIsModalOpen(false);
         setIsSubmitting(true);
 
@@ -1329,28 +1330,28 @@ export default function LampiranPengajuanPage() {
             let fileFilepaths: string[] = [];
             if (files.length > 0) {
                 try {
-                    const timestamp = Date.now(); 
-                    const baseName = `work-order-/${form.nppPelapor}-${timestamp}`;
-
-                    if (files.length === 1) {
-                        // ============================================
-                        // JIKA HANYA 1 FILE: Gunakan Endpoint Single Upload
-                        // ============================================
-                        const file = files[0];
+                    // Base nama file (diperbaiki typo slash)
+                    const baseName = `work-order-${form.nppPelapor}-${timestamp}`;
+                    
+                    // ==========================================
+                    // PERBAIKAN: Ganti logika Multiple Upload
+                    // Kita paksa upload satu per satu (Sequential Single Upload)
+                    // agar menggunakan endpoint yang sama dengan TTD.
+                    // Endpoint Multiple seringkali gagal membuat folder otomatis.
+                    // ==========================================
+                    
+                    for (let i = 0; i < files.length; i++) {
+                        const file = files[i];
                         const ext = file.name.split('.').pop();
-                        const finalFileName = `${baseName}.${ext}`;
+                        const finalFileName = `${baseName}-${i}.${ext}`;
                         
-                        console.log("Upload Single File:", finalFileName);
+                        console.log(`Uploading file ${i + 1} dari ${files.length}: ${finalFileName}`);
+                        
+                        // Gunakan uploadToHandler (Single) untuk setiap file
                         const path = await uploadToHandler(file, token, finalFileName, 'pengajuans');
-                        fileFilepaths = [path];
-
-                    } else {
-                        // ============================================
-                        // JIKA FILE > 1: Gunakan Endpoint Multiple Upload
-                        // ============================================
-                        console.log("Upload Multiple Files:", files.length);
-                        fileFilepaths = await uploadMultipleToHandler(files, token, baseName);
+                        fileFilepaths.push(path);
                     }
+
                 } catch (e: any) {
                     throw new Error(`Gagal upload lampiran: ${e.message}`);
                 }
@@ -1434,7 +1435,7 @@ export default function LampiranPengajuanPage() {
         } finally {
             setIsSubmitting(false);
         }
-    }, [form, files, ttdPelaporFile, ttdPelaporPreview, isEditMode, editUuid, existingFilePaths, router, satkers, transparencySettings]); 
+    }, [form, files, ttdPelaporFile, ttdPelaporPreview, isEditMode, editUuid, existingFilePaths, router, satkers, transparencySettings]);
 
     const handleAjukan = async () => {
         const wajibDiisi = [

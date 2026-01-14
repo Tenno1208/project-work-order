@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, use } from "react";
+import { useParams } from "next/navigation";
 import { 
     Loader2, AlertTriangle, Home, Save, X, Printer, Droplet, Upload, 
     PlusCircle, Check, Ban, Maximize2, Zap, AlertCircle, FileText, 
@@ -40,6 +41,11 @@ type PegawaiDef = any;
 type TtdHistoryItem = { originalUrl: string; processedUrl: string };
 type NoSurat = { id:string | number; no_surat:string };
 type NotificationType = 'success' | 'error' | 'warning';
+
+export async function generateStaticParams() {
+    return []; // Mengembalikan array kosong agar build menganggap ini halaman dinamis client-side
+}
+export const dynamic = 'force-dynamic';
 
 // --- HELPER FUNCTIONS ---
 async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
@@ -769,12 +775,10 @@ const AccessDeniedUI = () => {
     );
 };
 
-// --- MAIN COMPONENT ---
-
-export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: string }> }) {
+export default function EditPengajuanForm() {
     const router = useRouter();
-    const unwrappedParams = use(params); 
-    const uuid = unwrappedParams.uuid;
+    const params = useParams();
+    const uuid = params?.uuid as string;
     const didMountRef = useRef(false);
     const isEditMode = !!uuid;
 

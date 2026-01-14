@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback, useMemo, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { Calendar, X, CheckCircle, Loader2, AlertTriangle, Users, ArrowLeft, ChevronDown, ChevronUp, File as FileIcon, Download, Crop, Settings, Upload, Image as ImageIcon } from "lucide-react";
+import React, { useState, useRef, useEffect, useCallback, useMemo, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Calendar, X, CheckCircle, Loader2, AlertTriangle, Users, ArrowLeft, ChevronDown, ChevronUp, File as FileIcon, Download, Crop, Settings, Upload, Image as ImageIcon, Printer, QrCode } from 'lucide-react';
 import Cropper, { Point, Area } from 'react-easy-crop';
 import Draggable from "react-draggable";
 import QRCode from "react-qr-code";
@@ -52,7 +52,6 @@ type SPKDetail = {
     ttd_pelaksana_path?: string | null;
     ttd_menyetujui_path?: string | null;
     ttd_mengetahui_path?: string | null;
-    // Tambahkan field untuk data mengetahui dan menyetujui dari API
     mengetahui_name?: string;
     mengetahui_npp?: string;
     mengetahui_jabatan?: string;
@@ -81,6 +80,23 @@ type PengajuanDetail = {
     kode_barang: string | null;
 };
 
+// --- HELPER FORMAT TANGGAL ---
+const formatLongDate = (dateString: string) => {
+    if (!dateString) return "-";
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return dateString; 
+        return new Intl.DateTimeFormat('id-ID', { 
+            weekday: 'long', 
+            day: 'numeric', 
+            month: 'long', 
+            year: 'numeric' 
+        }).format(date);
+    } catch (e) {
+        return dateString;
+    }
+};
+
 // ====================================================================
 // --- UTILITY FUNCTIONS (IMAGE PROCESSING & DIRECT URL) -------------------
 // ====================================================================
@@ -88,88 +104,40 @@ type PengajuanDetail = {
 const getProxyFileUrl = (path: string | null | undefined): string | null => {
     if (!path || path.trim() === '') return null;
     const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-    // Gunakan Base URL dari Env yang sudah menyertakan parameter ?path=
     return `${IMAGE_STORAGE_BASE_URL}${cleanPath}`;
 };
 
-// TAMBAHKAN VARIABEL CACHE INI (Global di luar komponen agar persisten)
-const imageLoadCache = new Map<string, Promise<string>>();
+// Fetch image directly for Blob URL (Same as View Page)
+async function fetchImageDirectly(pathOrUrl: string, token: string | null): Promise<string> {
+    if (!pathOrUrl || pathOrUrl.trim() === '') return 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    if (pathOrUrl.startsWith('data:')) return pathOrUrl; 
 
-async function loadImageWithDirectUrl(imgUrl: string, token: string, maxRetries: number = 5): Promise<string> {
-    if (imgUrl.startsWith('data:')) return imgUrl;
+    try {
+        let finalUrl = pathOrUrl;
+        if (!pathOrUrl.startsWith('http')) {
+            const sanitizedPath = pathOrUrl.startsWith('/') ? pathOrUrl.slice(1) : pathOrUrl;
+            finalUrl = `${IMAGE_STORAGE_BASE_URL}${encodeURIComponent(sanitizedPath)}`;
+        }
 
-    // Tentukan target URL terlebih dahulu agar cache key-nya konsisten
-    const targetUrl = imgUrl.startsWith('http') ? imgUrl : getProxyFileUrl(imgUrl);
-
-    if (!targetUrl) return imgUrl;
-
-    // 1. CEK CACHE: Jika gambar pernah diminta (baik sedang loading atau selesai), 
-    //    kembalikan Promise yang sama. Ini mencegah fetch ganda.
-    if (imageLoadCache.has(targetUrl)) {
-        return imageLoadCache.get(targetUrl)!;
-    }
-
-    // 2. Buat Promise untuk proses loading
-    const loadPromise = (async (): Promise<string> => {
-        let retryCount = 0;
-
-        const attemptLoad = async (): Promise<string> => {
-            try {
-                // URL target adalah hasil dari getProxyFileUrl yang mengarah ke gateway
-                if (!targetUrl) return imgUrl;
-
-                const res = await fetch(targetUrl, {
-                    headers: {
-                        'Authorization': `Bearer ${token.replace('Bearer ', '')}`,
-                        'Accept': 'image/png, image/jpeg, image/gif',
-                    },
-                });
-
-                if (!res.ok) {
-                    throw new Error(`Gagal load image via gateway: ${res.status}`);
-                }
-
-                const blob = await res.blob();
-                const reader = new FileReader();
-
-                return new Promise<string>((resolve, reject) => {
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.onerror = () => reject(new Error('Failed to read file'));
-                    reader.readAsDataURL(blob);
-                });
-            } catch (error) {
-                console.error(`Error loading image (attempt ${retryCount + 1}):`, error);
-                retryCount++;
-
-                if (retryCount >= maxRetries) {
-                    console.error(`Max retries (${maxRetries}) reached for image: ${imgUrl}`);
-                    return imgUrl;
-                }
-
-                await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount - 1)));
-
-                return attemptLoad();
+        const res = await fetch(finalUrl, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
             }
-        };
+        });
 
-        return attemptLoad();
-    })();
-    imageLoadCache.set(targetUrl, loadPromise);
+        if (!res.ok) throw new Error("Gagal load gambar");
 
-    return loadPromise;
+        const blob = await res.blob();
+        return URL.createObjectURL(blob); 
+    } catch (e) {
+        console.error("Error fetching image direct:", e);
+        return 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    }
 }
 
-async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    return new File([blob], filename, { type: 'image/png' });
-}
-
-async function resizeAndMakeTransparent(
-    dataUrl: string,
-    settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean },
-    targetWidth: number = 600
-): Promise<string> {
+// Proses Transparansi Gambar (Sama seperti View & Crop)
+async function processImageTransparency(dataUrl: string, settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }, targetWidth: number = 600): Promise<string> {
     return new Promise((resolve) => {
         try {
             const whiteThreshold = settings?.whiteThreshold || 235;
@@ -194,28 +162,69 @@ async function resizeAndMakeTransparent(
                 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 const data = imageData.data;
 
+                let hasInk = false;
+                let minX = canvas.width, minY = canvas.height, maxX = 0, maxY = 0;
+
                 if (useAdvanced) {
                     for (let i = 0; i < data.length; i += 4) {
                         const r = data[i]; const g = data[i + 1]; const b = data[i + 2];
                         const brightness = (r + g + b) / 3;
                         const colorVariance = Math.max(r, g, b) - Math.min(r, g, b);
-                        if (brightness > whiteThreshold || brightness < blackThreshold) { data[i + 3] = 0; }
-                        else if (colorVariance < 15 && brightness > 100 && brightness < 200) { data[i + 3] = 0; }
-                        else if (brightness > 220) { data[i + 3] = Math.max(0, 255 - (brightness - 220) * 10); }
+                        let isTransparent = false;
+                        if (brightness > whiteThreshold || brightness < blackThreshold) { data[i + 3] = 0; isTransparent = true; }
+                        else if (colorVariance < 15 && brightness > 100 && brightness < 200) { data[i + 3] = 0; isTransparent = true; }
+                        else if (brightness > 220) { data[i + 3] = Math.max(0, 255 - (brightness - 220) * 10); if (data[i + 3] === 0) isTransparent = true; }
+                        
+                        if (!isTransparent && data[i + 3] > 0) {
+                            hasInk = true;
+                            const x = (i / 4) % canvas.width;
+                            const y = Math.floor((i / 4) / canvas.width);
+                            if (x < minX) minX = x; if (x > maxX) maxX = x;
+                            if (y < minY) minY = y; if (y > maxY) maxY = y;
+                        }
                     }
                 } else {
-                    for (let i = 0; i < data.length; i += 4) {
-                        const r = data[i]; const g = data[i + 1]; const b = data[i + 2];
-                        const brightness = (r + g + b) / 3;
-                        if (brightness > whiteThreshold || brightness < blackThreshold) { data[i + 3] = 0; }
-                    }
+                   for (let i = 0; i < data.length; i += 4) {
+                       const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                       if (brightness > whiteThreshold) data[i + 3] = 0;
+                       else hasInk = true; 
+                   }
                 }
+
                 ctx.putImageData(imageData, 0, 0);
-                resolve(canvas.toDataURL("image/png"));
+
+                if (hasInk && useAdvanced) {
+                    const padding = 10;
+                    minX = Math.max(0, minX - padding); minY = Math.max(0, minY - padding);
+                    maxX = Math.min(canvas.width, maxX + padding); maxY = Math.min(canvas.height, maxY + padding);
+                    const cw = maxX - minX, ch = maxY - minY;
+                    const cCanvas = document.createElement("canvas");
+                    cCanvas.width = cw; cCanvas.height = ch;
+                    cCanvas.getContext("2d")!.drawImage(canvas, minX, minY, cw, ch, 0, 0, cw, ch);
+                    resolve(cCanvas.toDataURL("image/png"));
+                } else {
+                    resolve(canvas.toDataURL("image/png"));
+                }
             };
             img.onerror = () => resolve(dataUrl);
         } catch (error) { resolve(dataUrl); }
     });
+}
+
+// Wrapper untuk TTD (Pengajuan)
+async function fetchAndMakeTransparent(pathUrl: string, token: string | null): Promise<string> {
+    const blobUrl = await fetchImageDirectly(pathUrl, token);
+    return processImageTransparency(blobUrl);
+}
+
+// Hapus Cache Load karena kita akan memakai Native Browser Loading untuk performa instan
+// const imageLoadCache = new Map<string, Promise<string>>();
+
+// Fungsi ini hanya dipakai saat UPLOAD/CROP (memerlukan base64), bukan saat VIEW
+async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    return new File([blob], filename, { type: 'image/png' });
 }
 
 // ====================================================================
@@ -519,10 +528,14 @@ const SPKSettingsForm = ({ spkData, jenisPekerjaanOptions, updateField, canEdit,
                                         {foto.preview ? (
                                             <img src={foto.preview} alt={`Foto ${index + 1}`} className="w-full h-full object-cover" />
                                         ) : (
-                                            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100">
-                                                <Upload size={20} className="text-gray-400 mb-1" />
-                                                <span className="text-xs text-gray-500">Upload Foto</span>
-                                            </div>
+                                            foto.path ? (
+                                                <img src={getProxyFileUrl(foto.path)!} alt={`Foto ${index + 1}`} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100">
+                                                    <Upload size={20} className="text-gray-400 mb-1" />
+                                                    <span className="text-xs text-gray-500">Upload Foto</span>
+                                                </div>
+                                            )
                                         )}
                                     </div>
                                     {foto.preview && (
@@ -566,14 +579,14 @@ const SPKSettingsForm = ({ spkData, jenisPekerjaanOptions, updateField, canEdit,
                     <div className="grid grid-cols-4 gap-3">
                         {fotoPekerjaan.map((foto: any, index: number) => (
                             <div key={index} className="border border-gray-300 rounded-lg overflow-hidden h-32 relative group">
-                                {foto.preview ? (
+                                {foto.path ? (
                                     <>
-                                        <img src={foto.preview} alt={`Foto ${index + 1}`} className="w-full h-full object-cover cursor-pointer" onClick={() => onImageClick(foto.preview)} />
+                                        <img src={getProxyFileUrl(foto.path)!} alt={`Foto ${index + 1}`} className="w-full h-full object-cover cursor-pointer" onClick={() => onImageClick(getProxyFileUrl(foto.path)!)} />
                                         <button
                                             type="button"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                onImageClick(foto.preview);
+                                                onImageClick(getProxyFileUrl(foto.path)!);
                                             }}
                                             className="absolute top-1 left-1 bg-blue-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
                                             title="Lihat gambar"
@@ -636,18 +649,22 @@ const RequestDetailCollapse = ({ nomorSpk, showToast, spkData, jenisPekerjaanOpt
         
         setLoading(true); 
         setLoadError(null);
-        const url = GET_PENGAJUAN_VIEW_URL(nomorSpk);
+
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
+        const url = GET_PENGAJUAN_VIEW_URL(nomorSpk);
+
         try {
             if (!token) throw new Error("Otorisasi hilang. Mohon login ulang.");
+            
             const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
             const result = await res.json();
+            
             if (!res.ok || !result.success || !result.data) throw new Error(result.message || `Gagal memuat detail pengajuan.`);
             
             const data = result.data;
             const masterhal = result.masterhal;
-            const kdParent = result.kd_parent; 
-            
+            const kdParent = result.kd_parent;
+               
             const detailData = {
                 uuid: data.uuid, 
                 no_surat: data.no_surat, 
@@ -667,46 +684,8 @@ const RequestDetailCollapse = ({ nomorSpk, showToast, spkData, jenisPekerjaanOpt
                 tanggal: data.tanggal || '-', 
                 kode_barang: data.kode_barang || null,
             };
-
-             const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
-            if (token) {
-                if (detailData.ttd_mengetahui_path) {
-                    const ttdUrl = getProxyFileUrl(detailData.ttd_mengetahui_path);
-                    if (ttdUrl) {
-                        try {
-                            await loadImageWithDirectUrl(ttdUrl, token);
-                        } catch (error) {
-                            console.error("Error preloading mengetahui TTD:", error);
-                        }
-                    }
-                }
-                
-                if (detailData.ttd_pelapor_path) {
-                    const ttdUrl = getProxyFileUrl(detailData.ttd_pelapor_path);
-                    if (ttdUrl) {
-                        try {
-                            await loadImageWithDirectUrl(ttdUrl, token);
-                        } catch (error) {
-                            console.error("Error preloading pelapor TTD:", error);
-                        }
-                    }
-                }
-                
-                if (detailData.file_paths && detailData.file_paths.length > 0) {
-                    for (const path of detailData.file_paths) {
-                        if (/\.(jpe?g|png|gif|webp)$/i.test(path)) {
-                            const fileUrl = getProxyFileUrl(path);
-                            if (fileUrl) {
-                                try {
-                                    await loadImageWithDirectUrl(fileUrl, token);
-                                } catch (error) {
-                                    console.error(`Error preloading attachment image: ${path}`, error);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            
+            // OPTIMASI: JANGAN PRELOAD GAMBAR DISINI
             
             pengajuanDetailCache.set(nomorSpk, detailData);
             setDetail(detailData);
@@ -810,12 +789,17 @@ function EditSPKContent() {
     const ttdMengetahuiNodeRef = useRef(null);
 
     const [fotoPekerjaan, setFotoPekerjaan] = useState<any[]>([
-        { file: null, preview: null },
-        { file: null, preview: null },
-        { file: null, preview: null },
-        { file: null, preview: null }
+        { file: null, preview: null, path: null },
+        { file: null, preview: null, path: null },
+        { file: null, preview: null, path: null },
+        { file: null, preview: null, path: null }
     ]);
 
+    // STATE UNTUK PRINT (Khusus Agar Layout Sama Dengan View)
+    const [pengajuanDetail, setPengajuanDetail] = useState<PengajuanDetail | null>(null);
+    const [fotoPengajuan, setFotoPengajuan] = useState<any[]>([]);
+    const [ttdPelaporPengajuan, setTtdPelaporPengajuan] = useState<string | null>(null);
+    const [ttdMengetahuiPengajuan, setTtdMengetahuiPengajuan] = useState<string | null>(null);
     const docRef = useRef<HTMLDivElement>(null);
 
     const pic = useMemo(() => {
@@ -834,8 +818,30 @@ function EditSPKContent() {
     };
 
     const handlePrint = () => {
-        if (!docRef.current) { showToast("Gagal mencetak: Konten dokumen tidak ditemukan.", "error"); return; }
+        // Logic cetak mirip view: pastikan data pengajuan ada
+        if (!pengajuanDetail && spkData?.pengajuan_uuid) {
+            showToast("Memuat detail pengajuan untuk cetak...", "warning");
+            return; 
+        }
         window.print();
+    };
+
+    // Helper italic sama seperti View Page
+    const renderKeteranganWithItalic = (text: string) => {
+        if (!text) return "Tidak ada keterangan.";
+        const parts = text.split(/(<i>|<\/i>)/);
+        let isItalic = false;
+
+        return parts.map((part, index) => {
+            if (part === "<i>") {
+                isItalic = true;
+                return null;
+            } else if (part === "</i>") {
+                isItalic = false;
+                return null;
+            }
+            return isItalic ? <i key={index}>{part}</i> : <span key={index}>{part}</span>;
+        });
     };
 
     const handleFotoUpload = (index: number, file?: File) => {
@@ -859,7 +865,8 @@ function EditSPKContent() {
             const newFotoPekerjaan = [...fotoPekerjaan];
             newFotoPekerjaan[index] = {
                 file: file,
-                preview: reader.result as string
+                preview: reader.result as string,
+                path: null 
             };
             setFotoPekerjaan(newFotoPekerjaan);
         };
@@ -870,7 +877,8 @@ function EditSPKContent() {
         const newFotoPekerjaan = [...fotoPekerjaan];
         newFotoPekerjaan[index] = {
             file: null,
-            preview: null
+            preview: null,
+            path: null
         };
         setFotoPekerjaan(newFotoPekerjaan);
     };
@@ -927,7 +935,6 @@ function EditSPKContent() {
         }
     };
 
-    // --- PERBAIKAN: fetchJenisPekerjaan ---
     const fetchJenisPekerjaan = useCallback(async () => {
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
         if (!token) return;
@@ -937,7 +944,6 @@ function EditSPKContent() {
             const json = await res.json();
             const dataArray = json.data || json;
             if (Array.isArray(dataArray)) {
-                // PERBAIKAN: Ambil item.nama jika ada, jika tidak ambil item.nama_pekerjaan
                 setJenisPekerjaanOptions(dataArray.map((item: any) => ({ id: item.id, nama: item.nama || item.nama_pekerjaan })));
             }
         } catch (err) { console.error(err); setJenisPekerjaanOptions([]); }
@@ -988,6 +994,74 @@ function EditSPKContent() {
         const day = String(today.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     };
+
+    const fetchPengajuanForPrint = useCallback(async (uuid: string) => {
+        if (pengajuanDetailCache.has(uuid)) {
+            const cachedData = pengajuanDetailCache.get(uuid)!;
+            setPengajuanDetail(cachedData);
+            if (!ttdPelaporPengajuan && cachedData.ttd_pelapor_path) fetchAndMakeTransparent(cachedData.ttd_pelapor_path, token).then(setTtdPelaporPengajuan);
+            if (!ttdMengetahuiPengajuan && cachedData.ttd_mengetahui_path) fetchAndMakeTransparent(cachedData.ttd_mengetahui_path, token).then(setTtdMengetahuiPengajuan);
+            return;
+        }
+
+        const token = localStorage.getItem('token');
+        if(!token) return;
+
+        try {
+            const url = `${API_BASE_URL}/pengajuan/view/${uuid}`;
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+            const result = await res.json();
+            if (res.ok && result.success && result.data) {
+                const data = result.data;
+                const masterhal = result.masterhal;
+                
+                const kepadaSatker = result.kd_satker?.satker_name || data.kepada || 'N/A';
+                const parentSatker = result.kd_parent?.parent_satker || data.satker || 'N/A';
+
+                const pData: PengajuanDetail = {
+                    uuid: data.uuid, 
+                    no_surat: data.no_surat, 
+                    nama_jenis: masterhal?.nama_jenis || data.hal || 'N/A', 
+                    hal_id: masterhal?.kode || data.hal_id || 'N/A', 
+                    kepada: kepadaSatker, 
+                    satker: parentSatker,
+                    name_pelapor: data.name_pelapor || data.name || 'N/A', 
+                    npp_pelapor: data.npp_pelapor || 'N/A', 
+                    tlp_pelapor: data.tlp_pelapor || 'N/A', 
+                    ttd_pelapor_path: data.ttd_pelapor, 
+                    mengetahui: data.mengetahui || 'N/A', 
+                    mengetahui_name: data.mengetahui_name || 'N/A', 
+                    mengetahui_npp: data.mengetahui_npp || null, 
+                    ttd_mengetahui_path: data.ttd_mengetahui, 
+                    keterangan: data.keterangan || 'Tidak ada keterangan.', 
+                    file_paths: Array.isArray(data.file) ? data.file : (data.file ? [data.file] : []), 
+                    tanggal: data.tanggal || '-', 
+                    kode_barang: data.kode_barang || null,
+                };
+                
+                // SIMPAN KE CACHE AGAR ACCORDION TIDAK LOADING LAGI
+                pengajuanDetailCache.set(uuid, pData);
+
+                setPengajuanDetail(pData);
+
+                if (pData.file_paths.length > 0) {
+                    const photoPromises = pData.file_paths.slice(0, 4).map(async (path) => {
+                        try {
+                            const previewUrl = await fetchImageDirectly(path, token);
+                            return { preview: previewUrl, path: path };
+                        } catch (e) { return { preview: null, path: path }; }
+                    });
+                    const loadedPhotos = await Promise.all(photoPromises);
+                    setFotoPengajuan(loadedPhotos);
+                }
+
+                if (pData.ttd_pelapor_path) fetchAndMakeTransparent(pData.ttd_pelapor_path, token).then(setTtdPelaporPengajuan);
+                if (pData.ttd_mengetahui_path) fetchAndMakeTransparent(pData.ttd_mengetahui_path, token).then(setTtdMengetahuiPengajuan);
+            }
+        } catch (e) {
+            console.error("Gagal load pengajuan untuk print:", e);
+        }
+    }, []);
 
     const fetchDetailSPK = useCallback(async () => {
         if (!spk_uuid) { setError("UUID SPK tidak ditemukan dalam URL."); setIsLoading(false); return; }
@@ -1050,7 +1124,7 @@ function EditSPKContent() {
                 tanggal_spk: item.tanggal || "-",
                 tanggal_selesai: item.tanggal_selesai || getTodayDateString(),
                 id_barang: item.kode_barang || item.id_barang || null,
-                jenis_pekerjaan: item.jenis_pekerjaan || null,
+                jenis_pekerjaan: item.jenis_pekerjaan || null, // Bisa string di format ini
                 jenis_pekerjaan_id: item.jenis_pekerjaan_id || null,
                 status: currentStatusName,
                 status_id: currentStatusId,
@@ -1085,93 +1159,35 @@ function EditSPKContent() {
             if (menyetujuiData) {
                 setSupervisorMenyetujui(menyetujuiData);
             }
+
+            // Set Foto Pekerjaan (Hanya path)
+            const photosInit = mappedData.foto_pekerjaan.slice(0, 4).map((path) => ({
+                file: null,
+                preview: null,
+                path: path
+            }));
+            while(photosInit.length < 4) {
+                photosInit.push({ file: null, preview: null, path: null });
+            }
+            setFotoPekerjaan(photosInit);
+
+            // FETCH PENGAJUAN KHUSUS PRINT
+            if (item.uuid_pengajuan) {
+                fetchPengajuanForPrint(item.uuid_pengajuan);
+            }
             
-            if (mappedData.foto_pekerjaan && mappedData.foto_pekerjaan.length > 0) {
-                const photoPromises = mappedData.foto_pekerjaan.map(async (path, index) => {
-                    if (index < 4) { 
-                        try {
-                            const imageUrl = getProxyFileUrl(path);
-                            if (imageUrl && token) {
-                                const previewUrl = await loadImageWithDirectUrl(imageUrl, token);
-                                return {
-                                    file: null,
-                                    preview: previewUrl,
-                                    path: path
-                                };
-                            }
-                        } catch (error) {
-                            console.error(`Error loading photo ${index}:`, error);
-                        }
-                    }
-                    return { file: null, preview: null };
-                });
-                
-                const loadedPhotos = await Promise.all(photoPromises);
-                
-                while (loadedPhotos.length < 4) {
-                    loadedPhotos.push({ file: null, preview: null });
-                }
-                
-                setFotoPekerjaan(loadedPhotos);
-            } else {
-                setFotoPekerjaan([
-                    { file: null, preview: null },
-                    { file: null, preview: null },
-                    { file: null, preview: null },
-                    { file: null, preview: null }
-                ]);
-            }
-
-            if (mappedData.ttd_pelaksana_path && token) {
-                try {
-                    const ttdUrl = getProxyFileUrl(mappedData.ttd_pelaksana_path);
-                    if (ttdUrl) {
-                        const ttdPreviewUrl = await loadImageWithDirectUrl(ttdUrl, token);
-                        setTtdPreview(ttdPreviewUrl);
-                    }
-                } catch (error) {
-                    console.error("Error loading pelaksana TTD:", error);
-                }
-            }
-
-            if (mappedData.ttd_menyetujui_path && token) {
-                try {
-                    const ttdUrl = getProxyFileUrl(mappedData.ttd_menyetujui_path);
-                    if (ttdUrl) {
-                        const ttdPreviewUrl = await loadImageWithDirectUrl(ttdUrl, token);
-                        setTtdMenyetujuiPreview(ttdPreviewUrl);
-                    }
-                } catch (error) {
-                    console.error("Error loading menyetujui TTD:", error);
-                }
-            }
-
-            if (mappedData.ttd_mengetahui_path && token) {
-                try {
-                    const ttdUrl = getProxyFileUrl(mappedData.ttd_mengetahui_path);
-                    if (ttdUrl) {
-                        const ttdPreviewUrl = await loadImageWithDirectUrl(ttdUrl, token);
-                        setTtdMengetahuiPreview(ttdPreviewUrl);
-                    }
-                } catch (error) {
-                    console.error("Error loading mengetahui TTD:", error);
-                }
-            }
-
         } catch (err: any) { 
             setError(err.message || "Terjadi kesalahan saat memuat SPK."); 
         } finally { 
             setIsLoading(false); 
         }
-    }, [spk_uuid]);
+    }, [spk_uuid, fetchPengajuanForPrint]);
 
-    // Updated fetchSupervisorData to use Direct URL
     const fetchSupervisorData = useCallback(async (npp: string) => {
         if (!npp) return null;
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
         if (!token) return null;
         try {
-            // Direct URL without Proxy
             const response = await fetch(`${SUPERVISOR_URL}?npp=${npp}`, {
                 method: 'GET',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
@@ -1185,20 +1201,17 @@ function EditSPKContent() {
         } catch (error: any) { console.error("Error fetching supervisor:", error); return null; }
     }, []);
 
-    // Updated fetchUserTtd to use Direct URL
     const fetchUserTtd = useCallback(async (npp: string) => {
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
         if (!token) return;
         try {
-            // Direct URL without Proxy
             const res = await fetch(USER_TTD_URL(npp), {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.ok) {
                 const json = await res.json();
                 if (json.ttd_path) {
-                    const blobUrl = await loadImageWithDirectUrl(json.ttd_path, token);
-                    setTtdPreview(blobUrl);
+                    console.log("User TTD path:", json.ttd_path);
                 }
             }
         } catch (e) { console.error("Error fetching user TTD:", e); }
@@ -1302,7 +1315,7 @@ function EditSPKContent() {
     const handleTtdCropComplete = async (croppedImage: string, settings?: any) => {
         setIsTtdCropModalOpen(false);
         setTtdImageForCrop(null);
-        const processedDataUrl = await resizeAndMakeTransparent(croppedImage, settings, 600);
+        const processedDataUrl = await processImageTransparency(croppedImage, settings, 600);
         const processedFile = await dataURLtoFile(processedDataUrl, `ttd-pic-${Date.now()}.png`);
 
         setTtdFile(processedFile);
@@ -1321,7 +1334,7 @@ function EditSPKContent() {
     const handleTtdMenyetujuiCropComplete = async (croppedImage: string, settings?: any) => {
         setIsTtdMenyetujuiCropModalOpen(false);
         setTtdMenyetujuiImageForCrop(null);
-        const processedDataUrl = await resizeAndMakeTransparent(croppedImage, settings, 600);
+        const processedDataUrl = await processImageTransparency(croppedImage, settings, 600);
         const processedFile = await dataURLtoFile(processedDataUrl, `ttd-menyetujui-${Date.now()}.png`);
 
         setTtdMenyetujuiFile(processedFile);
@@ -1340,7 +1353,7 @@ function EditSPKContent() {
     const handleTtdMengetahuiCropComplete = async (croppedImage: string, settings?: any) => {
         setIsTtdMengetahuiCropModalOpen(false);
         setTtdMengetahuiImageForCrop(null);
-        const processedDataUrl = await resizeAndMakeTransparent(croppedImage, settings, 600);
+        const processedDataUrl = await processImageTransparency(croppedImage, settings, 600);
         const processedFile = await dataURLtoFile(processedDataUrl, `ttd-mengetahui-${Date.now()}.png`);
 
         setTtdMengetahuiFile(processedFile);
@@ -1495,7 +1508,6 @@ function EditSPKContent() {
                 if (phones.length > 0) params.append('mengetahui_tlp', phones[0]);
             }
 
-            // Direct URL to API Gateway
             const url = UPDATE_SPK_URL(spkData.uuid);
             
             const res = await fetch(url, {
@@ -1530,6 +1542,8 @@ function EditSPKContent() {
 
     const { nomor_spk, tanggal_spk } = spkData;
     const awalanJabatan = "Kepala";
+    const todayDate = new Date();
+    const formatDateIndo = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(todayDate);
 
     const isUserMenyetujui = supervisorMenyetujui && supervisorMenyetujui.npp === currentUserNpp;
     const isUserMengetahui = supervisorMengetahui && supervisorMengetahui.npp === currentUserNpp;
@@ -1581,14 +1595,15 @@ function EditSPKContent() {
                         <ArrowLeft size={20} className="cursor-pointer hover:text-blue-600 transition" onClick={() => router.push("/dashboard/spk")} />
                         Edit / Detail SPK: {nomor_spk}
                     </h1>
-                    <Button onClick={handlePrint}>Cetak (A4)</Button>
+                    <Button onClick={handlePrint}>Cetak</Button>
                 </div>
 
-                <div ref={docRef} className="p-8 text-[14px] leading-relaxed font-serif">
+                {/* SCREEN VIEW (Original) */}
+                <div ref={docRef} className="p-8 text-[14px] leading-relaxed font-serif screen-only">
                     <div className="border-2 border-black p-8 rounded-md bg-white shadow-lg">
                         <h2 className="text-center font-bold underline mb-1 text-lg text-black">SURAT PERINTAH KERJA</h2>
                         <p className="text-center text-sm mb-4 font-bold text-black">(NO: {nomor_spk})</p>
-                        <p className="text-right text-xs mb-6 text-black">Tanggal SPK: {tanggal_spk}</p>
+                        <p className="text-right text-xs mb-6 text-black">Tanggal SPK: {formatLongDate(tanggal_spk)}</p>
 
                         <div className="mt-2 text-black space-y-4">
                             <div className="flex items-start mt-2 border p-2 rounded-lg bg-gray-50">
@@ -1666,18 +1681,18 @@ function EditSPKContent() {
                                                                 </button>
                                                             )}
                                                         </div>
+                                                    ) : spkData.ttd_mengetahui_path ? (
+                                                        <img src={getProxyFileUrl(spkData.ttd_mengetahui_path)!} alt="TTD Mengetahui" className="h-[80px] w-auto object-contain" />
+                                                    ) : canUploadMengetahui ? (
+                                                        <div
+                                                            onClick={() => ttdMengetahuiFileInputRef.current?.click()}
+                                                            className="border-2 border-dashed border-gray-300 rounded-lg w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition print:hidden"
+                                                        >
+                                                            <Upload size={20} className="text-gray-400 mb-1" />
+                                                            <span className="text-[8px] text-gray-500 font-medium">Upload TTD</span>
+                                                        </div>
                                                     ) : (
-                                                        canUploadMengetahui ? (
-                                                            <div
-                                                                onClick={() => ttdMengetahuiFileInputRef.current?.click()}
-                                                                className="border-2 border-dashed border-gray-300 rounded-lg w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition print:hidden"
-                                                            >
-                                                                <Upload size={20} className="text-gray-400 mb-1" />
-                                                                <span className="text-[8px] text-gray-500 font-medium">Upload TTD</span>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="h-[80px]"></div>
-                                                        )
+                                                        <div className="h-[80px]"></div>
                                                     )}
                                                     <input type="file" ref={ttdMengetahuiFileInputRef} className="hidden" accept="image/*" onChange={handleTtdMengetahuiFileUpload} />
                                                 </div>
@@ -1725,18 +1740,18 @@ function EditSPKContent() {
                                                             </button>
                                                         )}
                                                     </div>
+                                                ) : spkData.ttd_pelaksana_path ? (
+                                                     <img src={getProxyFileUrl(spkData.ttd_pelaksana_path)!} alt="TTD Pelaksana" className="h-[80px] w-auto object-contain" />
+                                                ) : canUploadPelaksana ? (
+                                                    <div
+                                                        onClick={() => ttdFileInputRef.current?.click()}
+                                                        className="border-2 border-dashed border-gray-300 rounded-lg w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition print:hidden"
+                                                    >
+                                                        <Upload size={20} className="text-gray-400 mb-1" />
+                                                        <span className="text-[8px] text-gray-500 font-medium">Upload TTD</span>
+                                                    </div>
                                                 ) : (
-                                                    canUploadPelaksana ? (
-                                                        <div
-                                                            onClick={() => ttdFileInputRef.current?.click()}
-                                                            className="border-2 border-dashed border-gray-300 rounded-lg w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition print:hidden"
-                                                        >
-                                                            <Upload size={20} className="text-gray-400 mb-1" />
-                                                            <span className="text-[8px] text-gray-500 font-medium">Upload TTD</span>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="h-[80px]"></div>
-                                                    )
+                                                    <div className="h-[80px]"></div>
                                                 )}
                                                 <input type="file" ref={ttdFileInputRef} className="hidden" accept="image/*" onChange={handleTtdFileUpload} />
                                             </div>
@@ -1791,18 +1806,18 @@ function EditSPKContent() {
                                                                 </button>
                                                             )}
                                                         </div>
+                                                    ) : spkData.ttd_menyetujui_path ? (
+                                                        <img src={getProxyFileUrl(spkData.ttd_menyetujui_path)!} alt="TTD Menyetujui" className="h-[80px] w-auto object-contain" />
+                                                    ) : canUploadMenyetujui ? (
+                                                        <div
+                                                            onClick={() => ttdMenyetujuiFileInputRef.current?.click()}
+                                                            className="border-2 border-dashed border-gray-300 rounded-lg w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition print:hidden"
+                                                        >
+                                                            <Upload size={20} className="text-gray-400 mb-1" />
+                                                            <span className="text-[8px] text-gray-500 font-medium">Upload TTD</span>
+                                                        </div>
                                                     ) : (
-                                                        canUploadMenyetujui ? (
-                                                            <div
-                                                                onClick={() => ttdMenyetujuiFileInputRef.current?.click()}
-                                                                className="border-2 border-dashed border-gray-300 rounded-lg w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition print:hidden"
-                                                            >
-                                                                <Upload size={20} className="text-gray-400 mb-1" />
-                                                                <span className="text-[8px] text-gray-500 font-medium">Upload TTD</span>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="h-[80px]"></div>
-                                                        )
+                                                        <div className="h-[80px]"></div>
                                                     )}
                                                     <input type="file" ref={ttdMenyetujuiFileInputRef} className="hidden" accept="image/*" onChange={handleTtdMenyetujuiFileUpload} />
                                                 </div>
@@ -1830,7 +1845,456 @@ function EditSPKContent() {
                         </div>
                     </div>
                 </div>
+
+                {/* PRINT ONLY VIEW (IDENTIK DENGAN HALAMAN VIEW) */}
+                <div className="print-only print-container">
+                    <div className="print-layout">
+                        
+                        {/* --- KOLOM KIRI: DETAIL PENGAJUAN --- */}
+<div className="print-section print-left">
+    <div className="flex justify-between items-start mb-[20px]">
+        <div className="text-[12pt]">
+            <div className="font-bold">PERUMDA AIR MINUM TIRTA MOEDAL</div>
+            <div className="font-bold">KOTA SEMARANG</div>
+        </div>
+        <div className="text-right text-[12pt]">
+            <div>Semarang, {formatDateIndo}</div>
+        </div>
+    </div>
+    
+    <div className="flex gap-[40px] text-[11pt] mb-[15px]">
+        <div className="w-1/2">
+            <div className="flex items-center gap-2 mb-1">
+                <span className="font-semibold whitespace-nowrap">Hal:</span>
+                <span>{pengajuanDetail?.nama_jenis || '-'}</span> 
             </div>
+            <div className="flex items-center gap-2">
+                <span className="font-semibold whitespace-nowrap">Ref. Surat:</span>
+                <span>{pengajuanDetail?.no_surat|| "-"}</span>
+            </div>
+        </div>
+
+        <div className="w-1/2 kepada-yth-container">
+            Kepada Yth. 
+            <div className="font-semibold">{pengajuanDetail?.kepada || "-"}</div>
+            PERUMDA AIR MINUM Tirta Moedal <div>di <strong>SEMARANG</strong></div>
+        </div>
+    </div>
+    
+    <div className="grid grid-cols-[120px_1fr] gap-y-[5px] items-center text-[11pt] mb-[10px]">
+        <div className="col-span-3 font-bold">Satker Asal:</div>
+        <div className="col-span-9 h-[18px] pb-1">{pengajuanDetail?.satker || "-"}</div>
+        <div className="col-span-3 font-bold">Kode Barang :</div>
+        <div className="col-span-9 h-[18px] pb-1">{pengajuanDetail?.kode_barang || "-"}</div>
+    </div>
+    
+    <div className="big-box text-[10pt]">
+        <div style={{ whiteSpace: "pre-wrap" }}>
+            {renderKeteranganWithItalic(pengajuanDetail?.keterangan || 'Tidak ada keterangan.')}
+        </div>
+    </div>
+    
+    {fotoPengajuan.length > 0 && (
+        <div className="mt-[10px] grid grid-cols-4 gap-[5px]">
+            {fotoPengajuan.slice(0, 4).map((foto, idx) => (
+                <div key={idx} className="border border-gray-300 h-[60px] flex items-center justify-center bg-gray-50">
+                    {foto.preview ? (
+                        <img src={foto.preview} alt={`Lampiran ${idx}`} className="max-h-full max-w-full object-cover" />
+                    ) : (
+                        <span className="text-[9px] text-gray-400">No Img</span>
+                    )}
+                </div>
+            ))}
+        </div>
+    )}
+
+    <div className="mt-[15px] text-[10pt] text-left">
+        Demikian laporan kami untuk menjadi periksa dan mohon untuk perhatian.
+    </div>
+    
+    <div className="mt-[25px] flex justify-between px-[10px] text-center items-end">
+        <div className="w-[48%] flex flex-col items-center">
+            <div className="text-[10pt] font-semibold mb-1">Mengetahui</div>
+            {pengajuanDetail?.mengetahui && (
+                <div className="text-[9pt] mb-1 text-gray-600">{pengajuanDetail.mengetahui}</div>
+            )}
+            <div className="w-[200px] h-[70px] flex items-center justify-center mb-1">
+                {ttdMengetahuiPengajuan && (
+                    <img src={ttdMengetahuiPengajuan} alt="TTD Mengetahui" className="max-w-full max-h-full object-contain"/>
+                )}
+            </div>
+            <div className="w-full text-center">
+                <div className="font-bold border-t border-black pt-1 text-[9pt]">
+                    {pengajuanDetail?.mengetahui_name || "(...........................)"}
+                </div>
+                <div className="text-[8pt] mt-[1px]">
+                    NPP: {pengajuanDetail?.mengetahui_npp || "__________"} 
+                </div>
+            </div>
+        </div>
+
+        <div className="w-[48%] flex flex-col items-center">
+            <div className="text-[10pt] font-semibold mb-1">Pelapor</div>
+            <div className="h-[20px]"></div>
+            <div className="w-[200px] h-[70px] flex items-center justify-center mb-1">
+                {ttdPelaporPengajuan && (
+                    <img src={ttdPelaporPengajuan} alt="Tanda tangan pelapor" className="max-w-full max-h-full object-contain"/>
+                )}
+            </div>
+            <div className="w-full text-center">
+                <div className="font-bold border-t border-black pt-1 text-[9pt]">
+                    {pengajuanDetail?.name_pelapor || "(...........................)"}
+                </div>
+                <div className="text-[8pt] mt-[1px]">
+                    NPP: {pengajuanDetail?.npp_pelapor || "__________"}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{/* --- KOLOM KANAN: SPK --- */}
+<div className="print-section print-right border-l border-gray-800 print:pl-[15px]">
+    <div className="print-header">
+        <h2 className="text-center font-bold text-[12pt] mb-[5px]">SURAT PERINTAH KERJA</h2>
+        <p className="text-center text-[11pt] font-bold mb-[5px]">(NO: {nomor_spk})</p>
+    </div>
+    
+    <div className="print-body text-[11pt]">
+        <div className="print-field mb-[5px]">
+            <span className="print-label font-bold">Menugaskan Sdr:</span>
+        </div>
+        
+        <div className="mb-[10px] pl-[15px] border-l-2 border-black">
+            <div className="grid grid-cols-1 text-[9pt]">
+                {assignedPeople.map((person, idx) => (
+                    <div key={person.name} className="flex gap-2 border-b border-gray-300 mb-1 pb-1">
+                        <span className="font-bold">{idx + 1}. {person.name}</span>
+                        <span className="text-gray-600">NPP: {person.npp || '-'}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+        
+        <div className="print-field mt-[10px]">
+            <div className="print-text-block font-bold text-[10pt]">Untuk melaksanakan Pemeliharaan / Perbaikan / Pengaduan kerusakan</div>
+        </div>
+        
+        <div className="print-field flex items-center mt-[5px]">
+            <span className="print-label font-bold w-[130px]">Jenis Pekerjaan</span>
+            {/* PERBAIKAN DISINI: Gunakann properti .nama_pekerjaan */}
+            <span className="print-value flex-1 text-[10pt] pt-[2px]">
+                :{spkData.jenis_pekerjaan?.nama_pekerjaan || spkData.jenis_pekerjaan || "N/A"}
+            </span>
+        </div>
+        
+        <div className="print-field flex items-center mt-[5px]">
+            <span className="print-label font-bold w-[130px]">Kode Barang</span>
+            <span className="print-value flex-1 text-[10pt] pt-[2px]">
+                :{pengajuanDetail?.kode_barang || spkData.id_barang || 'N/A'}
+            </span>
+        </div>
+        
+        <div className="print-field-block mt-[10px] w-full">
+            <span className="print-label font-bold block mb-[5px]">Uraian Pekerjaan:</span>
+            <div className="print-text-block border border-black p-[8px] min-h-[60px] text-[10pt] leading-tight w-full">
+                {spkData.pekerjaan_spk || "Tidak ada uraian."}
+            </div>
+        </div>
+
+        {/* FOTO PEKERJAAN DI BAWAH URAIAN */}
+        <div className="mt-[10px] w-full">
+            <span className="print-label font-bold block mb-[5px] text-[10pt]">Foto Pekerjaan:</span>
+            <div className="grid grid-cols-4 gap-[5px]">
+                {fotoPekerjaan.map((foto, idx) => (
+                    <div key={idx} className="border border-black h-[70px] flex items-center justify-center bg-gray-50 overflow-hidden">
+                        {foto.preview ? (
+                            <img src={foto.preview} alt={`Pekerjaan ${idx}`} className="h-full w-full object-cover" />
+                        ) : foto.path ? (
+                            <img src={getProxyFileUrl(foto.path)!} alt={`Pekerjaan ${idx}`} className="h-full w-full object-cover" />
+                        ) : (
+                            <span className="text-[8px] text-gray-400 italic">Lampiran {idx + 1}</span>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+
+        {/* STATUS PEKERJAAN */}
+        <div className="flex items-center gap-6 mt-4 mb-4 text-[10pt]">
+            <span className="font-bold">Status Pekerjaan:</span>
+            <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border border-black flex items-center justify-center font-bold text-[12pt]">
+                    {spkData.status === 'Selesai' ? '✓' : ''}
+                </div>
+                <span>Selesai</span>
+            </div>
+            <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border border-black flex items-center justify-center font-bold text-[12pt]">
+                    {spkData.status === 'Belum Selesai' ? '✓' : ''}
+                </div>
+                <span>Belum Selesai</span>
+            </div>
+            <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border border-black flex items-center justify-center font-bold text-[12pt]">
+                    {spkData.status === 'Tidak Selesai' ? '✓' : ''}
+                </div>
+                <span>Tidak Selesai</span>
+            </div>
+        </div>
+
+        {/* PENATAAN TTD: MENGETAHUI & MENYETUJUI SEJAJAR DI PALING BAWAH */}
+        <div className="mt-[10px] grid grid-cols-2 gap-x-4 w-full h-[320px]">
+            <div className="flex flex-col justify-between items-center h-full">
+                <div className="flex flex-col items-center">
+                    <div className="bg-white p-1 border border-black rounded mb-1">
+                        {spkData && spkData.uuid ? (
+                            <QRCode size={60} value={`${window.location.origin}/tracking/${spkData.uuid}`} />
+                        ) : null}
+                    </div>
+                    <div className="text-[7pt] font-bold uppercase">Scan Tracking</div>
+                </div>
+
+                <div className="flex flex-col items-center w-full">
+                    <div className="font-bold text-[9pt] mb-1">Mengetahui:</div>
+                    <div className="text-[7pt] text-center leading-tight h-[15px] font-semibold mb-1 uppercase">
+                        {supervisorMengetahui?.unit || spkData.mengetahui}
+                    </div>
+                    <div className="h-[50px] flex items-center justify-center">
+                        {ttdMengetahuiPreview ? <img src={ttdMengetahuiPreview} alt="TTD" className="h-full object-contain" /> : spkData.ttd_mengetahui_path ? <img src={getProxyFileUrl(spkData.ttd_mengetahui_path)!} alt="TTD" className="h-full object-contain" /> : null}
+                    </div>
+                    <div className="font-bold border-t border-black w-[80%] text-center pt-1 text-[8pt] mt-1 uppercase">
+                        {supervisorMengetahui?.name || spkData.mengetahui_name || "-"}
+                    </div>
+                    <div className="text-[7pt]">NPP. {supervisorMengetahui?.npp || spkData.mengetahui_npp || "..."}</div>
+                </div>
+            </div>
+
+            <div className="flex flex-col justify-between items-center h-full">
+                <div className="flex flex-col items-center w-full">
+                    <div className="font-bold text-[9pt] mb-1">Pelaksana:</div>
+                    <div className="h-[65px] flex items-center justify-center">
+                        {ttdPreview ? <img src={ttdPreview} alt="TTD" className="h-full object-contain" /> : spkData.ttd_pelaksana_path ? <img src={getProxyFileUrl(spkData.ttd_pelaksana_path)!} alt="TTD" className="h-full object-contain" /> : null}
+                    </div>
+                    <div className="font-bold border-t border-black w-[80%] text-center pt-1 text-[8pt] mt-1 uppercase">
+                        {pic ? pic.name : '-'}
+                    </div>
+                    <div className="text-[7pt]">NPP. {pic ? pic.npp : '...'}</div>
+                </div>
+
+                <div className="flex flex-col items-center w-full">
+                    <div className="font-bold text-[9pt] mb-1">Menyetujui:</div>
+                    <div className="text-[7pt] text-center leading-tight h-[15px] font-semibold mb-1 uppercase">
+                        {supervisorMenyetujui?.unit || spkData.menyetujui}
+                    </div>
+                    <div className="h-[50px] flex items-center justify-center">
+                        {ttdMenyetujuiPreview ? <img src={ttdMenyetujuiPreview} alt="TTD" className="h-full object-contain" /> : spkData.ttd_menyetujui_path ? <img src={getProxyFileUrl(spkData.ttd_menyetujui_path)!} alt="TTD" className="h-full object-contain" /> : null}
+                    </div>
+                    <div className="font-bold border-t border-black w-[80%] text-center pt-1 text-[8pt] mt-1 uppercase">
+                        {supervisorMenyetujui?.name || spkData.menyetujui_name || "-"}
+                    </div>
+                    <div className="text-[7pt]">NPP. {supervisorMenyetujui?.npp || spkData.menyetujui_npp || "..."}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+                    </div>
+                </div>
+            </div>
+
+            <style jsx global>{`
+                @media print {
+                    @page {
+                        size: A3 landscape;
+                        margin: 10mm;
+                    }
+                    
+                    body * {
+                        visibility: hidden;
+                    }
+                    
+                    body {
+                        margin: 0;
+                        padding: 0;
+                        background: white;
+                        -webkit-print-color-adjust: exact;
+                    }
+                    
+                    .screen-only {
+                        display: none !important;
+                    }
+                    
+                    .print-only, .print-only * {
+                        visibility: visible;
+                    }
+                    
+                    .print-only {
+                        display: block !important;
+                        position: absolute;
+                        left: 0;
+                        top: 0;
+                        width: 100%;
+                        height: 100vh;
+                        padding: 0;
+                        box-sizing: border-box;
+                        z-index: 9999;
+                        background: white;
+                    }
+                    
+                    .print-container {
+                        width: 100%;
+                        height: 100%;
+                    }
+                    
+                    .print-layout {
+                        display: flex;
+                        flex-direction: row;
+                        width: 100%;
+                        height: 100%; 
+                        page-break-inside: avoid;
+                    }
+                    
+                    .print-section {
+                        padding: 10mm;
+                        font-family: 'Times New Roman', serif;
+                        line-height: 1.4;
+                        height: 100%;
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    
+                    .print-left {
+                        width: 48%;
+                        border-right: 1px solid #000;
+                        padding-right: 5mm;
+                    }
+                    
+                    .print-right {
+                        width: 48%;
+                        padding-left: 5mm;
+                    }
+
+                    .big-box { 
+                        border: 1px solid #000; 
+                        min-height: 90px; 
+                        padding: 5px; 
+                        font-family: 'Times New Roman', serif;
+                    }
+                    
+                    .kepada-yth-container { 
+                        line-height: 1.3; 
+                    }
+                    
+                    .kepada-yth-container div { 
+                        margin-bottom: 2px; 
+                    }
+
+                    .print-header-pengajuan {
+                        text-align: center;
+                        margin-bottom: 10px;
+                    }
+
+                    .print-field {
+                        display: flex;
+                        margin-bottom: 5px;
+                    }
+                    
+                    .print-field-block {
+                        flex-direction: column;
+                        margin-bottom: 10px;
+                    }
+                    
+                    .print-label {
+                        min-width: 120px;
+                        margin-right: 10px;
+                    }
+                    
+                    .print-value {
+                        flex: 1;
+                    }
+
+                    .print-text-block {
+                        white-space: pre-wrap;
+                        text-align: justify;
+                    }
+                    
+                    .print-personnel-list {
+                        margin-bottom: 5px;
+                        margin-left: 10px;
+                    }
+                    
+                    .print-person-item {
+                        margin-bottom: 1px;
+                    }
+
+                    .print-signatures-grid {
+                        display: flex;
+                        justify-content: space-between;
+                        margin-top: 15px;
+                        border-top: 1px solid transparent; 
+                        padding-top: 5px;
+                    }
+                    
+                    .print-signature-item {
+                        text-align: center;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: flex-end; 
+                    }
+                    
+                    .print-signature-title {
+                        margin-bottom: 5px;
+                        font-weight: bold;
+                        font-size: 9pt;
+                    }
+                    
+                    .print-signature-box {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        min-height: 70px;
+                        justify-content: space-between;
+                    }
+                    
+                    .print-signature-img {
+                        height: 50px;
+                        width: auto;
+                        margin-bottom: 2px;
+                        max-width: 100%;
+                        object-fit: contain;
+                    }
+                    
+                    .print-signature-empty {
+                        height: 50px;
+                        width: 50px;
+                        border-bottom: 1px solid #000;
+                        margin-bottom: 2px;
+                    }
+                    
+                    .print-signature-name {
+                        font-weight: bold;
+                        border-top: 1px solid #000;
+                        padding-top: 1px;
+                        width: 100%;
+                        font-size: 9pt;
+                        margin-bottom: 2px;
+                    }
+                    
+                    .print-signature-npp {
+                        font-size: 8pt;
+                        margin-top: 0;
+                    }
+                }
+                
+                @media screen {
+                    .print-only {
+                        display: none !important;
+                    }
+                }
+            `}</style>
         </div>
     );
 }

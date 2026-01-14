@@ -82,6 +82,15 @@ type ToastMessage = {
     isVisible: boolean;
 };
 
+type ItemAction = {
+    id: number | null;
+    uuid: string | null;
+    hal: string | null;
+    name_pelapor?: string;
+    no_surat?: string;
+    tanggal?: string;
+};
+
 // --- HELPER FUNCTIONS ---
 
 const formatDate = (isoString: string): string => {
@@ -159,7 +168,7 @@ export default function RiwayatDataPengajuanPage() {
     const [authError, setAuthError] = useState<string | null>(null);
 
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-    const [itemToDelete, setItemToDelete] = useState<{id: number | null, uuid: string | null, hal: string | null}>({id: null, uuid: null, hal: null});
+    const [itemToDelete, setItemToDelete] = useState<ItemAction>({id: null, uuid: null, hal: null});
     const [isDeleting, setIsDeleting] = useState(false);
 
     const [toast, setToast] = useState<ToastMessage>({ message: '', type: 'success', isVisible: false });
@@ -220,7 +229,6 @@ export default function RiwayatDataPengajuanPage() {
             return;
         }
 
-        // --- FETCH LANGSUNG KE API ---
         const fullApiUrl = API_ENDPOINTS.LIST_VIEWS;
         const headers = {
             "Content-Type": "application/json",
@@ -231,7 +239,6 @@ export default function RiwayatDataPengajuanPage() {
             const response = await fetch(fullApiUrl, { method: "GET", headers });
 
             if (response.status === 404) {
-                console.warn("API mengembalikan 404 → data kosong");
                 setPengajuans([]);
                 setLoading(false);
                 return;
@@ -247,9 +254,6 @@ export default function RiwayatDataPengajuanPage() {
 
             const result: ApiResponse = await response.json();
 
-            // PENTING: Struktur response GET_API_PENGAJUAN_URL biasanya { success: true, data: { data: [...] } } (Paginated)
-            // Atau { success: true, data: [...] } (Non-paginated)
-            // Cek kedua struktur untuk aman
             let apiDataArray = [];
             if (Array.isArray(result.data)) {
                 apiDataArray = result.data;
@@ -258,7 +262,6 @@ export default function RiwayatDataPengajuanPage() {
             }
 
             if (!result.success && !apiDataArray) {
-                console.warn("Data API kosong / struktur tidak sesuai");
                 setPengajuans([]);
                 setLoading(false);
                 return;
@@ -297,27 +300,12 @@ export default function RiwayatDataPengajuanPage() {
 
     // --- Action Handlers ---
 
-    const generateNoSurat = (): string => {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, "0");
-        const day = String(now.getDate()).padStart(2, "0");
-        const random = Math.floor(100 + Math.random() * 900);
-        return `SPK-${day}${month}${year}-${random}`;
-    };
-
     const handleBuatPengajuan = () => {
         if (!hasPermission(CREATE_PERMISSION)) { 
             showToast(`Akses Ditolak: Anda tidak memiliki izin (${CREATE_PERMISSION}) untuk membuat pengajuan baru.`, "error");
             return;
         }
         setCreating(true);
-        const nomorSuratBaru = generateNoSurat();
-
-        if (typeof window !== 'undefined') {
-            localStorage.setItem("nomor_surat_terakhir", nomorSuratBaru);
-        }
-
         router.push("/dashboard/lampiran/tambah");
         setCreating(false);
     };
@@ -339,17 +327,23 @@ export default function RiwayatDataPengajuanPage() {
         router.push(`/dashboard/lampiran/edit/${uuid}`);
     };
 
-    const handleDeleteClick = (id: number, uuid: string, hal: string) => {
+    const handleDeleteClick = (p: Pengajuan) => {
         if (!hasPermission(DELETE_PERMISSION)) {
             showToast(`Akses Ditolak: Anda tidak memiliki izin (${DELETE_PERMISSION}) untuk menghapus pengajuan.`, "error");
             return;
         }
         if (isDeleting) return;
-        setItemToDelete({ id, uuid, hal });
+        setItemToDelete({ 
+            id: p.id, 
+            uuid: p.uuid, 
+            hal: p.hal,
+            name_pelapor: p.name_pelapor,
+            no_surat: p.no_surat,
+            tanggal: p.tanggal 
+        });
         setIsDeleteModalOpen(true);
     };
 
-    // --- FUNGSI COPY & TRACKING ---
     const handleCopy = (text: string) => {
         if (!text || text === '-') return;
         navigator.clipboard.writeText(text);
@@ -358,7 +352,6 @@ export default function RiwayatDataPengajuanPage() {
 
     const handleTracking = (uuid: string) => {
         if (!uuid) return;
-        // Membuka tab baru ke halaman tracking
         window.open(`/tracking/${uuid}`, '_blank');
     };
 
@@ -388,8 +381,7 @@ export default function RiwayatDataPengajuanPage() {
         }
 
         if (!token) {
-            const errorMsg = "Tidak dapat menghapus. Token otorisasi tidak ditemukan.";
-            showToast(errorMsg, 'error');
+            showToast("Tidak dapat menghapus. Token otorisasi tidak ditemukan.", 'error');
             setIsDeleting(false);
             setItemToDelete({id: null, uuid: null, hal: null});
             return;
@@ -400,13 +392,13 @@ export default function RiwayatDataPengajuanPage() {
             'Content-Type': 'application/json',
         };
 
-        // --- DELETE LANGSUNG KE API ---
         const deleteUrl = `${API_ENDPOINTS.DELETE}/${uuidToDelete}`;
 
         for (let i = 0; i < MAX_RETRIES; i++) {
             try {
                 const response = await fetch(deleteUrl, {
                     method: 'DELETE',
+                    credentials: 'include',
                     headers: headers,
                 });
 
@@ -422,8 +414,6 @@ export default function RiwayatDataPengajuanPage() {
                 }
 
                 setPengajuans(prev => prev.filter(p => p.id !== idToDelete));
-                console.log(`[SUCCESS]: Data pengajuan ID ${idToDelete} berhasil dihapus.`);
-
                 showToast(`Pengajuan "${halDeleted}" berhasil dihapus.`, 'success');
 
                 setIsDeleting(false);
@@ -431,8 +421,6 @@ export default function RiwayatDataPengajuanPage() {
                 return;
 
             } catch (error: any) {
-                console.error(`Gagal menghapus (Percobaan ${i + 1}/${MAX_RETRIES}):`, error.message);
-
                 if (i === MAX_RETRIES - 1 || error.message.includes("Otorisasi Gagal")) {
                     setIsDeleting(false);
                     setItemToDelete({id: null, uuid: null, hal: null});
@@ -467,14 +455,8 @@ export default function RiwayatDataPengajuanPage() {
             case "pending":
             case "menunggu":
                 return "bg-yellow-100 text-yellow-700 ring-1 ring-yellow-300";
-            case "diproses":
-            case "selesai":
-            case "":
-                return "bg-blue-100 text-blue-700 ring-1 ring-blue-300";
-            case "error":
-                return "bg-gray-700 text-white";
             default:
-                return "bg-gray-100 text-gray-700 ring-1 ring-gray-300";
+                return "bg-blue-100 text-blue-700 ring-1 ring-blue-300";
         }
     };
 
@@ -482,7 +464,7 @@ export default function RiwayatDataPengajuanPage() {
     const DeleteConfirmationModal = () => {
         if (!isDeleteModalOpen || itemToDelete.id === null) return null;
 
-        const { id, hal } = itemToDelete;
+        const { id, hal, name_pelapor, no_surat, tanggal } = itemToDelete;
 
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4" aria-modal="true">
@@ -498,10 +480,44 @@ export default function RiwayatDataPengajuanPage() {
                             <X size={20} />
                         </button>
                     </div>
-                    <div className="text-gray-700 mb-6">
-                        <p>Apakah Anda yakin ingin menghapus data pengajuan dengan ID **{id}** (Hal: {hal})?</p>
-                        <p className="text-sm mt-2 text-gray-500">Tindakan ini tidak dapat dibatalkan.</p>
+
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                        <div className="flex items-center mb-2">
+                            <AlertTriangle size={20} className="text-red-600 mr-2" />
+                            <h4 className="font-bold text-red-800">Peringatan: Tindakan Tidak Dapat Dibatalkan</h4>
+                        </div>
+                        <p className="text-sm text-gray-700">
+                            Anda akan menghapus data pengajuan secara permanen. Data yang telah dihapus tidak dapat dikembalikan.
+                        </p>
                     </div>
+
+                    <div className="text-gray-700 mb-6">
+                        <p className="mb-2 font-medium">Detail pengajuan yang akan dihapus:</p>
+                        <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm border border-gray-200">
+                            <div className="flex justify-between">
+                                <span className="font-medium">ID:</span>
+                                <span>{id}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="font-medium">Hal:</span>
+                                <span className="text-right ml-4 truncate max-w-[200px]" dangerouslySetInnerHTML={{ __html: hal || '-' }} />
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="font-medium">Pelapor:</span>
+                                <span>{name_pelapor}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="font-medium">No. Surat:</span>
+                                <span>{no_surat}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="font-medium">Tanggal:</span>
+                                <span>{tanggal}</span>
+                            </div>
+                        </div>
+                        <p className="text-sm mt-3 text-gray-600">Apakah Anda yakin ingin melanjutkan?</p>
+                    </div>
+
                     <div className="flex justify-end gap-3">
                         <button
                             onClick={() => setIsDeleteModalOpen(false)}
@@ -531,27 +547,19 @@ export default function RiwayatDataPengajuanPage() {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 md:p-10 text-center transform transition-all">
-
                     <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-6">
                         <Lock className="text-red-600" size={32} />
                     </div>
-                    
                     <h1 className="text-3xl font-bold text-gray-900 mb-3">Akses Ditolak</h1>
                     <p className="text-gray-600 mb-6 leading-relaxed">
                         Maaf, Anda tidak memiliki izin yang cukup untuk mengakses halaman ini.
                     </p>
-                    
                     <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
                         <p className="text-sm font-semibold text-gray-700 mb-1">Izin yang Diperlukan:</p>
                         <code className="block bg-white px-3 py-2 rounded border border-red-200 text-red-600 font-mono text-sm">
                             {missingPermission}
                         </code>
                     </div>
-                    
-                    <p className="text-sm text-gray-500 mb-6">
-                        Jika Anda ingin Izin, silakan hubungi administrator sistem Anda.
-                    </p>
-                    
                     <button
                         onClick={() => router.push('/dashboard')} 
                         className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors shadow-md"
@@ -590,7 +598,7 @@ export default function RiwayatDataPengajuanPage() {
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-60">
                     <div className="bg-white p-6 rounded-xl shadow-2xl flex items-center">
                         <Loader2 className="animate-spin text-red-600 mr-3" size={24}/>
-                        <span className="text-lg font-semibold text-gray-800">Menghapus data ID {itemToDelete.id}...</span>
+                        <span className="text-lg font-semibold text-gray-800">Menghapus data {itemToDelete.no_surat && itemToDelete.no_surat !== '-' ? `No Surat: ${itemToDelete.no_surat}` : `ID: ${itemToDelete.id}`}...</span>
                     </div>
                 </div>
             )}
@@ -631,7 +639,6 @@ export default function RiwayatDataPengajuanPage() {
                     </button>
                 </div>
 
-                {/* Search Bar */}
                 <div className="relative max-w-lg mt-5">
                     <Search
                         className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
@@ -659,7 +666,6 @@ export default function RiwayatDataPengajuanPage() {
 
                 <div className="overflow-x-auto">
                     <table className="min-w-full text-sm text-gray-700 divide-y divide-gray-200">
-                        {/* UPDATE HEADER SESUAI PERMINTAAN */}
                         <thead className="bg-blue-600 text-white">
                             <tr>
                                 <th className="px-4 py-3 text-left font-semibold w-[5%] border-b border-blue-200">No</th>
@@ -683,128 +689,47 @@ export default function RiwayatDataPengajuanPage() {
                                 <tr>
                                     <td colSpan={7} className="py-10 text-center bg-white">
                                         <AlertTriangle className="inline-block text-red-500 mr-2" size={24}/>
-                                        <span className="text-red-500 font-medium">{authError}. Mohon periksa koneksi Anda atau coba login ulang.</span>
-                                    </td>
-                                </tr>
-                            ) : pengajuans.length === 0 ? (
-                                // KONDISI 1: Benar-benar tidak punya data dari Database
-                                <tr>
-                                    <td colSpan={7} className="py-16 text-center">
-                                        <p className="text-gray-700 text-lg font-semibold mb-2">
-                                            Anda belum memiliki riwayat pengajuan.
-                                        </p>
-                                        <p className="text-gray-500 text-sm mb-4">
-                                            Silakan buat pengajuan baru.
-                                        </p>
-                                        <button
-                                            onClick={handleBuatPengajuan}
-                                            disabled={!hasPermission(EDIT_PERMISSION)}
-                                            className="inline-flex items-center gap-2 bg-blue-100 text-blue-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors"
-                                        >
-                                            <PlusCircle size={16}/> Buat Sekarang
-                                        </button>
+                                        <span className="text-red-500 font-medium">{authError}</span>
                                     </td>
                                 </tr>
                             ) : filtered.length === 0 ? (
-                                // KONDISI 2: Data Ada, tapi Search tidak ketemu
                                 <tr>
                                     <td colSpan={7} className="py-12 text-center">
                                         <Droplet className="mx-auto text-gray-400 mb-3" size={48} />
-                                        <p className="text-gray-700 text-base font-medium">
-                                            Tidak ada data pengajuan yang ditemukan
-                                        </p>
-                                        <p className="text-gray-500 text-xs mt-1">
-                                            Coba ubah kata kunci pencarian "{search}"
-                                        </p>
-                                        <button 
-                                            onClick={() => setSearch('')}
-                                            className="mt-3 text-blue-600 text-xs font-medium hover:underline"
-                                        >
-                                            Reset Pencarian
-                                        </button>
+                                        <p className="text-gray-700 text-base font-medium">Data tidak ditemukan</p>
+                                        <button onClick={() => setSearch('')} className="mt-3 text-blue-600 text-xs font-medium hover:underline">Reset Pencarian</button>
                                     </td>
                                 </tr>
                             ) : (
-                                // KONDISI 3: Data Ada dan Sesuai Search
                                 filtered.map((p, i) => (
-                                    <tr
-                                        key={p.id}
-                                        className="bg-white hover:bg-blue-50 transition-colors"
-                                    >
+                                    <tr key={p.id} className="bg-white hover:bg-blue-50 transition-colors">
                                         <td className="px-4 py-3 text-center text-xs font-medium text-gray-800">{i + 1}</td>
                                         <td className="px-4 py-3 text-xs text-gray-800 whitespace-nowrap">{p.tanggal}</td>
-                                        
-                                        {/* KOLOM NO SURAT DENGAN COPY & TRACKING */}
                                         <td className="px-4 py-3 text-xs text-gray-800 font-semibold whitespace-nowrap">
                                             <div className="flex items-center gap-2">
                                                 <span>{p.no_surat}</span>
                                                 {p.no_surat && p.no_surat !== '-' && (
                                                     <>
-                                                        {/* TOMBOL COPY */}
-                                                        <button
-                                                            onClick={() => handleCopy(p.no_surat)}
-                                                            className="text-gray-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-gray-100"
-                                                            title="Salin No Surat"
-                                                        >
-                                                            <Copy size={14} />
-                                                        </button>
-                                                        
-                                                        {/* 3. TOMBOL TRACKING (Update disini) */}
-                                                        <button
-                                                            onClick={() => handleTracking(p.uuid)}
-                                                            className="text-gray-400 hover:text-orange-500 p-1 rounded hover:bg-orange-50 transition-colors"
-                                                            title="Lacak Status"
-                                                        >
-                                                            <MapPin size={14} />
-                                                        </button>
+                                                        <button onClick={() => handleCopy(p.no_surat)} className="text-gray-400 hover:text-blue-600 p-1" title="Salin No Surat"><Copy size={14} /></button>
+                                                        <button onClick={() => handleTracking(p.uuid)} className="text-gray-400 hover:text-orange-500 p-1" title="Lacak Status"><MapPin size={14} /></button>
                                                     </>
                                                 )}
                                             </div>
                                         </td>
-
                                         <td className="px-4 py-3 text-xs text-gray-800 max-w-xs line-clamp-2">
-                                            {/* Render HTML content jika perlu, atau text biasa */}
                                             <div dangerouslySetInnerHTML={{ __html: p.hal }} />
                                         </td>
                                         <td className="px-4 py-3 text-xs text-gray-800 font-medium whitespace-nowrap">{p.name_pelapor}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                            <span
-                                                className={`inline-flex px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full border ${getStatusStyle(p.status)}`}
-                                            >
+                                            <span className={`inline-flex px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-full border ${getStatusStyle(p.status)}`}>
                                                 {p.status || 'BELUM DIISI'}
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 text-xs font-medium whitespace-nowrap">
                                             <div className="flex justify-center space-x-2">
-                                                {/* VIEW */}
-                                                <button
-                                                    onClick={() => handleView(p.uuid)}
-                                                    title={!hasPermission(VIEW_DETAIL_PERMISSION) ? `Akses Ditolak: Tidak ada izin ${VIEW_DETAIL_PERMISSION}` : "Lihat Detail"}
-                                                    disabled={isDeleting || !hasPermission(VIEW_DETAIL_PERMISSION)}
-                                                    className={`p-1.5 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors duration-200 disabled:opacity-50`}
-                                                >
-                                                    <Eye className="text-blue-700 hover:scale-110 transition-transform" size={14} />
-                                                </button>
-                                                
-                                                {/* EDIT */}
-                                                <button
-                                                    onClick={() => handleEdit(p.uuid)}
-                                                    title={!hasPermission(EDIT_PERMISSION) ? `Akses Ditolak: Tidak ada izin ${EDIT_PERMISSION}` : "Ubah Data"}
-                                                    disabled={isDeleting || !hasPermission(EDIT_PERMISSION)}
-                                                    className={`p-1.5 bg-yellow-100 hover:bg-yellow-200 rounded-md transition-colors duration-200 disabled:opacity-50`}
-                                                >
-                                                    <Pencil className="text-yellow-700 hover:scale-110 transition-transform" size={14} />
-                                                </button>
-                                                
-                                                {/* DELETE */}
-                                                <button
-                                                    onClick={() => handleDeleteClick(p.id, p.uuid, p.hal)}
-                                                    title={!hasPermission(DELETE_PERMISSION) ? `Akses Ditolak: Tidak ada izin ${DELETE_PERMISSION}` : "Hapus Pengajuan"}
-                                                    disabled={isDeleting || !p.uuid || !hasPermission(DELETE_PERMISSION)}
-                                                    className={`p-1.5 ${(!p.uuid || !hasPermission(DELETE_PERMISSION)) ? 'bg-gray-100 cursor-not-allowed' : 'bg-red-100 hover:bg-red-200'} rounded-md transition-colors duration-200 disabled:opacity-50`}
-                                                >
-                                                    <Trash2 className={`${(!p.uuid || !hasPermission(DELETE_PERMISSION)) ? 'text-gray-400' : 'text-red-700'} hover:scale-110 transition-transform`} size={14} />
-                                                </button>
+                                                <button onClick={() => handleView(p.uuid)} title="Lihat Detail" disabled={isDeleting || !hasPermission(VIEW_DETAIL_PERMISSION)} className="p-1.5 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors"><Eye className="text-blue-700" size={14} /></button>
+                                                <button onClick={() => handleEdit(p.uuid)} title="Ubah Data" disabled={isDeleting || !hasPermission(EDIT_PERMISSION)} className="p-1.5 bg-yellow-100 hover:bg-yellow-200 rounded-md transition-colors"><Pencil className="text-yellow-700" size={14} /></button>
+                                                <button onClick={() => handleDeleteClick(p)} title="Hapus Data" disabled={isDeleting || !p.uuid || !hasPermission(DELETE_PERMISSION)} className="p-1.5 bg-red-100 hover:bg-red-200 rounded-md transition-colors"><Trash2 className="text-red-700" size={14} /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -812,26 +737,6 @@ export default function RiwayatDataPengajuanPage() {
                             )}
                         </tbody>
                     </table>
-                </div>
-            </div>
-
-            <div className="bg-gradient-to-r from-blue-50 to-white rounded-xl p-4 border border-blue-100">
-                <div className="flex items-center justify-between">
-                    <div className="text-xs text-gray-700">
-                        <p className="font-medium">Informasi Tambahan:</p>
-                        <ul className="mt-1 space-y-0.5 list-disc list-inside text-gray-600">
-                            <li>Data pengajuan teknis diperbarui secara real-time</li>
-                            <li>Klik ikon mata (<Eye size={12} className="inline-block align-middle"/>) untuk melihat detail lengkap</li>
-                            <li>Klik ikon pensil (<Pencil size={12} className="inline-block align-middle"/>) untuk mengubah data pengajuan</li>
-                            <li>Klik ikon tempat sampah (<Trash2 size={12} className="inline-block align-middle"/>) untuk menghapus data pengajuan</li>
-                        </ul>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-xs text-gray-600">Terakhir diperbarui:</p>
-                        <p className="text-base font-bold text-gray-900">
-                            {formatReadableDate(new Date().toISOString())}
-                        </p>
-                    </div>
                 </div>
             </div>
         </div>

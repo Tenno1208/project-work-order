@@ -70,18 +70,17 @@ const getStatusColor = (status: string, isForCard = false) => {
     const lowerStatus = (status || "").toLowerCase();
 
     if (isForCard) {
-        if (lowerStatus === "selesai") return "bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-900"; 
+        if (lowerStatus === "selesai") return "bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-900";
         if (lowerStatus.includes("proses") || lowerStatus === "assigned") return "bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200 text-yellow-900";
         if (lowerStatus === "menunggu" || lowerStatus === "pending") return "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 text-blue-900";
         if (lowerStatus === "tidak selesai") return "bg-gradient-to-br from-red-50 to-red-100 border-red-200 text-red-900";
         if (lowerStatus === "belum selesai") return "bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200 text-orange-900";
-        if (lowerStatus === "total") return "bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 text-purple-900";
+        if (lowerStatus === "total" || lowerStatus === "semua") return "bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 text-purple-900";
         return "bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200 text-black";
     }
 
-    // Untuk Label di Tabel
     if (lowerStatus === "selesai") return "bg-green-100 text-green-800 border-green-200";
-    if (lowerStatus.includes("proses")) return "bg-yellow-100 text-yellow-800 border-yellow-200";
+    if (lowerStatus.includes("proses") || lowerStatus === "assigned") return "bg-yellow-100 text-yellow-800 border-yellow-200";
     if (lowerStatus === "menunggu" || lowerStatus === "pending") return "bg-blue-100 text-blue-800 border-blue-200";
     if (lowerStatus === "tidak selesai") return "bg-red-100 text-red-800 border-red-200";
     if (lowerStatus === "belum selesai") return "bg-orange-100 text-orange-800 border-orange-200";
@@ -557,20 +556,29 @@ export default function DaftarSPKPage() {
                     </div>
 
                     {/* STATS */}
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
-                        {Object.entries(statusCount).map(([key, value]) => (
-                            <div
-                                key={key}
-                                className={`${getStatusColor(
-                                    key === "semua" ? "Semua" : key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1')
-                                )} rounded-xl p-3 text-white shadow-md hover:scale-[1.02] transition-transform`}
-                            >
-                                <p className="text-xs opacity-90 capitalize">
-                                    {key === "semua" ? "Total SPK" : key.replace(/([A-Z])/g, ' $1').trim()}
-                                </p>
-                                <p className="text-2xl font-bold mt-0.5">{value}</p>
-                            </div>
-                        ))}
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mt-4">
+                        {Object.entries(statusCount).map(([key, value]) => {
+                            const labelMapping: { [key: string]: string } = {
+                                semua: "total",
+                                selesai: "selesai",
+                                proses: "proses",
+                                menunggu: "menunggu",
+                                belumSelesai: "belum selesai",
+                                tidakSelesai: "tidak selesai"
+                            };
+                            
+                            return (
+                                <div
+                                    key={key}
+                                    className={`${getStatusColor(labelMapping[key] || key, true)} rounded-xl p-3 border shadow-sm hover:scale-[1.02] transition-transform`}
+                                >
+                                    <p className="text-[10px] font-bold uppercase opacity-80">
+                                        {key === "semua" ? "Total SPK" : key.replace(/([A-Z])/g, ' $1').trim()}
+                                    </p>
+                                    <p className="text-2xl font-bold mt-0.5">{value}</p>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
 
@@ -680,14 +688,7 @@ export default function DaftarSPKPage() {
 
                                                 <td className="px-4 py-3">
                                                     <span
-                                                        className={`inline-flex items-center px-2 py-1 text-xs font-bold rounded-full shadow-sm ${spk.status === "Selesai"
-                                                                ? "bg-gradient-to-r from-green-400 to-green-500 text-white"
-                                                                : spk.status === "Proses"
-                                                                    ? "bg-gradient-to-r from-yellow-400 to-orange-400 text-white"
-                                                                    : spk.status === "Menunggu"
-                                                                        ? "bg-gradient-to-r from-blue-400 to-blue-500 text-white"
-                                                                        : "bg-gradient-to-r from-gray-400 to-gray-500 text-white"
-                                                            }`}
+                                                        className={`inline-flex items-center px-2.5 py-0.5 text-[10px] font-bold rounded-full border shadow-sm uppercase tracking-wide ${getStatusColor(spk.status)}`}
                                                     >
                                                         {spk.status}
                                                     </span>

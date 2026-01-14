@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';   
 import { Menu, X, CheckCircle, AlertTriangle } from 'lucide-react'; 
 
 
@@ -105,10 +105,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         window.notificationEventSource.close();
     }
 
-    // KIRIM TOKEN LEWAT URL (Aman untuk SSE dan mencegah CORS/502)
     const eventSourceUrl = `${API_ENDPOINTS.NOTIFICATIONS_USER}/${npp}?stream=1&token=${encodeURIComponent(token)}`;
     
-    // Gunakan EventSource standar browser
     const eventSource = new EventSource(eventSourceUrl);
     window.notificationEventSource = eventSource;
 
@@ -137,7 +135,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
 }, [setNotifications, setUnreadNotificationCount]);
 
-    // --- FETCH ALL NOTIFICATIONS (DIRECT API) ---
     const fetchAndSetAllNotifications = useCallback(async () => {
         const storedUserData = localStorage.getItem("user_data");
         if (!storedUserData) return;
@@ -156,7 +153,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         
         try {
             // DIRECT FETCH
-            const response = await fetch(`${API_ENDPOINTS.NOTIFICATIONS_USER}/${npp}`, {
+            const response = await fetch(`${API_ENDPOINTS.NOTIFICATIONS_USER}/all/${npp}`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,

@@ -1,3 +1,5 @@
+// app/dashboard/spk/view/page.tsx
+
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback, useMemo, Suspense } from "react";
@@ -154,7 +156,7 @@ async function fetchImageDirectly(pathOrUrl: string, token: string | null): Prom
     }
 }
 
-// Proses Transparansi Gambar (Sama seperti sebelumnya, tapi inputnya Blob URL)
+// Proses Transparansi Gambar
 async function processImageTransparency(dataUrl: string, settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }): Promise<string> {
     return new Promise((resolve) => {
         try {
@@ -179,8 +181,6 @@ async function processImageTransparency(dataUrl: string, settings?: { whiteThres
                 let hasInk = false;
                 let minX = canvas.width, minY = canvas.height, maxX = 0, maxY = 0;
 
-                // Logika transparansi (sama seperti sebelumnya)
-                // ... (Kode proses piksel disederhanakan untuk ringkas, logika tetap sama) ...
                 if (useAdvanced) {
                    for (let i = 0; i < data.length; i += 4) {
                        const r = data[i], g = data[i + 1], b = data[i + 2];
@@ -200,17 +200,15 @@ async function processImageTransparency(dataUrl: string, settings?: { whiteThres
                        }
                    }
                 } else {
-                   // ... simple logic ...
                    for (let i = 0; i < data.length; i += 4) {
                        const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
                        if (brightness > whiteThreshold) data[i + 3] = 0;
-                       else hasInk = true; // Simpifikasi crop coords
+                       else hasInk = true; 
                    }
                 }
 
                 ctx.putImageData(imageData, 0, 0);
 
-                // Auto Crop jika ada tinta
                 if (hasInk && useAdvanced) {
                     const padding = 10;
                     minX = Math.max(0, minX - padding); minY = Math.max(0, minY - padding);
@@ -508,7 +506,7 @@ const RequestDetailCollapse = ({ spkData, modalImageUrl, setModalImageUrl, fotoP
 };
 
 // ====================================================================
-// --- MAIN COMPONENT -------------------------------------------------
+// --- MAIN COMPONENT (UPDATED) --------------------------------------
 // ====================================================================
 
 function SPKDetailContent() {
@@ -521,6 +519,12 @@ function SPKDetailContent() {
 
     const [spkData, setSpkData] = useState<SPKDetail | null>(null);
     const [assignedPeople, setAssignedPeople] = useState<AssignedPerson[]>([]);
+    
+    const [pengajuanDetail, setPengajuanDetail] = useState<PengajuanDetail | null>(null);
+    const [fotoPengajuan, setFotoPengajuan] = useState<any[]>([]);
+    const [ttdPelaporPengajuan, setTtdPelaporPengajuan] = useState<string | null>(null);
+    const [ttdMengetahuiPengajuan, setTtdMengetahuiPengajuan] = useState<string | null>(null);
+
     const [fotoPekerjaan, setFotoPekerjaan] = useState<any[]>([]);
     
     const [ttdMengetahuiPreview, setTtdMengetahuiPreview] = useState<string | null>(null);
@@ -544,9 +548,9 @@ function SPKDetailContent() {
     }, []);
 
     const handlePrint = () => {
-        if (!docRef.current) {
-            showToast("Gagal mencetak: Konten dokumen tidak ditemukan.", "error");
-            return;
+        if (!pengajuanDetail && spkData?.uuid_pengajuan) {
+            showToast("Sedang memuat detail pengajuan untuk cetak...", "warning");
+            return; 
         }
         window.print();
     };
@@ -555,7 +559,79 @@ function SPKDetailContent() {
         setModalImageUrl(fileUrl);
     };
 
-    // --- Fetch Data Logics (Direct Fetch) ---
+    const renderKeteranganWithItalic = (text: string) => {
+        if (!text) return "Tidak ada keterangan.";
+        const parts = text.split(/(<i>|<\/i>)/);
+        let isItalic = false;
+
+        return parts.map((part, index) => {
+            if (part === "<i>") {
+                isItalic = true;
+                return null;
+            } else if (part === "</i>") {
+                isItalic = false;
+                return null;
+            }
+            return isItalic ? <i key={index}>{part}</i> : <span key={index}>{part}</span>;
+        });
+    };
+
+    const fetchPengajuanForPrint = useCallback(async (uuid: string) => {
+        const token = localStorage.getItem('token');
+        if(!token) return;
+
+        try {
+            const url = `${API_ENDPOINTS.PENGAJUAN_VIEW}/${uuid}`;
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+            const result = await res.json();
+            if (res.ok && result.success && result.data) {
+                const data = result.data;
+                const masterhal = result.masterhal;
+                
+                const kepadaSatker = result.kd_satker?.satker_name || data.kepada || 'N/A';
+                const parentSatker = result.kd_parent?.parent_satker || data.satker || 'N/A';
+
+                const pData: PengajuanDetail = {
+                    uuid: data.uuid, 
+                    no_surat: data.no_surat, 
+                    nama_jenis: masterhal?.nama_jenis || data.hal || 'N/A', 
+                    hal_id: masterhal?.kode || data.hal_id || 'N/A', 
+                    kepada: kepadaSatker, 
+                    satker: parentSatker,
+                    name_pelapor: data.name_pelapor || data.name || 'N/A', 
+                    npp_pelapor: data.npp_pelapor || 'N/A', 
+                    tlp_pelapor: data.tlp_pelapor || 'N/A', 
+                    ttd_pelapor_path: data.ttd_pelapor, 
+                    mengetahui: data.mengetahui || 'N/A', 
+                    mengetahui_name: data.mengetahui_name || 'N/A', 
+                    mengetahui_npp: data.mengetahui_npp || null, 
+                    ttd_mengetahui_path: data.ttd_mengetahui, 
+                    keterangan: data.keterangan || 'Tidak ada keterangan.', 
+                    file_paths: Array.isArray(data.file) ? data.file : (data.file ? [data.file] : []), 
+                    tanggal: data.tanggal || '-', 
+                    kode_barang: data.kode_barang || null,
+                };
+                setPengajuanDetail(pData);
+
+                if (pData.file_paths.length > 0) {
+                    const photoPromises = pData.file_paths.slice(0, 4).map(async (path) => {
+                        try {
+                            const previewUrl = await fetchImageDirectly(path, token);
+                            return { preview: previewUrl, path: path };
+                        } catch (e) { return { preview: null, path: path }; }
+                    });
+                    const loadedPhotos = await Promise.all(photoPromises);
+                    setFotoPengajuan(loadedPhotos);
+                }
+
+                if (pData.ttd_pelapor_path) fetchAndMakeTransparent(pData.ttd_pelapor_path, token).then(setTtdPelaporPengajuan);
+                if (pData.ttd_mengetahui_path) fetchAndMakeTransparent(pData.ttd_mengetahui_path, token).then(setTtdMengetahuiPengajuan);
+            }
+        } catch (e) {
+            console.error("Gagal load pengajuan untuk print:", e);
+        }
+    }, []);
+
     const fetchDetailSPK = useCallback(async () => {
         if (!spk_uuid) {
             setError("UUID SPK tidak ditemukan dalam URL.");
@@ -566,7 +642,6 @@ function SPKDetailContent() {
         setIsLoading(true);
         setError(null);
 
-        // DIRECT API URL
         const url = `${API_ENDPOINTS.SPK_VIEW}/${spk_uuid}`;
         const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
 
@@ -587,7 +662,6 @@ function SPKDetailContent() {
             const item = result.data as SPKDetail;
             setSpkData(item);
             
-            // Map personnel data
             const personnel = item.stafs || [];
             setAssignedPeople(personnel.map((p: any) => ({
                 name: p.nama,
@@ -610,23 +684,26 @@ function SPKDetailContent() {
                 });
                 
                 const loadedPhotos = await Promise.all(photoPromises);
-                while (loadedPhotos.length < 4) loadedPhotos.push({ file: null, preview: null });
+                while (loadedPhotos.length < 4) loadedPhotos.push({file:null,preview:null});
                 setFotoPekerjaan(loadedPhotos);
             } else {
                 setFotoPekerjaan([{file:null,preview:null},{file:null,preview:null},{file:null,preview:null},{file:null,preview:null}]);
             }
             
-            // --- LOAD PREVIEW TTD (Direct Fetch Blob + Transparency) ---
             if (item.mengetahui_ttd) fetchAndMakeTransparent(item.mengetahui_ttd, token).then(setTtdMengetahuiPreview);
             if (item.menyetujui_ttd) fetchAndMakeTransparent(item.menyetujui_ttd, token).then(setTtdMenyetujuiPreview);
             if (item.penanggung_jawab_ttd) fetchAndMakeTransparent(item.penanggung_jawab_ttd, token).then(setTtdPelaksanaPreview);
+
+            if (item.uuid_pengajuan) {
+                fetchPengajuanForPrint(item.uuid_pengajuan);
+            }
 
         } catch (err: any) {
             setError(err.message || "Terjadi kesalahan saat memuat SPK.");
         } finally {
             setIsLoading(false);
         }
-    }, [spk_uuid]);
+    }, [spk_uuid, fetchPengajuanForPrint]);
 
     const pic = useMemo(() => {
         return assignedPeople.find(p => p.isPic);
@@ -658,14 +735,16 @@ function SPKDetailContent() {
     }
 
     const { no_surat, tanggal } = spkData;
+    const todayDate = new Date();
+    const formatDateIndo = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(todayDate);
 
     return (
         <div className="p-6 min-h-screen bg-gray-100 font-sans">
             <ToastBox toast={toast} onClose={closeToast} />
             <ImageModal imageUrl={modalImageUrl} onClose={() => setModalImageUrl(null)} />
 
-            <div className="max-w-4xl mx-auto mb-4 p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded-lg text-center flex items-center justify-center">
-                <Users className="mr-2" size={20} />
+            <div className="max-w-4xl mx-auto mb-4 p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded-lg text-center items-center justify-center print:hidden">
+                <Users className="mr-2 inline" size={20} />
                 Anda berada dalam Mode Lihat Detail murni. Data tidak dapat diubah di halaman ini.
             </div>
 
@@ -676,11 +755,11 @@ function SPKDetailContent() {
                         Detail SPK: {no_surat}
                     </h1>
                     <Button onClick={handlePrint} className="bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center gap-1">
-                        <Printer size={16}/> Cetak (A4)
+                        <Printer size={16}/> Cetak (A3 Landscape)
                     </Button>
                 </div>
 
-                {/* Tampilan Normal di Layar */}
+                {/* Tampilan Normal di Layar (Screen Only) */}
                 <div ref={docRef} className="p-8 text-[14px] leading-relaxed font-serif screen-only">
                     <div className="border-2 border-black p-8 rounded-md bg-white shadow-lg print:border print:p-4 print:shadow-none">
                         
@@ -689,7 +768,6 @@ function SPKDetailContent() {
                         </h2>
                         <p className="text-center text-sm mb-4 font-bold text-black print:text-xs">(NO: {no_surat})</p>
                         <p className="text-right text-xs mb-6 text-black print:text-xs">Tanggal SPK: {formatLongDate(tanggal)}</p>
-                        
                         
                         <div className="mt-2 text-black space-y-4">
                             <div className="flex items-start mt-2 border p-2 rounded-lg bg-gray-50 print:bg-white print:border-dashed">
@@ -719,83 +797,51 @@ function SPKDetailContent() {
                             />
 
                             <div className="mt-12 flex justify-between text-xs sm:text-sm print:text-xs min-h-[200px]">
-
-
-                                {/* KIRI: QR CODE & MENGETAHUI */}
                                 <div className="w-1/2 text-center flex flex-col justify-end items-center">
-                                    
                                     <div className="mb-8 flex flex-col items-center justify-center">
                                         <div className="bg-white p-1 border border-gray-200 rounded">
                                             {spkData && spkData.uuid_pengajuan ? (
-                                                <QRCode
-                                                    size={70} 
-                                                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                                                    value={`${window.location.origin}/tracking/${spkData.uuid_pengajuan}`}
-                                                    viewBox={`0 0 256 256`}
-                                                />
-                                            ) : (
-                                                <div className="w-[70px] h-[70px] flex items-center justify-center bg-gray-100 rounded">
-                                                    <Loader2 className="animate-spin text-gray-400" size={24} />
-                                                </div>
-                                            )}
+                                                <QRCode size={70} value={`${window.location.origin}/tracking/${spkData.uuid_pengajuan}`} viewBox={`0 0 256 256`} />
+                                            ) : <div className="w-[70px] h-[70px] flex items-center justify-center bg-gray-100 rounded"><Loader2 className="animate-spin text-gray-400" size={24} /></div>}
                                         </div>
                                         <div className="text-[9px] text-gray-500 mt-1 font-mono tracking-tighter">SCAN TRACKING</div>
                                     </div>
 
-                                    {/* 2. Mengetahui */}
                                     <div className="w-full">
                                         <div className="pb-1">Mengetahui</div>
                                         <div className="font-semibold flex items-end justify-center min-h-[10px] px-4">
                                             {spkData.mengetahui || "Ka. Bid Pengembangan Program"}
                                         </div>
                                         <div style={{ height: 15 }}></div>
-                                        <>
-                                            {/* Container Tanda Tangan Mengetahui */}
-                                            <div className="flex justify-center items-center h-[100px] w-[200px] relative mb-1 mx-auto">
-                                                {ttdMengetahuiPreview ? (
-                                                    <div className="relative group w-full h-full flex justify-center items-center">
-                                                        <img src={ttdMengetahuiPreview} alt="TTD Mengetahui" className="h-[100px] w-auto object-contain" />
-                                                    </div>
-                                                ) : (
-                                                    <div className="h-[100px]"></div>
-                                                )}
-                                            </div>
-                                            <div className="font-bold border-t border-black inline-block mt-1 pt-1 text-black px-2 mx-auto">
-                                                {spkData.mengetahui_name || "-"}
-                                            </div>
-                                            <div className="text-xs">NPP. {spkData.mengetahui_npp || "..."}</div>
-                                        </>
+                                        <div className="flex justify-center items-center h-[100px] w-[200px] relative mb-1 mx-auto">
+                                            {ttdMengetahuiPreview ? (
+                                                <div className="relative group w-full h-full flex justify-center items-center">
+                                                    <img src={ttdMengetahuiPreview} alt="TTD Mengetahui" className="h-[100px] w-auto object-contain" />
+                                                </div>
+                                            ) : <div className="h-[100px]"></div>}
+                                        </div>
+                                        <div className="font-bold border-t border-black inline-block mt-1 pt-1 text-black px-2 mx-auto">
+                                            {spkData.mengetahui_name || "-"}
+                                        </div>
+                                        <div className="text-xs">NPP. {spkData.mengetahui_npp || "..."}</div>
                                     </div>
                                 </div>
 
-                                {/* KANAN: PELAKSANA & MENYETUJUI */}
                                 <div className="w-1/2 flex flex-col justify-between">
-                                    
-                                    {/* 1. Pelaksana Section */}
                                     <div className="text-center">
                                         <div className="font-semibold mb-2">Pelaksana</div>
-                                        
-                                        {/* Container Tanda Tangan Pelaksana */}
                                         <div className="flex flex-col items-center justify-center">
                                             <div className="flex justify-center items-center h-[100px] w-[200px] relative mb-1">
                                                 {ttdPelaksanaPreview ? (
                                                     <div className="relative group w-full h-full flex justify-center items-center">
                                                         <img src={ttdPelaksanaPreview} alt="TTD Pelaksana" className="h-[100px] w-auto object-contain" />
                                                     </div>
-                                                ) : (
-                                                    <div className="h-[100px]"></div>
-                                                )}
+                                                ) : <div className="h-[100px]"></div>}
                                             </div>
-
-                                            {/* Nama Pelaksana */}
                                             {pic ? (
                                                 <>
-                                                    <div className="font-bold border-t border-black inline-block mt-1 pt-1 text-black px-1 mx-auto text-xs whitespace-nowrap">
-                                                        {pic.name}
-                                                    </div>
-                                                    <div className="text-[10px]">
-                                                        {pic.npp ? `NPP. ${pic.npp}` : 'NPP. -'}
-                                                    </div>
+                                                    <div className="font-bold border-t border-black inline-block mt-1 pt-1 text-black px-1 mx-auto text-xs whitespace-nowrap">{pic.name}</div>
+                                                    <div className="text-[10px]">{pic.npp ? `NPP. ${pic.npp}` : 'NPP. -'}</div>
                                                 </>
                                             ) : (
                                                 <>
@@ -806,183 +852,318 @@ function SPKDetailContent() {
                                         </div>
                                     </div>
 
-                                    {/* 2. Menyetujui Section */}
                                     <div className="mt-8 text-center">
                                         <div className="pb-1">Menyetujui</div>
                                         <div className="font-semibold flex items-end justify-center min-h-[10px] px-4">
                                             {spkData.menyetujui || "Ka. Sub Bid TI"}
                                         </div>
                                         <div style={{ height: 15 }}></div>
-                                        <>
-                                            {/* Container Tanda Tangan Menyetujui */}
-                                            <div className="flex justify-center items-center h-[100px] w-[200px] relative mb-1 mx-auto">
-                                                {ttdMenyetujuiPreview ? (
-                                                    <div className="relative group w-full h-full flex justify-center items-center">
-                                                        <img src={ttdMenyetujuiPreview} alt="TTD Menyetujui" className="h-[100px] w-auto object-contain" />
-                                                    </div>
-                                                ) : (
-                                                    <div className="h-[100px]"></div>
-                                                )}
-                                            </div>
-                                            <div className="font-bold border-t border-black inline-block mt-1 pt-1 text-black px-2 mx-auto">
-                                                {spkData.menyetujui_name || "-"}
-                                            </div>
-                                            <div className="text-xs">NPP. {spkData.menyetujui_npp || "..."}</div>
-                                        </>
+                                        <div className="flex justify-center items-center h-[100px] w-[200px] relative mb-1 mx-auto">
+                                            {ttdMenyetujuiPreview ? (
+                                                <div className="relative group w-full h-full flex justify-center items-center">
+                                                    <img src={ttdMenyetujuiPreview} alt="TTD Menyetujui" className="h-[100px] w-auto object-contain" />
+                                                </div>
+                                            ) : <div className="h-[100px]"></div>}
+                                        </div>
+                                        <div className="font-bold border-t border-black inline-block mt-1 pt-1 text-black px-2 mx-auto">
+                                            {spkData.menyetujui_name || "-"}
+                                        </div>
+                                        <div className="text-xs">NPP. {spkData.menyetujui_npp || "..."}</div>
                                     </div>
                                 </div>
-
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Tampilan Khusus untuk Cetak */}
+                {/* Tampilan Khusus untuk Cetak (A3 LANDSCAPE) */}
                 <div className="print-only print-container">
                     <div className="print-layout">
-                        {/* Bagian Kiri: Detail Pengajuan - Sesuai dengan gambar */}
-                        <div className="print-section print-left">
-                            <div className="print-header">
-                                <div className="text-center font-bold text-base mb-2">PERUMDA AIR MINUM TIRTA MOEDAL KOTA SEMARANG</div>
-                                <div className="text-center font-bold text-base mb-4 underline">Pemeliharaan/Perbaikan</div>
-                            </div>
-                            
-                            {/* Panggil Logic Fetch Detail utk Print disini jika perlu, tapi idealnya pakai data yg sudah di load di RequestDetailCollapse */}
-                            {/* NOTE: Karena RequestDetailCollapse meload data secara lazy, untuk print kita perlu memastikan data sudah ada.
-                                Di kode asli Anda, print layout mengandalkan data yang sama.
-                                Kita akan biarkan kosong jika belum di expand, atau user harus expand dulu sebelum print. 
-                                Namun, idealnya fetch data pengajuan juga saat init jika mau print langsung.
-                                Untuk menjaga "jangan ubah logika", saya ikuti struktur Anda. */}
-                        </div>
+                        
+                        {/* --- KOLOM KIRI: DETAIL PENGAJUAN --- */}
+<div className="print-section print-left">
+    <div className="flex justify-between items-start mb-[20px]">
+        <div className="text-[12pt]">
+            <div className="font-bold">PERUMDA AIR MINUM TIRTA MOEDAL</div>
+            <div className="font-bold">KOTA SEMARANG</div>
+        </div>
+        <div className="text-right text-[12pt]">
+            <div>Semarang, {formatDateIndo}</div>
+        </div>
+    </div>
+    
+    <div className="flex gap-[40px] text-[11pt] mb-[15px]">
+        <div className="w-1/2">
+            <div className="flex items-center gap-2 mb-1">
+                <span className="font-semibold whitespace-nowrap">Hal:</span>
+                <span>{pengajuanDetail?.nama_jenis || '-'}</span> 
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="font-semibold whitespace-nowrap">Ref. Surat:</span>
+                <span>{pengajuanDetail?.no_surat|| "-"}</span>
+            </div>
+        </div>
 
-                        {/* Bagian Kanan: SPK */}
-                        <div className="print-section print-right">
-                            <div className="print-header">
-                                <h2 className="text-center font-bold text-base mb-2">SURAT PERINTAH KERJA</h2>
-                                <p className="text-center text-xs font-bold mb-2">(NO: {no_surat})</p>
-                                <p className="text-right text-xs mb-4">Tanggal SPK: {formatLongDate(tanggal)}</p>
-                            </div>
-                            
-                            <div className="print-body">
-                                <div className="print-field">
-                                    <span className="print-label">Menugaskan Sdr:</span>
-                                </div>
-                                <div className="print-personnel-list">
-                                    {assignedPeople.length > 0 ? (
-                                        assignedPeople.map((person) => (
-                                            <div key={person.name} className="print-person-item">
-                                                {person.name}{person.npp ? ` (${person.npp})` : ''}
-                                                {person.isPic && <span className="print-pic-badge"> (PIC)</span>}
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div className="print-person-item">Belum ada personel ditugaskan.</div>
-                                    )}
-                                </div>
-                                
-                                <div className="print-field print-field-block">
-                                    <div className="print-text-block">Untuk melaksanakan Pemeliharaan / Perbaikan / Pengaduan kerusakan</div>
-                                </div>
-                                
-                                <div className="print-field">
-                                    <span className="print-label">Jenis Pekerjaan:</span>
-                                    <span className="print-value">{spkData.jenis_pekerjaan?.nama_pekerjaan || "N/A"}</span>
-                                </div>
-                                
-                                <div className="print-field">
-                                    <span className="print-label">ID Barang:</span>
-                                    <span className="print-value">{spkData.kode_barang || 'N/A'}</span>
-                                </div>
-                                
-                                <div className="print-field print-field-block">
-                                    <span className="print-label">Uraian Pekerjaan:</span>
-                                    <div className="print-text-block">{spkData.uraian_pekerjaan || "Tidak ada uraian pekerjaan tercatat."}</div>
-                                </div>
+        <div className="w-1/2 kepada-yth-container">
+            Kepada Yth. 
+            <div className="font-semibold">{pengajuanDetail?.kepada || "-"}</div>
+            PERUMDA AIR MINUM Tirta Moedal <div>di <strong>SEMARANG</strong></div>
+        </div>
+    </div>
+    
+    <div className="grid grid-cols-[120px_1fr] gap-y-[5px] items-center text-[11pt] mb-[10px]">
+        <div className="col-span-3 font-bold">Satker Asal:</div>
+        <div className="col-span-9 h-[18px] pb-1">{pengajuanDetail?.satker || "-"}</div>
+        <div className="col-span-3 font-bold">Kode Barang :</div>
+        <div className="col-span-9 h-[18px] pb-1">{pengajuanDetail?.kode_barang || "-"}</div>
+    </div>
+    
+    <div className="big-box text-[10pt]">
+        <div style={{ whiteSpace: "pre-wrap" }}>
+            {renderKeteranganWithItalic(pengajuanDetail?.keterangan || 'Tidak ada keterangan.')}
+        </div>
+    </div>
+    
+    {fotoPengajuan.length > 0 && (
+        <div className="mt-[10px] grid grid-cols-4 gap-[5px]">
+            {fotoPengajuan.slice(0, 4).map((foto, idx) => (
+                <div key={idx} className="border border-gray-300 h-[60px] flex items-center justify-center bg-gray-50">
+                    {foto.preview ? (
+                        <img src={foto.preview} alt={`Lampiran ${idx}`} className="max-h-full max-w-full object-cover" />
+                    ) : (
+                        <span className="text-[9px] text-gray-400">No Img</span>
+                    )}
+                </div>
+            ))}
+        </div>
+    )}
 
-                                <div className="print-signatures-grid">
-                                    <div className="print-signature-item">
-                                        <div className="print-signature-title">Pelaksana:</div>
-                                        <div className="print-signature-box">
-                                            {ttdPelaksanaPreview ? (
-                                                <img src={ttdPelaksanaPreview} alt="TTD Pelaksana" className="print-signature-img" />
-                                            ) : (
-                                                <div className="print-signature-empty"></div>
-                                            )}
-                                            <div className="print-signature-name">{pic ? pic.name : '-'}</div>
-                                            <div className="print-signature-npp">{pic ? `NPP. ${pic.npp}` : 'NPP. -'}</div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="print-signature-item">
-                                        <div className="print-signature-title">Mengetahui:</div>
-                                        <div className="print-signature-box">
-                                            {ttdMengetahuiPreview ? (
-                                                <img src={ttdMengetahuiPreview} alt="TTD Mengetahui" className="print-signature-img" />
-                                            ) : (
-                                                <div className="print-signature-empty"></div>
-                                            )}
-                                            <div className="print-signature-name">{spkData.mengetahui_name || "-"}</div>
-                                            <div className="print-signature-npp">NPP. {spkData.mengetahui_npp || "..."}</div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="print-signature-item">
-                                        <div className="print-signature-title">Menyetujui:</div>
-                                        <div className="print-signature-box">
-                                            {ttdMenyetujuiPreview ? (
-                                                <img src={ttdMenyetujuiPreview} alt="TTD Menyetujui" className="print-signature-img" />
-                                            ) : (
-                                                <div className="print-signature-empty"></div>
-                                            )}
-                                            <div className="print-signature-name">{spkData.menyetujui_name || "-"}</div>
-                                            <div className="print-signature-npp">NPP. {spkData.menyetujui_npp || "..."}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+    <div className="mt-[15px] text-[10pt] text-left">
+        Demikian laporan kami untuk menjadi periksa dan mohon untuk perhatian.
+    </div>
+    
+    <div className="mt-[25px] flex justify-between px-[10px] text-center items-end">
+        <div className="w-[48%] flex flex-col items-center">
+            <div className="text-[10pt] font-semibold mb-1">Mengetahui</div>
+            {pengajuanDetail?.mengetahui && (
+                <div className="text-[9pt] mb-1 text-gray-600">{pengajuanDetail.mengetahui}</div>
+            )}
+            <div className="w-[200px] h-[70px] flex items-center justify-center mb-1">
+                {ttdMengetahuiPengajuan && (
+                    <img src={ttdMengetahuiPengajuan} alt="TTD Mengetahui" className="max-w-full max-h-full object-contain"/>
+                )}
+            </div>
+            <div className="w-full text-center">
+                <div className="font-bold border-t border-black pt-1 text-[9pt]">
+                    {pengajuanDetail?.mengetahui_name || "(...........................)"}
+                </div>
+                <div className="text-[8pt] mt-[1px]">
+                    NPP: {pengajuanDetail?.mengetahui_npp || "__________"} 
+                </div>
+            </div>
+        </div>
+
+        <div className="w-[48%] flex flex-col items-center">
+            <div className="text-[10pt] font-semibold mb-1">Pelapor</div>
+            <div className="h-[20px]"></div>
+            <div className="w-[200px] h-[70px] flex items-center justify-center mb-1">
+                {ttdPelaporPengajuan && (
+                    <img src={ttdPelaporPengajuan} alt="Tanda tangan pelapor" className="max-w-full max-h-full object-contain"/>
+                )}
+            </div>
+            <div className="w-full text-center">
+                <div className="font-bold border-t border-black pt-1 text-[9pt]">
+                    {pengajuanDetail?.name_pelapor || "(...........................)"}
+                </div>
+                <div className="text-[8pt] mt-[1px]">
+                    NPP: {pengajuanDetail?.npp_pelapor || "__________"}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{/* --- KOLOM KANAN: SPK --- */}
+<div className="print-section print-right border-l border-gray-800 print:pl-[15px]">
+    <div className="print-header">
+        <h2 className="text-center font-bold text-[12pt] mb-[5px]">SURAT PERINTAH KERJA</h2>
+        <p className="text-center text-[11pt] font-bold mb-[5px]">(NO: {no_surat})</p>
+    </div>
+    
+    <div className="print-body text-[11pt]">
+        <div className="print-field mb-[5px]">
+            <span className="print-label font-bold">Menugaskan Sdr:</span>
+        </div>
+        
+        <div className="mb-[10px] pl-[15px] border-l-2 border-black">
+            <div className="grid grid-cols-1 text-[9pt]">
+                {assignedPeople.map((person, idx) => (
+                    <div key={person.name} className="flex gap-2 border-b border-gray-300 mb-1 pb-1">
+                        <span className="font-bold">{idx + 1}. {person.name}</span>
+                        <span className="text-gray-600">NPP: {person.npp || '-'}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+        
+        <div className="print-field mt-[10px]">
+            <div className="print-text-block font-bold text-[10pt]">Untuk melaksanakan Pemeliharaan / Perbaikan / Pengaduan kerusakan</div>
+        </div>
+        
+        <div className="print-field flex items-center mt-[5px]">
+            <span className="print-label font-bold w-[130px]">Jenis Pekerjaan</span>
+            <span className="print-value flex-1 text-[10pt] pt-[2px]">:{spkData.jenis_pekerjaan?.nama_pekerjaan || "N/A"}</span>
+        </div>
+        
+        <div className="print-field flex items-center mt-[5px]">
+            <span className="print-label font-bold w-[130px]">Kode Barang</span>
+            <span className="print-value flex-1 text-[10pt] pt-[2px]">
+                :{pengajuanDetail?.kode_barang || spkData.kode_barang || 'N/A'}
+            </span>
+        </div>
+        
+        <div className="print-field-block mt-[10px] w-full">
+            <span className="print-label font-bold block mb-[5px]">Uraian Pekerjaan:</span>
+            <div className="print-text-block border border-black p-[8px] min-h-[60px] text-[10pt] leading-tight w-full">
+                {spkData.uraian_pekerjaan || "Tidak ada uraian."}
+            </div>
+        </div>
+
+        {/* FOTO PEKERJAAN DI BAWAH URAIAN */}
+        <div className="mt-[10px] w-full">
+            <span className="print-label font-bold block mb-[5px] text-[10pt]">Foto Pekerjaan:</span>
+            <div className="grid grid-cols-4 gap-[5px]">
+                {fotoPekerjaan.map((foto, idx) => (
+                    <div key={idx} className="border border-black h-[70px] flex items-center justify-center bg-gray-50 overflow-hidden">
+                        {foto.preview ? (
+                            <img src={foto.preview} alt={`Pekerjaan ${idx}`} className="h-full w-full object-cover" />
+                        ) : (
+                            <span className="text-[8px] text-gray-400 italic">Lampiran {idx + 1}</span>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+
+        {/* STATUS PEKERJAAN */}
+        <div className="flex items-center gap-6 mt-4 mb-4 text-[10pt]">
+            <span className="font-bold">Status Pekerjaan:</span>
+            <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border border-black flex items-center justify-center font-bold text-[12pt]">
+                    {spkData.status?.name === 'Selesai' ? '✓' : ''}
+                </div>
+                <span>Selesai</span>
+            </div>
+            <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border border-black flex items-center justify-center font-bold text-[12pt]">
+                    {spkData.status?.name === 'Belum Selesai' ? '✓' : ''}
+                </div>
+                <span>Belum Selesai</span>
+            </div>
+            <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border border-black flex items-center justify-center font-bold text-[12pt]">
+                    {spkData.status?.name === 'Tidak Selesai' ? '✓' : ''}
+                </div>
+                <span>Tidak Selesai</span>
+            </div>
+        </div>
+
+        {/* PENATAAN TTD: MENGETAHUI & MENYETUJUI SEJAJAR DI PALING BAWAH */}
+        <div className="mt-[10px] grid grid-cols-2 gap-x-4 w-full h-[320px]">
+            <div className="flex flex-col justify-between items-center h-full">
+                <div className="flex flex-col items-center">
+                    <div className="bg-white p-1 border border-black rounded mb-1">
+                        {spkData && spkData.uuid_pengajuan ? (
+                            <QRCode size={60} value={`${window.location.origin}/tracking/${spkData.uuid_pengajuan}`} />
+                        ) : null}
+                    </div>
+                    <div className="text-[7pt] font-bold uppercase">Scan Tracking</div>
+                </div>
+
+                <div className="flex flex-col items-center w-full">
+                    <div className="font-bold text-[9pt] mb-1">Mengetahui:</div>
+                    <div className="text-[7pt] text-center leading-tight h-[15px] font-semibold mb-1 uppercase">
+                        {spkData.mengetahui}
+                    </div>
+                    <div className="h-[50px] flex items-center justify-center">
+                        {ttdMengetahuiPreview && <img src={ttdMengetahuiPreview} alt="TTD" className="h-full object-contain" />}
+                    </div>
+                    <div className="font-bold border-t border-black w-[80%] text-center pt-1 text-[8pt] mt-1 uppercase">
+                        {spkData.mengetahui_name || "-"}
+                    </div>
+                    <div className="text-[7pt]">NPP. {spkData.mengetahui_npp || "..."}</div>
+                </div>
+            </div>
+
+            <div className="flex flex-col justify-between items-center h-full">
+                <div className="flex flex-col items-center w-full">
+                    <div className="font-bold text-[9pt] mb-1">Pelaksana:</div>
+                    <div className="h-[65px] flex items-center justify-center">
+                        {ttdPelaksanaPreview && <img src={ttdPelaksanaPreview} alt="TTD" className="h-full object-contain" />}
+                    </div>
+                    <div className="font-bold border-t border-black w-[80%] text-center pt-1 text-[8pt] mt-1 uppercase">
+                        {pic ? pic.name : '-'}
+                    </div>
+                    <div className="text-[7pt]">NPP. {pic ? pic.npp : '...'}</div>
+                </div>
+
+                <div className="flex flex-col items-center w-full">
+                    <div className="font-bold text-[9pt] mb-1">Menyetujui:</div>
+                    <div className="text-[7pt] text-center leading-tight h-[15px] font-semibold mb-1 uppercase">
+                        {spkData.menyetujui}
+                    </div>
+                    <div className="h-[50px] flex items-center justify-center">
+                        {ttdMenyetujuiPreview && <img src={ttdMenyetujuiPreview} alt="TTD" className="h-full object-contain" />}
+                    </div>
+                    <div className="font-bold border-t border-black w-[80%] text-center pt-1 text-[8pt] mt-1 uppercase">
+                        {spkData.menyetujui_name || "-"}
+                    </div>
+                    <div className="text-[7pt]">NPP. {spkData.menyetujui_npp || "..."}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
                     </div>
                 </div>
             </div>
 
-            {/* CSS untuk tampilan cetak */}
             <style jsx global>{`
                 @media print {
                     @page {
-                        size: A4 landscape;
-                        margin: 0; /* Ubah margin @page ke 0 agar kita bisa atur di body */
+                        size: A3 landscape; /* UPDATE: A3 Landscape */
+                        margin: 10mm; /* Margin agar isi tidak terpotong printer */
                     }
                     
-                    /* Sembunyikan semua elemen body secara default */
                     body * {
                         visibility: hidden;
                     }
-
-                    /* Reset body */
+                    
                     body {
                         margin: 0;
                         padding: 0;
                         background: white;
+                        -webkit-print-color-adjust: exact;
                     }
                     
-                    /* Pastikan elemen Screen Only benar-benar hilang dari layout */
                     .screen-only {
                         display: none !important;
                     }
                     
-                    /* Tampilkan Container Print */
                     .print-only, .print-only * {
-                        visibility: visible; /* Override visibility hidden dari body */
+                        visibility: visible;
                     }
                     
                     .print-only {
                         display: block !important;
-                        position: absolute; /* KUNCI PERBAIKAN: Paksa elemen ke posisi absolut */
+                        position: absolute;
                         left: 0;
                         top: 0;
                         width: 100%;
-                        min-height: 100vh;
-                        padding: 10mm; /* Pindahkan margin kertas ke padding container */
+                        height: 100vh;
+                        padding: 0;
                         box-sizing: border-box;
                         z-index: 9999;
                         background: white;
@@ -995,38 +1176,58 @@ function SPKDetailContent() {
                     
                     .print-layout {
                         display: flex;
+                        flex-direction: row;
                         width: 100%;
-                        /* Gunakan min-height alih-alih fixed height agar konten tidak terpotong */
-                        min-height: 180mm; 
-                        border: 1px solid #000;
+                        /* UPDATE: Menghapus height fixed 210mm agar memenuhi kertas A3 */
+                        height: 100%; 
+                        page-break-inside: avoid;
                     }
                     
                     .print-section {
-                        flex: 1;
-                        padding: 12px;
+                        padding: 10mm;
                         font-family: 'Times New Roman', serif;
-                        font-size: 11px;
                         line-height: 1.4;
-                    }
-                    
-                    .print-left {
-                        border-right: 1px solid #000;
-                    }
-                    
-                    .print-header {
-                        margin-bottom: 15px;
-                        text-align: center;
-                    }
-                    
-                    .print-body {
+                        /* UPDATE: Pastikan kolom memanjang penuh */
+                        height: 100%;
                         display: flex;
                         flex-direction: column;
                     }
                     
+                    .print-left {
+                        width: 48%;
+                        border-right: 1px solid #000;
+                        padding-right: 5mm;
+                    }
+                    
+                    .print-right {
+                        width: 48%;
+                        padding-left: 5mm;
+                    }
+
+                    /* Styles dari Lampiran View */
+                    .big-box { 
+                        border: 1px solid #000; 
+                        min-height: 90px; 
+                        padding: 5px; 
+                        font-family: 'Times New Roman', serif;
+                    }
+                    
+                    .kepada-yth-container { 
+                        line-height: 1.3; 
+                    }
+                    
+                    .kepada-yth-container div { 
+                        margin-bottom: 2px; 
+                    }
+
+                    .print-header-pengajuan {
+                        text-align: center;
+                        margin-bottom: 10px;
+                    }
+
                     .print-field {
                         display: flex;
-                        margin-bottom: 6px;
-                        align-items: flex-start;
+                        margin-bottom: 5px;
                     }
                     
                     .print-field-block {
@@ -1035,122 +1236,84 @@ function SPKDetailContent() {
                     }
                     
                     .print-label {
-                        font-weight: bold;
-                        min-width: 100px;
-                        margin-right: 5px;
+                        min-width: 120px;
+                        margin-right: 10px;
                     }
                     
                     .print-value {
                         flex: 1;
                     }
+
+                    .print-text-block {
+                        white-space: pre-wrap;
+                        text-align: justify;
+                    }
                     
                     .print-personnel-list {
-                        margin-bottom: 10px;
+                        margin-bottom: 5px;
                         margin-left: 10px;
                     }
                     
                     .print-person-item {
-                        margin-bottom: 3px;
+                        margin-bottom: 1px;
                     }
-                    
-                    .print-pic-badge {
-                        font-weight: bold;
-                        color: #000; /* Ubah warna biru ke hitam untuk print */
-                    }
-                    
-                    .print-text-block {
-                        white-space: pre-wrap;
-                        margin-top: 3px;
-                        margin-left: 10px;
-                        text-align: justify;
-                    }
-                    
+
                     .print-signatures-grid {
                         display: flex;
                         justify-content: space-between;
-                        margin-top: auto; /* Dorong TTD ke bawah */
-                        padding-top: 20px;
+                        margin-top: 15px;
+                        border-top: 1px solid transparent; 
+                        padding-top: 5px;
                     }
                     
                     .print-signature-item {
-                        width: 30%;
                         text-align: center;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: flex-end; 
                     }
                     
                     .print-signature-title {
                         margin-bottom: 5px;
                         font-weight: bold;
-                        font-size: 10px;
+                        font-size: 9pt;
                     }
                     
                     .print-signature-box {
                         display: flex;
                         flex-direction: column;
                         align-items: center;
-                        min-height: 80px;
+                        min-height: 70px;
+                        justify-content: space-between;
                     }
                     
                     .print-signature-img {
                         height: 50px;
                         width: auto;
-                        margin-bottom: 5px;
+                        margin-bottom: 2px;
                         max-width: 100%;
                         object-fit: contain;
                     }
                     
                     .print-signature-empty {
                         height: 50px;
-                        width: 80px;
-                        margin-bottom: 5px;
+                        width: 50px;
+                        border-bottom: 1px solid #000;
+                        margin-bottom: 2px;
                     }
                     
                     .print-signature-name {
                         font-weight: bold;
                         border-top: 1px solid #000;
-                        padding-top: 3px;
+                        padding-top: 1px;
                         width: 100%;
-                        font-size: 10px;
+                        font-size: 9pt;
+                        margin-bottom: 2px;
                     }
                     
                     .print-signature-npp {
-                        font-size: 8px;
-                        margin-top: 2px;
-                    }
-                    
-                    /* Form styles untuk detail pengajuan */
-                    .print-form-container {
-                        margin-bottom: 20px;
-                    }
-                    
-                    .print-form-row {
-                        display: flex;
-                        margin-bottom: 8px;
-                        align-items: flex-start;
-                    }
-                    
-                    .print-form-label {
-                        font-weight: bold;
-                        min-width: 200px;
-                    }
-                    
-                    .print-form-value {
-                        flex: 1;
-                    }
-                    
-                    .print-form-value-block {
-                        flex: 1;
-                        white-space: pre-wrap;
-                    }
-                    
-                    .print-signatures-section {
-                        display: flex;
-                        justify-content: space-between;
-                        margin-top: 30px;
-                    }
-                    
-                    .print-signature-left, .print-signature-right {
-                        width: 45%;
-                        text-align: center;
+                        font-size: 8pt;
+                        margin-top: 0;
                     }
                 }
                 

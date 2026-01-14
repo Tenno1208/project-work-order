@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useParams, useRouter } from "next/navigation";
 import { Loader2, AlertTriangle, Eye, Printer, FileText, X, Lock, Home } from 'lucide-react';
+
+export async function generateStaticParams() {
+    return []; // Mengembalikan array kosong agar build tidak mencari ID tertentu
+}
+
+export const dynamicParams = true;
 
 // --- KONFIGURASI API DIRECT (DARI ENV) ---
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -257,12 +263,11 @@ const AccessDeniedUI = () => {
 };
 
 // --- MAIN COMPONENT ---
-export default function DetailPengajuanPage() {
+function DetailContent() {
     const params = useParams();
-    const uuid = params?.uuid as string;
+    const uuid = params ? (params.uuid as string) : "";
     const router = useRouter();
     
-    // State
     const [permissionsLoaded, setPermissionsLoaded] = useState(false);
     const [hasAccess, setHasAccess] = useState(false);
     const [data, setData] = useState<DetailData | null>(null);
@@ -617,5 +622,18 @@ export default function DetailPengajuanPage() {
                 </button>
             </div>
         </div>
+    );
+}
+
+export default function DetailPengajuanPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex items-center justify-center h-screen bg-gray-50">
+                <Loader2 className="animate-spin text-blue-600 mr-2" size={32}/>
+                <span className="text-xl text-gray-700">Memuat Halaman...</span>
+            </div>
+        }>
+            <DetailContent />
+        </Suspense>
     );
 }

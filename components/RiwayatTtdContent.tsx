@@ -177,6 +177,70 @@ async function processImageTransparency(dataUrl: string, settings?: { whiteThres
     });
 }
 
+// --- KOMPONEN BARU UNTUK TRANSPARANSI UI ---
+const TransparentImageDisplay = ({ src, className, ...props }: { src: string, className?: string }) => {
+    const [processedSrc, setProcessedSrc] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const token = localStorage.getItem("token");
+
+    useEffect(() => {
+        const processImage = async () => {
+            setIsLoading(true);
+            setProcessedSrc(null);
+            
+            try {
+                // 1. Fetch image as Blob (dengan Auth untuk keamanan akses)
+                const response = await fetch(src, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) throw new Error("Failed to fetch image");
+                
+                const blob = await response.blob();
+                
+                // 2. Convert ke DataURL
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const base64data = reader.result as string;
+                    
+                    // 3. Gunakan logic transparansi yang sudah ada
+                    processImageTransparency(base64data, { whiteThreshold: 230, blackThreshold: 35, useAdvanced: true })
+                        .then((transparentDataUrl) => {
+                            setProcessedSrc(transparentDataUrl);
+                            setIsLoading(false);
+                        })
+                        .catch((e) => {
+                            console.warn("Gagal memproses transparansi, menggunakan asli:", e);
+                            setProcessedSrc(src); // Fallback ke asli jika gagal
+                            setIsLoading(false);
+                        });
+                };
+                reader.onerror = () => {
+                    setProcessedSrc(src); // Fallback
+                    setIsLoading(false);
+                };
+                reader.readAsDataURL(blob);
+
+            } catch (err) {
+                console.error("Error processing transparency:", err);
+                setProcessedSrc(src); // Fallback ke asli
+                setIsLoading(false);
+            }
+        };
+
+        processImage();
+    }, [src, token]);
+
+    return (
+        <img
+            src={processedSrc || src}
+            className={className}
+            style={{ opacity: isLoading ? 0.6 : 1, transition: 'opacity 0.3s ease-in-out' }}
+            {...props}
+        />
+    );
+};
+
 const TtdCropModal = ({ isOpen, imageSrc, onCropComplete, onCancel }: { isOpen: boolean, imageSrc: string | null, onCropComplete: (croppedImage: string, settings?: any) => void, onCancel: () => void }) => {
     const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
@@ -560,14 +624,12 @@ export default function RiwayatTtdContent() {
                             {galleryItems.map((path, index) => (
                                 <div key={index} className="relative group">
                                     <div className={`border-2 rounded-lg p-2 bg-white hover:shadow-lg transition-all duration-300 transform hover:scale-105 cursor-pointer ${path === activeTtdPath ? 'border-cyan-500 ring-2 ring-cyan-100' : 'border-gray-200'}`}>
-                                        <img 
+                                        {/* DIGANTI DENGAN KOMPONEN TRANSPARANSI */}
+                                        <TransparentImageDisplay 
                                             src={`${IMAGE_STORAGE_BASE_URL}${path}`} 
                                             alt={`Tanda Tangan ${index + 1}`} 
                                             className="h-32 w-64 object-contain"
                                             onClick={() => setSelectedImage(path)}
-                                            onError={(e) => {
-                                                (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=Gambar+Tidak+Ditemukan';
-                                            }}
                                         />
                                     </div>
                                     
@@ -635,7 +697,8 @@ export default function RiwayatTtdContent() {
                         </div>
                         
                         <div className="flex-1 flex justify-center items-center p-8 bg-gray-50/50 pattern-grid-lg">
-                            <img 
+                            {/* DIGANTI DENGAN KOMPONEN TRANSPARANSI */}
+                            <TransparentImageDisplay 
                                 src={`${IMAGE_STORAGE_BASE_URL}${selectedImage}`} 
                                 alt="Tanda Tangan Diperbesar" 
                                 className="max-h-[60vh] max-w-full object-contain drop-shadow-2xl"

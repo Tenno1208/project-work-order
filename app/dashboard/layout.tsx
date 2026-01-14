@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Menu, X, CheckCircle, AlertTriangle } from 'lucide-react'; 
-import { EventSourcePolyfill } from 'event-source-polyfill';
 
 
 import Sidebar from '@/components/Sidebar';

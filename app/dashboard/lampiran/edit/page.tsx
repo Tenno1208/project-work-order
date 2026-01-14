@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, use } from "react";
-import { useParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { 
     Loader2, AlertTriangle, Home, Save, X, Printer, Droplet, Upload, 
     PlusCircle, Check, Ban, Maximize2, Zap, AlertCircle, FileText, 
@@ -41,12 +41,6 @@ type PegawaiDef = any;
 type TtdHistoryItem = { originalUrl: string; processedUrl: string };
 type NoSurat = { id:string | number; no_surat:string };
 type NotificationType = 'success' | 'error' | 'warning';
-
-export async function generateStaticParams() {
-    return []; // Agar build tidak error mencari UUID
-}
-
-export const dynamicParams = false;
 
 // --- HELPER FUNCTIONS ---
 async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
@@ -778,8 +772,8 @@ const AccessDeniedUI = () => {
 
 export default function EditPengajuanForm() {
     const router = useRouter();
-    const params = useParams();
-    const uuid = params?.uuid as string;
+    const searchParams = useSearchParams();
+    const uuid = searchParams.get("uuid") || "";
     const didMountRef = useRef(false);
     const isEditMode = !!uuid;
 

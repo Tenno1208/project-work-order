@@ -92,60 +92,77 @@ const getProxyFileUrl = (path: string | null | undefined): string | null => {
     return `${IMAGE_STORAGE_BASE_URL}${cleanPath}`;
 };
 
+// TAMBAHKAN VARIABEL CACHE INI (Global di luar komponen agar persisten)
+const imageLoadCache = new Map<string, Promise<string>>();
+
+async function loadImageWithDirectUrl(imgUrl: string, token: string, maxRetries: number = 5): Promise<string> {
+    if (imgUrl.startsWith('data:')) return imgUrl;
+
+    // Tentukan target URL terlebih dahulu agar cache key-nya konsisten
+    const targetUrl = imgUrl.startsWith('http') ? imgUrl : getProxyFileUrl(imgUrl);
+
+    if (!targetUrl) return imgUrl;
+
+    // 1. CEK CACHE: Jika gambar pernah diminta (baik sedang loading atau selesai), 
+    //    kembalikan Promise yang sama. Ini mencegah fetch ganda.
+    if (imageLoadCache.has(targetUrl)) {
+        return imageLoadCache.get(targetUrl)!;
+    }
+
+    // 2. Buat Promise untuk proses loading
+    const loadPromise = (async (): Promise<string> => {
+        let retryCount = 0;
+
+        const attemptLoad = async (): Promise<string> => {
+            try {
+                // URL target adalah hasil dari getProxyFileUrl yang mengarah ke gateway
+                if (!targetUrl) return imgUrl;
+
+                const res = await fetch(targetUrl, {
+                    headers: {
+                        'Authorization': `Bearer ${token.replace('Bearer ', '')}`,
+                        'Accept': 'image/png, image/jpeg, image/gif',
+                    },
+                });
+
+                if (!res.ok) {
+                    throw new Error(`Gagal load image via gateway: ${res.status}`);
+                }
+
+                const blob = await res.blob();
+                const reader = new FileReader();
+
+                return new Promise<string>((resolve, reject) => {
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = () => reject(new Error('Failed to read file'));
+                    reader.readAsDataURL(blob);
+                });
+            } catch (error) {
+                console.error(`Error loading image (attempt ${retryCount + 1}):`, error);
+                retryCount++;
+
+                if (retryCount >= maxRetries) {
+                    console.error(`Max retries (${maxRetries}) reached for image: ${imgUrl}`);
+                    return imgUrl;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount - 1)));
+
+                return attemptLoad();
+            }
+        };
+
+        return attemptLoad();
+    })();
+    imageLoadCache.set(targetUrl, loadPromise);
+
+    return loadPromise;
+}
+
 async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
     const res = await fetch(dataUrl);
     const blob = await res.blob();
     return new File([blob], filename, { type: 'image/png' });
-}
-
-// Fungsi load gambar langsung ke Gateway tanpa proxy lokal
-async function loadImageWithDirectUrl(imgUrl: string, token: string, maxRetries: number = 5): Promise<string> {
-    if (imgUrl.startsWith('data:')) return imgUrl;
-    
-    let retryCount = 0;
-    
-    const attemptLoad = async (): Promise<string> => {
-        try {
-            // URL target adalah hasil dari getProxyFileUrl yang mengarah ke gateway
-            const targetUrl = imgUrl.startsWith('http') ? imgUrl : getProxyFileUrl(imgUrl);
-
-            if (!targetUrl) return imgUrl;
-
-            const res = await fetch(targetUrl, {
-                headers: {
-                    'Authorization': `Bearer ${token.replace('Bearer ', '')}`,
-                    'Accept': 'image/png, image/jpeg, image/gif',
-                },
-            });
-            
-            if (!res.ok) {
-                throw new Error(`Gagal load image via gateway: ${res.status}`);
-            }
-            
-            const blob = await res.blob();
-            const reader = new FileReader();
-            
-            return new Promise<string>((resolve, reject) => {
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.onerror = () => reject(new Error('Failed to read file'));
-                reader.readAsDataURL(blob);
-            });
-        } catch (error) {
-            console.error(`Error loading image (attempt ${retryCount + 1}):`, error);
-            retryCount++;
-            
-            if (retryCount >= maxRetries) {
-                console.error(`Max retries (${maxRetries}) reached for image: ${imgUrl}`);
-                return imgUrl; 
-            }
-            
-            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount - 1)));
-            
-            return attemptLoad();
-        }
-    };
-    
-    return attemptLoad();
 }
 
 async function resizeAndMakeTransparent(

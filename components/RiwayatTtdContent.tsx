@@ -8,11 +8,9 @@ import {
 } from 'lucide-react';
 import Cropper, { Point, Area } from 'react-easy-crop';
 
-// --- KONFIGURASI API DIRECT ---
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const IMAGE_STORAGE_BASE_URL = process.env.NEXT_PUBLIC_IMAGE_STORAGE_BASE_URL || 'https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto/?path=';
 
-// URL File Handler (Hardcoded sesuai proxy Anda atau bisa ditaruh di ENV)
 const FILE_HANDLER_UPLOAD_URL = "https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/api/upload/foto";
 
 const API_ENDPOINTS = {
@@ -21,12 +19,10 @@ const API_ENDPOINTS = {
     DELETE_TTD: `${API_BASE_URL}/user/delete/ttd`
 };
 
-// --- HELPER UNTUK GENERATE PATH (Sama seperti di Proxy) ---
 function generateDynamicPath(): string {
     const now = new Date();
     const year = now.getFullYear();
     const month = (now.getMonth() + 1).toString().padStart(2, '0');
-    // const day = now.getDate().toString().padStart(2, '0'); // Tidak dipakai di proxy Anda, tapi bisa jika perlu
     return `workorder/${year}/${month}/`; 
 }
 
@@ -38,7 +34,6 @@ interface TtdApiResponse {
     } | any; 
 }
 
-// --- UTILITY FUNCTIONS ---
 async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
     const res = await fetch(dataUrl);
     const blob = await res.blob();
@@ -182,7 +177,6 @@ async function processImageTransparency(dataUrl: string, settings?: { whiteThres
     });
 }
 
-// --- KOMPONEN MODAL CROP ---
 const TtdCropModal = ({ isOpen, imageSrc, onCropComplete, onCancel }: { isOpen: boolean, imageSrc: string | null, onCropComplete: (croppedImage: string, settings?: any) => void, onCancel: () => void }) => {
     const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
@@ -262,7 +256,6 @@ const TtdCropModal = ({ isOpen, imageSrc, onCropComplete, onCancel }: { isOpen: 
     );
 };
 
-// --- KOMPONEN UTAMA ---
 export default function RiwayatTtdContent() {
     const [galleryItems, setGalleryItems] = useState<string[]>([]); 
     const [activeTtdPath, setActiveTtdPath] = useState<string | null>(null);
@@ -270,12 +263,10 @@ export default function RiwayatTtdContent() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     
-    // UI States
     const [deletingPath, setDeletingPath] = useState<string | null>(null);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
     
-    // Modal States
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [cropModalOpen, setCropModalOpen] = useState(false);
     const [imageSrcForCrop, setImageSrcForCrop] = useState<string | null>(null);
@@ -312,7 +303,6 @@ export default function RiwayatTtdContent() {
         }
 
         try {
-            // DIRECT FETCH KE API ASLI
             const res = await fetch(`${API_ENDPOINTS.GET_TTD}/${userData.npp}`, {
                 method: "GET",
                 headers: {
@@ -390,7 +380,6 @@ export default function RiwayatTtdContent() {
         }
     };
 
-    // 1. HANDLER SAAT FILE DIPILIH (Buka Crop Modal)
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -402,8 +391,6 @@ export default function RiwayatTtdContent() {
         e.target.value = ''; 
     };
 
-    // --- 2. HANDLER CROP & UPLOAD DENGAN LOGIKA 2 STEP ---
-    // (Upload ke File Handler dulu -> Simpan Path ke DB)
     const handleCropAndUpload = async (
         croppedImageBase64: string,
         settings?: { whiteThreshold: number, blackThreshold: number, useAdvanced: boolean }
@@ -422,14 +409,12 @@ export default function RiwayatTtdContent() {
         }
 
         try {
-            // A. PROSES GAMBAR (Transparansi)
             const processedImage = await processImageTransparency(croppedImageBase64, settings);
             
-            // B. PERSIAPAN DATA UPLOAD FILE HANDLER
             const timestamp = Date.now();
             const uuidPart = crypto.randomUUID(); 
             const fileName = `ttd-workorder-${uuidPart}-${timestamp}.png`;
-            const uploadPath = generateDynamicPath(); // workorder/YYYY/MM/
+            const uploadPath = generateDynamicPath(); 
 
             const finalFile = await dataURLtoFile(processedImage, fileName);
 
@@ -480,7 +465,7 @@ export default function RiwayatTtdContent() {
             const createResult = await createRes.json();
 
             if (createResult.success) {
-                await fetchTtdHistory(); // Refresh data galeri
+                await fetchTtdHistory(); 
             } else {
                 throw new Error(createResult.message || "Gagal menyimpan data TTD");
             }
@@ -526,7 +511,6 @@ export default function RiwayatTtdContent() {
     return (
         <div className="p-4 md:p-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
             
-            {/* OVERLAY LOADING SAAT UPLOAD */}
             {uploading && (
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-70 backdrop-blur-sm">
                     <div className="bg-white p-6 rounded-xl shadow-2xl flex flex-col items-center">
@@ -537,7 +521,6 @@ export default function RiwayatTtdContent() {
                 </div>
             )}
 
-            {/* HEADER */}
             <div className="mb-8">
                 <div className="flex items-center space-x-3">
                     <div className="p-2 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-lg shadow-lg">
@@ -550,7 +533,6 @@ export default function RiwayatTtdContent() {
                 </div>
             </div>
 
-            {/* GALERI */}
             <div className="bg-white rounded-xl shadow-md border border-gray-200 mb-6">
                 <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                     <h2 className="text-lg font-semibold text-gray-800 flex items-center">
@@ -623,9 +605,7 @@ export default function RiwayatTtdContent() {
                 </div>
             </div>
 
-            {/* --- MODAL KOMPONEN --- */}
 
-            {/* MODAL CROP & SETTING (Z-INDEX 9999) */}
             <TtdCropModal 
                 isOpen={cropModalOpen}
                 imageSrc={imageSrcForCrop}
@@ -633,33 +613,47 @@ export default function RiwayatTtdContent() {
                 onCancel={handleCancelCrop}
             />
 
-            {/* MODAL PREVIEW GAMBAR (Diperkecil & Tanpa Unduh) */}
             {selectedImage && (
-                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm transition-opacity" onClick={() => setSelectedImage(null)}>
-                    <div className="bg-white rounded-2xl p-2 shadow-2xl relative max-w-md w-full flex flex-col transform transition-all scale-100" onClick={(e) => e.stopPropagation()}>
+                <div 
+                    className="fixed inset-0 bg-black/95 flex items-center justify-center z-[10001] p-4 backdrop-blur-md transition-all duration-300" 
+                    onClick={() => setSelectedImage(null)}
+                >
+                    <div 
+                        className="bg-white rounded-2xl p-2 shadow-2xl relative max-w-2xl w-full flex flex-col transform transition-all scale-100 animate-in zoom-in-95" 
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         <div className="flex justify-between items-center p-3 border-b border-gray-100">
-                            <h3 className="text-gray-700 font-semibold text-sm pl-2">Preview Tanda Tangan</h3>
-                            <button className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition-colors" onClick={() => setSelectedImage(null)}>
+                            <h3 className="text-gray-700 font-bold text-sm pl-2 flex items-center gap-2">
+                                <ZoomIn size={16} className="text-cyan-600"/> Detail Tanda Tangan
+                            </h3>
+                            <button 
+                                className="text-gray-400 hover:text-red-500 bg-gray-100 hover:bg-red-50 rounded-full p-1.5 transition-all" 
+                                onClick={() => setSelectedImage(null)}
+                            >
                                 <X className="h-5 w-5" />
                             </button>
                         </div>
-                        <div className="flex-1 flex justify-center items-center p-6 bg-gray-50 overflow-hidden">
+                        
+                        <div className="flex-1 flex justify-center items-center p-8 bg-gray-50/50 pattern-grid-lg">
                             <img 
                                 src={`${IMAGE_STORAGE_BASE_URL}${selectedImage}`} 
                                 alt="Tanda Tangan Diperbesar" 
-                                className="max-h-[40vh] max-w-full object-contain drop-shadow-sm"
+                                className="max-h-[60vh] max-w-full object-contain drop-shadow-2xl"
                             />
                         </div>
-                        <div className="p-3 border-t border-gray-100 flex justify-end bg-white rounded-b-2xl">
-                            <button className="px-5 py-2 bg-gray-800 text-white text-sm font-medium rounded-lg hover:bg-gray-900 transition-colors shadow-sm" onClick={() => setSelectedImage(null)}>
-                                Tutup
+                        
+                        <div className="p-4 border-t border-gray-100 flex justify-end bg-white rounded-b-2xl">
+                            <button 
+                                className="px-6 py-2 bg-gray-900 text-white text-sm font-bold rounded-xl hover:bg-black transition-all shadow-lg active:scale-95" 
+                                onClick={() => setSelectedImage(null)}
+                            >
+                                Tutup Preview
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* MODAL UPLOAD AWAL */}
             {showUploadModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl transform transition-all scale-100 border border-gray-100">

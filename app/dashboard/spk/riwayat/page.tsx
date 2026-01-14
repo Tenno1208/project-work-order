@@ -25,7 +25,7 @@ import { useRouter } from "next/navigation";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const API_ENDPOINTS = {
-    RIWAYAT_STAFF: `${API_BASE_URL}/spk/staf`, 
+    RIWAYAT_STAFF: `${API_BASE_URL}/spk/riwayat`, 
     DELETE: `${API_BASE_URL}/spk/delete` 
 };
 
@@ -335,7 +335,6 @@ function RiwayatSPKContent() {
                 const res = await fetch(DYNAMIC_API_URL, {
                     headers: {
                         Authorization: `Bearer ${token}`,
-                        "Cache-Control": "no-store",
                     },
                 });
                 

@@ -342,9 +342,6 @@ export default function DetailPengajuanPage() {
                 
                 setData(fetchedData);
                 
-                // --- 3. FETCH & PROSES GAMBAR (DIRECT FETCH BLOB) ---
-                // Menghindari Proxy, kita fetch blob langsung dari storage url menggunakan token
-                
                 // TTD Pelapor
                 if (fetchedData.ttd_pelapor) {
                     const processed = await fetchAndMakeTransparent(fetchedData.ttd_pelapor, token);
@@ -367,7 +364,6 @@ export default function DetailPengajuanPage() {
                 }
                 
                 if (rawFiles.length > 0) {
-                    // Fetch setiap file sebagai Blob URL agar bisa ditampilkan
                     const fileUrls = await Promise.all(rawFiles.map(async (path) => {
                         return await fetchImageDirectly(path, token);
                     }));
@@ -396,6 +392,28 @@ export default function DetailPengajuanPage() {
         }, 300);
     };
 
+    /**
+     * Fungsi Helper untuk mengubah tag <i> menjadi elemen italic secara aman
+     */
+    const renderKeteranganWithItalic = (text: string) => {
+        if (!text) return "Tidak ada keterangan.";
+        
+        // Memisahkan berdasarkan tag <i> dan </i>
+        const parts = text.split(/(<i>|<\/i>)/);
+        let isItalic = false;
+
+        return parts.map((part, index) => {
+            if (part === "<i>") {
+                isItalic = true;
+                return null;
+            } else if (part === "</i>") {
+                isItalic = false;
+                return null;
+            }
+            return isItalic ? <i key={index}>{part}</i> : <span key={index}>{part}</span>;
+        });
+    };
+
     if (!permissionsLoaded) return <div className="flex items-center justify-center h-screen bg-gray-50"><Loader2 className="animate-spin text-blue-600 mr-2" size={32}/><span className="text-xl text-gray-700">Memeriksa izin akses...</span></div>;
     if (!hasAccess) return <AccessDeniedUI />;
     if (loading) return <div className="flex items-center justify-center h-screen bg-gray-50"><Loader2 className="animate-spin text-blue-600 mr-2" size={32}/><span className="text-xl text-gray-700">Memuat Detail Pengajuan...</span></div>;
@@ -416,6 +434,7 @@ export default function DetailPengajuanPage() {
                     #print-area { position: absolute; left: 0; top: 0; width: 100%; }
                     .no-print { display: none !important; }
                     .big-box { border: 1px solid #000; min-height: 120px; padding: 8px; }
+                    .print-no-border { border: none !important; background: transparent !important; padding: 0 !important; }
                 }
                 .big-box { border: 1px solid #000; min-height: 120px; padding: 8px; }
                 .ttd-container { border: 1px solid #ccc; }
@@ -437,7 +456,7 @@ export default function DetailPengajuanPage() {
                         </div>
                     </div>
                     <button onClick={handlePrint} className="px-3 py-2 bg-blue-600 text-white rounded flex items-center gap-2 hover:bg-blue-700 transition">
-                        <Printer size={16} /> Cetak Form
+                        <Printer size={16} /> Cetak
                     </button>
                 </div>
                 
@@ -487,7 +506,7 @@ export default function DetailPengajuanPage() {
                     <div className="mt-3 text-sm grid grid-cols-12 gap-3 items-center">
                         <div className="col-span-3 font-semibold">Satker Asal:</div>
                         <div className="col-span-9">
-                            <span className="p-1 border border-gray-300 rounded block bg-gray-100/50">
+                            <span className={`p-1 border border-gray-300 rounded block bg-gray-100/50 ${isPrintMode ? 'print-no-border' : ''}`}>
                                 {display_satker_asal || "-"}
                             </span>
                         </div>
@@ -496,28 +515,23 @@ export default function DetailPengajuanPage() {
                     <div className="grid grid-cols-12 gap-3 items-center mt-3 text-sm">
                         <div className="col-span-3 font-semibold">Kode Barang :</div>
                         <div className="col-span-9">
-                            <span className="p-1 border border-gray-300 rounded block bg-gray-100/50">
+                            <span className={`p-1 border border-gray-300 rounded block bg-gray-100/50 ${isPrintMode ? 'print-no-border' : ''}`}>
                                 {data.kode_barang || "-"}
                             </span>
                         </div>
                     </div>
                     
                     <div className="mt-4 big-box text-sm">
-                        <div style={{ whiteSpace: "pre-wrap" }}>{keterangan || "Tidak ada keterangan."}</div>
+                        <div style={{ whiteSpace: "pre-wrap" }}>
+                            {renderKeteranganWithItalic(keterangan)}
+                        </div>
                     </div>
                     
                     {filePreviews.length > 0 && (
-                        <div className="mt-4 pt-4 border-t text-sm">
+                        <div className="mt-4 pt-4 text-sm">
                             <div className="font-semibold mb-2">Lampiran File :</div>
                             <div className="grid grid-cols-4 gap-3">
                                 {filePreviews.map((src, i) => {
-                                    // Deteksi PDF based on content (sedikit tricky dengan blob url, tapi nama file asli sudah tidak ada)
-                                    // Kita coba render sebagai image dulu, kalau error (karena pdf), kita anggap PDF?
-                                    // Atau lebih baik kita asumsikan semua image, dan sediakan tombol "Buka PDF" jika gagal render
-                                    
-                                    // NOTE: Blob URL tidak punya ekstensi. Kita gunakan state 'isPdf' di modal viewer.
-                                    // Untuk thumbnail, kita coba tampilkan IMG.
-                                    
                                     const title = `Lampiran File #${i + 1}`;
                                     
                                     return (
@@ -527,7 +541,6 @@ export default function DetailPengajuanPage() {
                                                 alt={`Lampiran ${i + 1}`} 
                                                 className="w-full h-24 object-cover rounded border border-gray-300 hover:border-blue-500 transition-colors"
                                                 onError={(e) => {
-                                                    // Jika gagal load sebagai image, mungkin PDF. Ganti icon PDF.
                                                     e.currentTarget.style.display = 'none';
                                                     e.currentTarget.parentElement!.classList.add('bg-red-50', 'flex', 'items-center', 'justify-center');
                                                     e.currentTarget.parentElement!.innerHTML = `
@@ -536,7 +549,6 @@ export default function DetailPengajuanPage() {
                                                             <span class="text-xs text-red-700 block mt-1">Dokumen/PDF</span>
                                                         </div>
                                                     `;
-                                                    // Update modal click handler to open as PDF iframe
                                                     e.currentTarget.parentElement!.onclick = () => handleViewMedia(src, true, title);
                                                 }}
                                             />
@@ -552,10 +564,10 @@ export default function DetailPengajuanPage() {
                         Demikian laporan kami untuk menjadi periksa dan mohon untuk perhatian.
                     </div>
                     
-                    <div className="mt-16 flex justify-between px-10 text-center">
+                    <div className="mt-16 flex justify-between px-10 text-center items-start">
                         {/* Kolom Mengetahui */}
                         <div className="flex flex-col items-center w-[200px]">
-                            <div className="h-12 flex flex-col justify-end pb-2">
+                            <div className="h-14 flex flex-col justify-end pb-2">
                                 <div className="text-sm font-semibold">Mengetahui</div>
                                 <div className="text-[10px] leading-none text-gray-600 max-w-[180px]">{jabatanMengetahui}</div> 
                             </div>
@@ -576,8 +588,10 @@ export default function DetailPengajuanPage() {
 
                         {/* Kolom Pelapor */}
                         <div className="flex flex-col items-center w-[200px]">
-                            <div className="h-12 flex flex-col justify-end pb-2">
+                            <div className="h-14 flex flex-col justify-end pb-2">
                                 <div className="text-sm font-semibold">Pelapor</div>
+                                {/* Dikosongkan agar sejajar dengan kolom Mengetahui tanpa tulisan placeholder */}
+                                <div className="text-[10px] leading-none h-[10px]"></div>
                             </div>
                             <div className="w-[200px] h-[80px] flex items-center justify-center my-1">
                                 {ttdPelaporPreview && (

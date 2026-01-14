@@ -1020,8 +1020,6 @@ function DataPengajuanContent() {
         const headers: HeadersInit = {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
-            "bypass-tunnel-reminder": "true",
-            'ngrok-skip-browser-warning': 'true'
         };
 
         // --- DELETE LANGSUNG KE API ---
@@ -1189,8 +1187,6 @@ function DataPengajuanContent() {
             const headers: HeadersInit = {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`,
-                'bypass-tunnel-reminder': 'true',
-                'ngrok-skip-browser-warning': 'true'
             };
 
             // --- REJECT LANGSUNG KE API ---
@@ -1291,11 +1287,8 @@ function DataPengajuanContent() {
         const headers: HeadersInit = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`,
-            'bypass-tunnel-reminder': 'true',
-            'ngrok-skip-browser-warning': 'true'
         };
 
-        // --- APPROVE LANGSUNG KE API ---
         const updateUrl = `${API_ENDPOINTS.UPDATE_STATUS}/${uuid}/status`;
 
         const bodyData: any = {

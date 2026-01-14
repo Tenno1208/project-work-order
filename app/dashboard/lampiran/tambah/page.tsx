@@ -910,9 +910,7 @@ export default function LampiranPengajuanPage() {
         const formData = new FormData();
         
         // --- PERBAIKAN DISINI ---
-        // Ambil path dasar (work-order/2026/01/)
         const basePath = generateDynamicPath('pengajuans');
-        // Tambahkan subfolder spesifik ke path secara eksplisit
         const path = `${basePath}work-order-pengajuan-foto/`; 
         // ----------------------
 
@@ -923,7 +921,6 @@ export default function LampiranPengajuanPage() {
             const file = files[i];
             const ext = file.name.split('.').pop();
             
-            // Sekarang filename bersih tanpa folder: npp-timestamp-0.jpg
             const fileName = `${namePrefix}-${i}.${ext}`;
             const iUpload = i + 1; 
             
@@ -1522,9 +1519,21 @@ export default function LampiranPengajuanPage() {
         }
     };
 
-    if (!permissionsLoaded) return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin" /> Memeriksa izin...</div>;
-    if (!hasAccess) return <AccessDeniedUI />;
-    if (initialLoading) return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin" /> Memuat data formulir...</div>;
+    if (!permissionsLoaded) return (
+    <div className="flex flex-col justify-center items-center h-screen gap-4">
+        <Loader2 className="animate-spin text-blue-600" size={48} />
+        <p className="text-gray-500 animate-pulse">Memeriksa izin akses...</p>
+    </div>
+);
+
+if (!hasAccess) return <AccessDeniedUI />;
+
+if (initialLoading) return (
+    <div className="flex flex-col justify-center items-center h-screen gap-4">
+        <Loader2 className="animate-spin text-blue-600" size={48} />
+        <p className="text-gray-500 animate-pulse">Menyiapkan formulir pengajuan...</p>
+    </div>
+);
 
     return (
         <div className="p-6 min-h-screen">
@@ -1576,11 +1585,56 @@ export default function LampiranPengajuanPage() {
                                     </select>
                                 )}
                             </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs font-semibold whitespace-nowrap">Ref. Surat:</span>
-                                {isPrintMode ? <span className="font-normal text-xs">{form.referensiSurat || "-"}</span> : (
-                                    <div className="flex-1 flex flex-col justify-center select-input-only">
-                                        <Select name="referensiSurat" value={form.referensiSurat ? { value: form.referensiSurat, label: form.referensiSurat, keterangan: selectedRefSuratOption?.keterangan } : null} onChange={handleReferensiSuratChange} options={refSuratOptions.map((opt) => ({ value: opt.nomor_surat, label: opt.nomor_surat, keterangan: opt.keterangan }))} placeholder="Pilih ref..." className="w-full text-[10px]" components={{ Option: CustomOption }} styles={{ menu: (base) => ({ ...base, zIndex: 50, fontSize: '0.9rem' }), control: (base) => ({ ...base, minHeight: '20px', height: '20px', fontSize: '0.7rem', border: '1px solid #d1d5db' }) }} menuPlacement="auto" isClearable />
+                            <div className="flex items-center gap-2 mb-1"> {/* Menambahkan sedikit margin bottom */}
+                            <span className="text-xs font-semibold whitespace-nowrap w-20">Ref. Surat:</span>
+                            {isPrintMode ? (
+                                <span className="font-normal text-xs">{form.referensiSurat || "-"}</span>
+                            ) : (
+                                <div className="flex-1 select-input-only">
+                                    <Select
+                                        name="referensiSurat"
+                                        value={form.referensiSurat ? { value: form.referensiSurat, label: form.referensiSurat } : null}
+                                        onChange={handleReferensiSuratChange}
+                                        options={refSuratOptions.map((opt) => ({
+                                            value: opt.nomor_surat,
+                                            label: opt.nomor_surat,
+                                            keterangan: opt.keterangan
+                                        }))}
+                                        placeholder="Pilih referensi..."
+                                        className="w-full"
+                                        components={{ Option: CustomOption }}
+                                        styles={{
+                                            menu: (base) => ({ ...base, zIndex: 50, fontSize: '0.8rem' }),
+                                            control: (base) => ({
+                                                ...base,
+                                                minHeight: '28px', // Sedikit lebih tinggi agar teks tidak terpotong
+                                                height: '28px',
+                                                fontSize: '0.75rem',
+                                                border: '1px solid #d1d5db',
+                                                boxShadow: 'none',
+                                                '&:hover': { border: '1px solid #3b82f6' }
+                                            }),
+                                            valueContainer: (base) => ({
+                                                ...base,
+                                                padding: '0 8px',
+                                                height: '28px',
+                                            }),
+                                            indicatorsContainer: (base) => ({
+                                                ...base,
+                                                height: '28px',
+                                            }),
+                                            dropdownIndicator: (base) => ({
+                                                ...base,
+                                                padding: '2px',
+                                            }),
+                                            clearIndicator: (base) => ({
+                                                ...base,
+                                                padding: '2px',
+                                            })
+                                        }}
+                                        menuPlacement="auto"
+                                        isClearable
+                                    />
                                         <div className="text-[9px] text-gray-500 italic mt-0.5">*Opsional</div>
                                     </div>
                                 )}

@@ -190,7 +190,6 @@ export default function TrackingPage() {
         }
 
         try {
-            // URL DIRECT: /tracking/uuid/{uuid}
             const url = `${WORKORDER_BASE_URL}/tracking/uuid/${uuid}`;
             
             const res = await fetch(url, {

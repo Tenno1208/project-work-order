@@ -21,8 +21,8 @@ const getUpdateStatusApiUrl = (uuid: string) => `${API_BASE_URL}/pengajuan/${uui
 const getRefSuratApiUrl = () => `${API_BASE_URL}/pengajuan/rferensi/surat`; 
 const getTtdApiUrl = (npp: string) => `${API_BASE_URL}/user/ttd/${npp}`;
 const getDeleteTtdApiUrl = () => `${API_BASE_URL}/user/delete/ttd`;
-const getUploadFileUrl = () => `https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/foto`;
-const getUploadMultipleUrl = () => `https://gateway.pdamkotasmg.co.id/api-gw-balanced/file-handler/upload/multiple/foto`;
+const getUploadFileUrl = () => `https://gateway.pdamkotasmg.co.id/api-gw-dev/file-handler/api/upload/foto`;
+const getUploadMultipleUrl = () => `https://gateway.pdamkotasmg.co.id/api-gw-dev/file-handler/api/upload/multiple/foto`;
 
 // URL Dropdowns
 const GET_HAL_URL = `${API_BASE_URL}/hal`;
@@ -558,7 +558,6 @@ async function resizeAndMakeTransparent(
     });
 }
 
-// Fetch gambar langsung dari Gateway dengan Token
 async function fetchAndMakeTransparent(url: string, token: string, settings?: { whiteThreshold?: number, blackThreshold?: number, useAdvanced?: boolean }): Promise<string> {
     if (url.startsWith('data:')) {
         return processImageTransparency(url, settings);
@@ -781,6 +780,7 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
 
     const [permissionsLoaded, setPermissionsLoaded] = useState(false);
     const [hasAccess, setHasAccess] = useState(false);
+    const [canApprove, setCanApprove] = useState(false);
 
     const [halOptions, setHalOptions] = useState<HalOption[]>([]);
     const [satkers, setSatkers] = useState<SatkerDef[]>([]);
@@ -850,14 +850,15 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
         }
     }, []);
 
+    // --- 1. CHECK PERMISSION ---
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const storedPermissions = localStorage.getItem('user_permissions');
             let perms: string[] = [];
             
             if (storedPermissions) {
-                try {
-                    perms = JSON.parse(storedPermissions);
+                try { 
+                    perms = JSON.parse(storedPermissions); 
                 } catch (e) {
                     console.error("Error parsing permissions", e);
                 }
@@ -865,13 +866,14 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
 
             const hasEditPermission = perms.includes('workorder-pti.pengajuan.edit');
             const hasRiwayatEditPermission = perms.includes('workorder-pti.pengajuan.riwayat.edit');
+            
+            setCanApprove(perms.includes('workorder-pti.pengajuan.approval'));
 
             if (hasEditPermission || hasRiwayatEditPermission) {
                 setHasAccess(true);
             } else {
                 setHasAccess(false);
             }
-            
             setPermissionsLoaded(true);
         }
     }, []);
@@ -950,25 +952,24 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
     };
 
     const handleAddFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files?.[0]) return;
+            if (!e.target.files?.[0]) return;
+            
+            const file = e.target.files[0];
+            
+            if (filePreviews.length >= MAX_FILES) {
+                setNotification({
+                    type: 'warning',
+                    message: `Maksimum upload adalah ${MAX_FILES} file.`
+                });
+                return;
+            }
+            
+            setNewFiles(prev => [...prev, file]);
+            const previewUrl = URL.createObjectURL(file);
+            setFilePreviews(prev => [...prev, previewUrl]);
+            e.target.value = '';
+        };
         
-        const file = e.target.files[0];
-        
-        if (filePreviews.length + newFiles.length >= MAX_FILES) {
-            setNotification({
-                type: 'warning',
-                message: `Maksimum upload adalah ${MAX_FILES} file.`
-            });
-            return;
-        }
-        
-        setNewFiles(prev => [...prev, file]);
-        
-        const previewUrl = URL.createObjectURL(file);
-        setFilePreviews(prev => [...prev, previewUrl]);
-        
-        e.target.value = '';
-    };
 
     const handleRemoveFile = (index: number) => {
         const removedPreview = filePreviews[index];
@@ -1047,9 +1048,8 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
                 return;
             }
             
-            // Gunakan URL langsung untuk delete TTD
             const res = await fetch(getDeleteTtdApiUrl(), { 
-                method: 'DELETE', // atau POST tergantung implementasi API, di env tidak spesifik method, biasanya DELETE
+                method: 'DELETE', 
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
@@ -1095,25 +1095,36 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
     };
 
     const handleSelectChange = (name: string, option: { value: string, label: string } | null) => {
-        const value = option ? option.value : ""; 
-        const label = option ? option.label : "";
+    const value = option ? option.value : ""; 
+    const label = option ? option.label : "";
 
-        setFormData((p: any) => {
-            const newData = { ...p };
+    setFormData((p: any) => {
+        const newData = { ...p };
 
-            if (name === 'kepada') {
-                newData.kepada = label;       
-                newData.kd_satker = value;   
-            } else if (name === 'referensiSurat') {
-                newData.referensiSurat = value;
-                newData.no_referensi = value;
+        if (name === 'kepada') {
+            newData.kepada = label;       
+            newData.kd_satker = value;   
+        } else if (name === 'referensiSurat') {
+            newData.referensiSurat = value;
+            newData.no_referensi = value;
+            
+            if (p.keterangan) {
+                const italicRegex = /<i>(.*?)<\/i>/;
+                if (italicRegex.test(p.keterangan)) {
+                    newData.keterangan = p.keterangan.replace(italicRegex, `<i>${value}</i>`);
+                } else {
+                    newData.keterangan = p.keterangan + `\n<i>${value}</i>`;
+                }
             } else {
-                newData[name] = value;
+                newData.keterangan = `<i>${value}</i>`;
             }
+        } else {
+            newData[name] = value;
+        }
 
-            return newData;
-        });
-    };
+        return newData;
+    });
+};
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -1191,7 +1202,6 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
                 ttd_mengetahui: formData.ttd_mengetahui
             };
             
-            // Fetch langsung ke Gateway tanpa Proxy Next.js
             const apiUrl = getEditApiUrl(uuid);
             const response = await fetch(apiUrl, {
                 method: 'PUT',
@@ -1257,39 +1267,46 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
     };
 
     const uploadMultipleLampiran = async (files: File[], token: string): Promise<string[]> => {
-        const formData = new FormData();
+    const formData = new FormData();
+    const date = new Date();
+
+    const rawPath = `work-order/${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+    
+    const cleanPath = rawPath.replace(/\/+/g, '/').replace(/\/$/, '');
+    
+    formData.append('path', cleanPath);
+    formData.append('photo_count', files.length.toString());
+
+    files.forEach((file, index) => {
+        const i = index + 1; 
+        formData.append(`photo_${i}`, file);
         
-        formData.append('photo_count', files.length.toString());
+        const randomStr = Math.random().toString(36).substring(2, 8);
+        const filename = `work-order-lampiran-${randomStr}-${Date.now()}`; 
+        formData.append(`filename_${i}`, filename);
+    });
 
-        files.forEach((file, index) => {
-            const i = index + 1; 
-            
-            formData.append(`photo_${i}`, file);
-            
-            const randomStr = Math.random().toString(36).substring(2, 8);
-            const filename = `work-order-lampiran-${randomStr}`; 
-            formData.append(`filename_${i}`, filename);
+    const res = await fetch(getUploadMultipleUrl(), {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+    });
+
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Gagal upload lampiran.");
+    }
+
+    const json = await res.json();
+
+    if (json.data && typeof json.data === 'object' && !Array.isArray(json.data)) {
+        return Object.values(json.data).map((item: any) => {
+            return item.filepath.replace(/\/+/g, '/');
         });
-
-        const res = await fetch(getUploadMultipleUrl(), {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` },
-            body: formData
-        });
-
-        if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.message || "Gagal mengupload lampiran (Multiple).");
-        }
-
-        const json = await res.json();
-
-        if (json.success && Array.isArray(json.clean_filepaths)) {
-            return json.clean_filepaths;
-        } else {
-            throw new Error("Format respons upload tidak valid.");
-        }
-    };
+    } else {
+        throw new Error("Format respons tidak dikenali.");
+    }
+};
 
     const executeStatusUpdate = async (status: 'approved' | 'rejected') => {
         if (!uuid) return;
@@ -1486,7 +1503,6 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
         try {
             const headers = { Authorization: `Bearer ${token}` };
             
-            // Fetch dropdowns langsung ke Gateway
             const [halRes, satkerRes, refSuratRes] = await Promise.all([
                 fetch(GET_HAL_URL, { headers, cache: "no-store" }),
                 fetch(GET_SATKER_URL, { headers }),
@@ -1506,7 +1522,6 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
             const refOptionsMap = (refSuratJson?.data || []).map((item: any) => ({ uuid: item.uuid || null, nomor_surat: item.no_surat }));
             setRefSuratOptions(refOptionsMap);
 
-            // Fetch Detail Data langsung ke Gateway
             const detailRes = await fetch(getDetailApiUrl(storedUuid), { headers, cache: "no-store" });
             const result = await detailRes.json();
 
@@ -1832,22 +1847,45 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
                     <div className="flex items-center gap-3">
                         {isEditMode && (
                             <>
-                                <button
-                                    onClick={() => handleStatusAction('approved')}
-                                    className={`px-3 py-2 text-white rounded flex items-center gap-2 transition   
-                                        ${isSaving || isFinalStatus ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
-                                    disabled={isSaving || isFinalStatus} 
-                                >
-                                    <Check size={16} /> Approve
-                                </button>
-                                <button
-                                    onClick={() => handleStatusAction('rejected')}
-                                    className={`px-3 py-2 text-white rounded flex items-center gap-2 transition   
-                                        ${isSaving || isFinalStatus ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}`}
-                                    disabled={isSaving || isFinalStatus} 
-                                >
-                                    <Ban size={16} /> Reject
-                                </button>
+                                <div className="relative group">
+                                    <button
+                                        onClick={() => handleStatusAction('approved')}
+                                        className={`px-3 py-2 text-white rounded flex items-center gap-2 transition   
+                                            ${isSaving || isFinalStatus || !canApprove ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+                                        disabled={isSaving || isFinalStatus || !canApprove} 
+                                    >
+                                        <Check size={16} /> Approve
+                                    </button>
+                                    
+                                    {(isFinalStatus || !canApprove) && (
+                                        <div className="absolute bottom-full mb-2 hidden group-hover:block w-48 bg-gray-800 text-white text-[10px] p-2 rounded shadow-lg z-[100] text-center left-1/2 -translate-x-1/2">
+                                            {isFinalStatus 
+                                                ? `Status sudah ${statusPengajuan.toUpperCase()}, data tidak dapat diubah.` 
+                                                : "Anda tidak memiliki izin (Permission) untuk menyetujui pengajuan ini."}
+                                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-gray-800"></div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="relative group">
+                                    <button
+                                        onClick={() => handleStatusAction('rejected')}
+                                        className={`px-3 py-2 text-white rounded flex items-center gap-2 transition   
+                                            ${isSaving || isFinalStatus || !canApprove ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}`}
+                                        disabled={isSaving || isFinalStatus || !canApprove} 
+                                    >
+                                        <Ban size={16} /> Reject
+                                    </button>
+
+                                    {(isFinalStatus || !canApprove) && (
+                                        <div className="absolute bottom-full mb-2 hidden group-hover:block w-48 bg-gray-800 text-white text-[10px] p-2 rounded shadow-lg z-[100] text-center left-1/2 -translate-x-1/2">
+                                            {isFinalStatus 
+                                                ? `Pengajuan ini sudah bersifat final (${statusPengajuan.toUpperCase()}).` 
+                                                : "Izin ditolak: Anda tidak memiliki permission Approval."}
+                                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-gray-800"></div>
+                                        </div>
+                                    )}
+                                </div>
                             </>
                         )}
                         
@@ -2092,16 +2130,17 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
                         Demikian laporan kami untuk menjadi periksa dan mohon untuk perhatian.
                     </div>
 
-                    <div id="ttd-mengetahui-section" className="mt-10 flex justify-between px-10 text-center">
-    
+                    {/* AREA TANDA TANGAN */}
+                    <div id="ttd-mengetahui-section" className="mt-12 flex justify-between px-10 text-center items-start">
+                        
                         {/* KOLOM MENGETAHUI */}
                         <div className="flex flex-col items-center w-[200px]">
-                            <div className="h-10 flex flex-col justify-end pb-1">
+                            <div className="h-12 flex flex-col justify-start">
                                 <div className="text-sm font-semibold">Mengetahui</div>
                                 <div className="text-[10px] leading-tight text-gray-600">{formData.mengetahui}</div>
                             </div>
 
-                            <div className="w-[200px] h-[100px] flex items-center justify-center my-1 relative border border-transparent hover:border-gray-100 transition-colors">
+                            <div className="w-[200px] h-[100px] flex items-center justify-center my-2 relative">
                                 {ttdMengetahuiPreview ? (
                                     <img 
                                         src={ttdMengetahuiPreview} 
@@ -2109,14 +2148,14 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
                                         className="w-full h-full object-contain" 
                                     />
                                 ) : (
-                                    <div className="text-xs text-gray-300 italic h-full flex items-center justify-center w-full">
+                                    <div className="text-xs text-gray-300 italic no-print">
                                         (Belum ditandatangani)
                                     </div>
                                 )}
 
                                 {currentUserNpp && formData.npp_mengetahui && String(currentUserNpp) === String(formData.npp_mengetahui) && !isFinalStatus && !isPrintMode && (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-10 transition-all opacity-0 hover:opacity-100 group">
-                                        <label className="cursor-pointer bg-white px-3 py-1 rounded shadow text-xs font-bold text-blue-600 flex items-center gap-1 hover:bg-blue-50">
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-10 transition-all opacity-0 hover:opacity-100 no-print">
+                                        <label className="cursor-pointer bg-white px-3 py-1 rounded shadow text-xs font-bold text-blue-600 flex items-center gap-1">
                                             <Pencil size={12} /> {ttdMengetahuiPreview ? 'Ganti TTD' : 'Upload TTD'}
                                             <input 
                                                 type="file" 
@@ -2129,7 +2168,7 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
                                 )}
                             </div>
 
-                            <div className="mt-1 w-full border-t border-gray-400 pt-1">
+                            <div className="w-full border-t border-gray-400 pt-1">
                                 <div className="font-bold text-sm underline decoration-gray-400 underline-offset-2">
                                     {formData.mengetahui_name}
                                 </div>
@@ -2137,14 +2176,13 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
                             </div>
                         </div>
 
-                        {/* Kolom Pelapor */}
+                        {/* KOLOM PELAPOR */}
                         <div className="flex flex-col items-center w-[200px]">
-                            <div className="h-10 flex flex-col justify-end pb-1">
+                            <div className="h-12 flex flex-col justify-start">
                                 <div className="text-sm font-semibold">Pelapor</div>
                             </div>
                             
-                            {/* TTD Pelapor dengan Container Fixed */}
-                            <div className="w-[200px] h-[100px] flex items-center justify-center my-1">
+                            <div className="w-[200px] h-[100px] flex items-center justify-center my-2">
                                 {ttdPelaporPreview && (
                                     <img
                                         src={ttdPelaporPreview}
@@ -2154,19 +2192,11 @@ export default function EditPengajuanForm({ params }: { params: Promise<{ uuid: 
                                 )}
                             </div>
 
-                            <div className="mt-1 w-full">
-                                <input
-                                    type="text"
-                                    name="pelapor"
-                                    value={formData.pelapor}
-                                    onChange={handleInputChange}
-                                    className="text-center w-full border-b border-gray-300 p-0.5 text-sm bg-gray-100 font-medium underline decoration-gray-400 underline-offset-2 break-words"
-                                    placeholder="(Nama Jelas)"
-                                    required
-                                    disabled={true} 
-                                    readOnly
-                                />
-                                <div className="text-xs mt-0.5">
+                            <div className="w-full border-t border-gray-400 pt-1">
+                                <div className="font-bold text-sm underline decoration-gray-400 underline-offset-2">
+                                    {formData.pelapor}
+                                </div>
+                                <div className="text-xs">
                                     NPP: {formData.nppPelapor || "__________"}
                                 </div>
                             </div>

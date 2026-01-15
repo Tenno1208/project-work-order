@@ -2,8 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: 'export',
-  
-  
+
+    // Disable automatic trailing slashes
+    trailingSlash: true, // Opsional, untuk compatibility
+
   eslint: {
     ignoreDuringBuilds: true,
   },

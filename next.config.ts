@@ -13,9 +13,10 @@ const nextConfig: NextConfig = {
   },
 
   output: 'export',
+  distDir: 'dist',
 
-    // Disable automatic trailing slashes
-    trailingSlash: true, // Opsional, untuk compatibility
+  // Disable automatic trailing slashes
+  trailingSlash: true, // Opsional, untuk compatibility
 
   eslint: {
     ignoreDuringBuilds: true,

@@ -269,9 +269,6 @@ function TrackingContent() {
     );
 }
 
-// ====================================================================
-// --- WRAPPER WITH SUSPENSE (REQUIRED BY NEXT.JS FOR SEARCHPARAMS) ---
-// ====================================================================
 export default function TrackingPage() {
     return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>

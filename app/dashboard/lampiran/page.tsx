@@ -937,31 +937,20 @@ function DataPengajuanContent() {
 
     // --- ACTION HANDLERS ---
 
-    const handleBuatPengajuan = () => {
-        if (!hasPermission('workorder-pti.pengajuan.create')) {
-            showToast("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.pengajuan.create) untuk membuat pengajuan baru.", 'error');
-            return;
-        }
-
-        setCreating(true);
-        router.push("/dashboard/lampiran/tambah");
-        setCreating(false);
-    };
-
     const handleView = (uuid: string) => {
         if (!hasPermission('workorder-pti.pengajuan.view')) {
-            showToast("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.pengajuan.view) untuk melihat detail.", 'error');
+            showToast("Akses Ditolak: Anda tidak memiliki izin untuk melihat detail.", 'error');
             return;
         }
-        router.push(`/dashboard/lampiran/view/${uuid}`);
+        router.push(`/dashboard/lampiran/view?uuid=${uuid}`);
     };
 
     const handleEdit = (uuid: string) => {
         if (!hasPermission('workorder-pti.pengajuan.edit')) {
-            showToast("Akses Ditolak: Anda tidak memiliki izin (workorder-pti.pengajuan.edit) untuk mengedit pengajuan.", 'error');
+            showToast("Akses Ditolak: Anda tidak memiliki izin untuk mengedit pengajuan.", 'error');
             return;
         }
-        router.push(`/dashboard/lampiran/edit/${uuid}`);
+        router.push(`/dashboard/lampiran/edit?uuid=${uuid}`);
     };
 
     const handleStatusModalOpen = (id: number, uuid: string, hal: string, no_surat: string) => { 
@@ -1022,7 +1011,6 @@ function DataPengajuanContent() {
             'Content-Type': 'application/json',
         };
 
-        // --- DELETE LANGSUNG KE API ---
         const deleteUrl = `${API_ENDPOINTS.DELETE}/${uuidToDelete}`;
 
         for (let i = 0; i < MAX_RETRIES; i++) {

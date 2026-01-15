@@ -1642,7 +1642,7 @@ function EditSPKContent() {
                                             <QRCode
                                                 size={70}
                                                 style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                                                value={typeof window !== 'undefined' ? `${window.location.origin}/tracking/${spkData.uuid}` : ''}
+                                                value={typeof window !== 'undefined' ? `${window.location.origin}/tracking?uuid=${spkData.uuid}` : ''}
                                                 viewBox={`0 0 256 256`}
                                             />
                                         </div>

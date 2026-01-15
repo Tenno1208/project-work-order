@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-   eslint: {
+  output: 'export',
+  
+  
+  eslint: {
     ignoreDuringBuilds: true,
   },
   typescript: {
@@ -9,6 +12,7 @@ const nextConfig: NextConfig = {
   },
 
   images: {
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',

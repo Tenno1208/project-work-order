@@ -1642,7 +1642,7 @@ function EditSPKContent() {
                                             <QRCode
                                                 size={70}
                                                 style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                                                value={typeof window !== 'undefined' ? `${window.location.origin}/tracking?uuid=${spkData.uuid}` : ''}
+                                                value={typeof window !== 'undefined' ? `${window.location.origin}../tracking?uuid=${spkData.uuid}` : ''}
                                                 viewBox={`0 0 256 256`}
                                             />
                                         </div>
@@ -2049,7 +2049,7 @@ function EditSPKContent() {
                 <div className="flex flex-col items-center">
                     <div className="bg-white p-1 border border-black rounded mb-1">
                         {spkData && spkData.uuid ? (
-                            <QRCode size={60} value={`${window.location.origin}/tracking/${spkData.uuid}`} />
+                            <QRCode size={60} value={`${window.location.origin}../tracking/${spkData.uuid}`} />
                         ) : null}
                     </div>
                     <div className="text-[7pt] font-bold uppercase">Scan Tracking</div>

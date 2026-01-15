@@ -352,7 +352,7 @@ const handleEdit = (uuid: string) => {
 
     const handleTracking = (uuid: string) => {
         if (!uuid) return;
-        window.open(`/tracking?uuid=${uuid}`, '_blank');
+        window.open(`../tracking?uuid=${uuid}`, '_blank');
     };
 
     const handleConfirmDelete = async () => {

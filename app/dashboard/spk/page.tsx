@@ -288,7 +288,7 @@ export default function DaftarSPKPage() {
 
     const handleTracking = (spk: SPKItem) => {
         if (!spk.uuid) return;
-        window.open(`/tracking?uuid=${spk.uuid}`, '_blank');
+        window.open(`../tracking?uuid=${spk.uuid}`, '_blank');
     };
 
     const confirmDeletion = async () => {

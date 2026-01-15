@@ -224,7 +224,7 @@ export default function LoginPage() {
              throw new Error("Anda tidak memiliki izin 'workorder-pti.view.dashboard'. Akses ditolak.");
         }
 
-        setTimeout(() => window.location.href = "/dashboard", 500);
+        setTimeout(() => window.location.href = "../dashboard", 500);
         
       } catch (apiError: any) {
         throw apiError;
@@ -273,7 +273,7 @@ export default function LoginPage() {
           
           {/* Header */}
           <div className="relative p-6 text-center">
-            <img src="/pdam.png" alt="PDAM Logo" className="w-16 h-16 mx-auto mb-3 rounded-2xl shadow-lg shadow-blue-500/50" />
+            <img src="../pdam.png" alt="PDAM Logo" className="w-16 h-16 mx-auto mb-3 rounded-2xl shadow-lg shadow-blue-500/50" />
             <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-cyan-300 to-blue-400 bg-clip-text text-transparent mb-1">
               PDAM Portal
             </h1>

@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: 'export',
   distDir: 'dist',
+  basePath: '/workorder-pti',  // Base URL path
 
   // Disable automatic trailing slashes
   trailingSlash: true, // Opsional, untuk compatibility
@@ -13,8 +14,6 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-
-  
 
   images: {
     unoptimized: true,

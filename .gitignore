@@ -31,7 +31,7 @@ yarn-error.log*
 .pnpm-debug.log*
 
 .history/
-.dist/*
+dist/*
 
 # env files (can opt-in for committing if needed)
 .env
@@ -42,3 +42,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+/dist/

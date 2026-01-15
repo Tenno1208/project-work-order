@@ -237,7 +237,6 @@ export default function DaftarSPKPage() {
         const nonEditableStatuses = ["Menunggu", "Selesai", "Tidak Selesai"];
         const isApprover = isUserApprover(spk);
 
-        // Jika mengetahui_ttd tidak null, berarti sudah ditandatangani -> TIDAK BISA EDIT
         if (spk.mengetahui_ttd) {
              showToast(`Tidak dapat mengedit SPK karena sudah ditandatangani (Mengetahui).`, "error");
              return;
@@ -288,7 +287,8 @@ export default function DaftarSPKPage() {
     };
 
     const handleTracking = (spk: SPKItem) => {
-        window.open(`/tracking/${spk.uuid}`, '_blank');
+        if (!spk.uuid) return;
+        window.open(`/tracking?uuid=${spk.uuid}`, '_blank');
     };
 
     const confirmDeletion = async () => {

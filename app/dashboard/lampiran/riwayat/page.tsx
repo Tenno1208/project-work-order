@@ -311,21 +311,21 @@ export default function RiwayatDataPengajuanPage() {
     };
 
     const handleView = (uuid: string) => {
-        if (!hasPermission(VIEW_DETAIL_PERMISSION)) {
-            showToast(`Akses Ditolak: Anda tidak memiliki izin (${VIEW_DETAIL_PERMISSION}) untuk melihat detail.`, "error");
-            return;
-        }
-        router.push(`/dashboard/lampiran/view/${uuid}`);
-    };
+    if (!hasPermission(VIEW_DETAIL_PERMISSION)) {
+        showToast(`Akses Ditolak: Anda tidak memiliki izin (${VIEW_DETAIL_PERMISSION}) untuk melihat detail.`, "error");
+        return;
+    }
+    router.push(`/dashboard/lampiran/view?uuid=${uuid}`);
+};
 
-    const handleEdit = (uuid: string) => {
-        if (!hasPermission(EDIT_PERMISSION)) {
-            showToast(`Akses Ditolak: Anda tidak memiliki izin (${EDIT_PERMISSION}) untuk mengedit pengajuan.`, "error");
-            return;
-        }
-        localStorage.setItem("current_edit_uuid", uuid);
-        router.push(`/dashboard/lampiran/edit/${uuid}`);
-    };
+const handleEdit = (uuid: string) => {
+    if (!hasPermission(EDIT_PERMISSION)) {
+        showToast(`Akses Ditolak: Anda tidak memiliki izin (${EDIT_PERMISSION}) untuk mengedit pengajuan.`, "error");
+        return;
+    }
+    localStorage.setItem("current_edit_uuid", uuid);
+    router.push(`/dashboard/lampiran/edit?uuid=${uuid}`);
+};
 
     const handleDeleteClick = (p: Pengajuan) => {
         if (!hasPermission(DELETE_PERMISSION)) {
@@ -352,7 +352,7 @@ export default function RiwayatDataPengajuanPage() {
 
     const handleTracking = (uuid: string) => {
         if (!uuid) return;
-        window.open(`/tracking/${uuid}`, '_blank');
+        window.open(`/tracking?uuid=${uuid}`, '_blank');
     };
 
     const handleConfirmDelete = async () => {

@@ -261,7 +261,7 @@ function RiwayatSPKContent() {
 
     const handleTracking = (uuid: string) => {
         if (!uuid) return;
-        window.open(`/tracking/${uuid}`, '_blank');
+        window.open(`/tracking?uuid=${uuid}`, '_blank');
     };
 
     const confirmDeletion = async () => {

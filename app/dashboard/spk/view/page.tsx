@@ -801,7 +801,7 @@ function SPKDetailContent() {
                                     <div className="mb-8 flex flex-col items-center justify-center">
                                         <div className="bg-white p-1 border border-gray-200 rounded">
                                             {spkData && spkData.uuid_pengajuan ? (
-                                                <QRCode size={70} value={`${window.location.origin}/tracking/${spkData.uuid_pengajuan}`} viewBox={`0 0 256 256`} />
+                                                <QRCode size={70} value={`${window.location.origin}/tracking?uuid=${spkData.uuid_pengajuan}`} viewBox={`0 0 256 256`} />
                                             ) : <div className="w-[70px] h-[70px] flex items-center justify-center bg-gray-100 rounded"><Loader2 className="animate-spin text-gray-400" size={24} /></div>}
                                         </div>
                                         <div className="text-[9px] text-gray-500 mt-1 font-mono tracking-tighter">SCAN TRACKING</div>

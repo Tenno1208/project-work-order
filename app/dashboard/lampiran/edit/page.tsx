@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, use } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { 
     Loader2, AlertTriangle, Home, Save, X, Printer, Droplet, Upload, 
@@ -600,11 +600,6 @@ const formatDate = (d: Date) =>
         .toString()
         .padStart(2, "0")}-${d.getFullYear()}`;
 
-const useRouter = () => {
-    return {
-        push: (path: string) => console.log(`[Route] -> ${path}`),
-    };
-};
 
 const ConfirmActionModal = ({ 
     isOpen, 
@@ -770,7 +765,7 @@ const AccessDeniedUI = () => {
     );
 };
 
-export default function EditPengajuanForm() {
+function EditPengajuanFormContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const uuid = searchParams.get("uuid") || "";
@@ -2266,5 +2261,18 @@ export default function EditPengajuanForm() {
             />
 
         </div>
+    );
+}
+
+export default function EditPengajuanPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex justify-center items-center h-screen bg-gray-100">
+                <Loader2 className="animate-spin text-blue-600 mr-3" size={32} />
+                <span className="text-xl text-black">Memuat Halaman Edit...</span>
+            </div>
+        }>
+            <EditPengajuanFormContent />
+        </Suspense>
     );
 }

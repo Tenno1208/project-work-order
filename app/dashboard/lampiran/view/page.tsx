@@ -397,7 +397,6 @@ function DetailContent() {
     const renderKeteranganWithItalic = (text: string) => {
         if (!text) return "Tidak ada keterangan.";
         
-        // Memisahkan berdasarkan tag <i> dan </i>
         const parts = text.split(/(<i>|<\/i>)/);
         let isItalic = false;
 
